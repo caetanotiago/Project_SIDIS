@@ -1,0 +1,47 @@
+# ---- IDEs / editores ----
+.vscode/
+.idea/
+*.iml
+*.iws
+*.ipr
+.project
+.classpath
+.settings/
+.factorypath
+nbproject/
+*.swp
+*~
+
+# ---- Ferramentas de IA / assistentes ----
+.claude/
+CLAUDE.local.md
+.cursor/
+.copilot/
+
+# ---- Sistema operativo ----
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ---- Build / Maven ----
+target/
+*.class
+.mvn/wrapper/maven-wrapper.jar
+
+# ---- Execução local ----
+logs/
+*.log
+*.pid
+*.mv.db
+*.trace.db
+
+# ---- Segredos / ficheiros locais ----
+.env
+.env.*
+*.local.properties
+
+# ---- Documentos que não pertencem ao repo (enunciados, slides, rascunhos) ----
+*.pdf
+*.pptx
+*.docx
+~$*
