@@ -1,0 +1,102 @@
+@startuml FlightRoutes-SSD
+autonumber
+actor "ATCC" as ATCC
+actor "Backoffice Operator" as BO
+participant "Aircraft Management\n(microservice)" as AM
+participant "Airports\n(microservice)" as AP
+participant "Flight Routes\n(System)" as SYS
+
+== WP#3A — Flight Routes ==
+
+ATCC -> SYS : POST /api/routes (originIATA, destIATA, estimatedFlightTime, minRange, minCapacity)
+activate SYS
+SYS --> ATCC : 201 Created (FlightRouteDTO)
+deactivate SYS
+
+ATCC -> SYS : GET /api/routes/{id}
+activate SYS
+SYS --> ATCC : 200 OK (FlightRouteDTO)
+deactivate SYS
+
+ATCC -> SYS : GET /api/routes/search?origin=&dest=
+activate SYS
+SYS --> ATCC : 200 OK (List<FlightRouteDTO>)
+deactivate SYS
+
+BO -> SYS : PATCH /api/routes/{id} (minRange?, minCapacity?, estimatedFlightTime?, status?)
+activate SYS
+SYS --> BO : 200 OK (FlightRouteDTO)
+deactivate SYS
+note right of BO : also allowed for ATCC
+
+ATCC -> SYS : GET /api/routes/{id}/history
+activate SYS
+SYS --> ATCC : 200 OK (List<RouteHistoryDTO>)
+deactivate SYS
+
+ATCC -> SYS : GET /api/routes/by-airport/{iataCode}
+activate SYS
+SYS --> ATCC : 200 OK (List<FlightRouteDTO>)
+deactivate SYS
+
+== WP#3B — Flight Operations ==
+
+ATCC -> SYS : POST /api/scheduled-flights (aircraftRegistration, routeID, date, time)
+activate SYS
+SYS --> ATCC : 201 Created (ScheduledFlightDTO + links)
+deactivate SYS
+
+ATCC -> SYS : GET /api/scheduled-flights?aircraft=&page=&size=
+activate SYS
+SYS --> ATCC : 200 OK (PagedModel<ScheduledFlightDTO>)
+deactivate SYS
+
+ATCC -> SYS : GET /api/scheduled-flights/{id}
+activate SYS
+SYS --> ATCC : 200 OK (ScheduledFlightDTO + links)
+deactivate SYS
+
+ATCC -> SYS : GET /api/scheduled-flights/search?aircraft=&date=&time=
+activate SYS
+SYS --> ATCC : 200 OK (List<ScheduledFlightDTO>)
+deactivate SYS
+
+ATCC -> SYS : GET /api/routes/active?sortBy=popularity|distance
+activate SYS
+SYS --> ATCC : 200 OK (List<FlightRouteDTO> with usageCount)
+deactivate SYS
+
+ATCC -> SYS : GET /api/routes/network/total-distance
+activate SYS
+SYS --> ATCC : 200 OK (NetworkDistanceDTO)
+deactivate SYS
+
+ATCC -> SYS : GET /api/routes/alternatives?origin=&dest=
+activate SYS
+SYS --> ATCC : 200 OK (List<ItineraryDTO>)
+deactivate SYS
+
+== Queries requested by other components ==
+
+AM -> SYS : GET /api/routes/compatible?range=&capacity= (US203)
+activate SYS
+SYS --> AM : 200 OK (List<FlightRouteDTO>)
+deactivate SYS
+
+AM -> SYS : GET /api/scheduled-flights/operational-hours (US206)
+activate SYS
+SYS --> AM : 200 OK (Page<AircraftOperationalHoursDTO>)
+deactivate SYS
+
+AP -> SYS : GET /api/routes/statistics/count-by-airport (US210)
+activate SYS
+SYS --> AP : 200 OK (Map<IATA, count>)
+deactivate SYS
+
+note over BO, SYS
+  Every request carries "Authorization: Bearer <JWT>".
+  Requests from other components forward the end user's JWT (+ X-Service-Key).
+  "System" = any of the 3 replicas: every GET answers with the data of all replicas
+  (X-Partial-Response: true when a replica did not answer).
+end note
+@enduml

@@ -1,0 +1,50 @@
+@startuml FlightRoutes-SD-ListActiveRoutes
+autonumber
+actor "ATCC" as ATCC
+
+participant ": FlightRouteController" as Ctrl <<Controller>>
+participant ": ListActiveRoutesService" as Service <<Service>>
+participant ": RouteReplicaQueries" as Routes
+participant ": ScheduledFlightStatisticsService" as Stats
+participant "Peer replicas" as Peers
+participant "strategy : RouteSortStrategy\n(Popularity | Distance)" as Strategy <<Strategy>>
+participant ": FlightRouteAssembler" as Assembler <<Component>>
+
+activate ATCC
+ATCC -> Ctrl : GET /api/routes/active?sortBy=popularity
+activate Ctrl
+Ctrl -> Service : listActiveRoutes(sortBy)
+activate Service
+Service -> Service : strategy = strategies.get(sortBy)
+note right of Service : unknown sortBy -> 400
+
+Service -> Routes : activeNetwork()
+activate Routes
+Routes -> Routes : local findAllActive()
+Routes -> Peers : GET /api/routes/active (parallel)
+Peers --> Routes : their active routes
+Routes --> Service : active routes of every replica (by id)
+deactivate Routes
+
+Service -> Stats : usageByRoute()
+activate Stats
+Stats -> Stats : local countByRoute()
+Stats -> Peers : GET /api/scheduled-flights/statistics/usage-by-route
+Peers --> Stats : {routeId: count}
+Stats --> Service : counts summed per route
+deactivate Stats
+note right of Stats
+  A flight may be stored in a different replica
+  from its route, so counts must come from all replicas.
+end note
+
+Service -> Strategy : sort(RouteUsage(route, count) list)
+Strategy --> Service : sortedUsages
+Service --> Ctrl : sortedUsages
+deactivate Service
+Ctrl -> Assembler : toDTOWithUsageList(sortedUsages)
+Assembler --> Ctrl : List<FlightRouteDTO> (with usageCount)
+Ctrl --> ATCC : 200 OK
+deactivate Ctrl
+deactivate ATCC
+@enduml

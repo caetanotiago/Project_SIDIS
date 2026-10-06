@@ -1,0 +1,19 @@
+@startuml C4-L1-SystemContext
+!include <C4/C4_Context>
+LAYOUT_TOP_DOWN()
+title AISafe — System Context (C4 Level 1)
+
+Person(admin, "Administrator", "Manages users and roles.")
+Person(backoffice, "Backoffice Operator", "Registers airports, aircraft models and aircraft; updates/deactivates routes; consults statistics.")
+Person(atcc, "Air Traffic Control Coordinator (ATCC)", "Defines flight routes and schedules flights; consults the route network.")
+Person(maint, "Maintenance Technician / Supervisor", "Plans and records aircraft maintenance.")
+
+System(aisafe, "AISafe Flight Management System", "Distributed system that manages the fleet, airports, flight routes, scheduled flights and maintenance of an airline.")
+
+Rel(admin, aisafe, "Manages users and access")
+Rel(backoffice, aisafe, "Registers airports and fleet; manages routes; reads statistics")
+Rel(atcc, aisafe, "Creates routes, schedules flights, queries the network")
+Rel(maint, aisafe, "Records maintenance and checks aircraft status")
+
+SHOW_LEGEND()
+@enduml

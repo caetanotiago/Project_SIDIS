@@ -1,0 +1,820 @@
+{
+  "info": {
+    "name": "AISafe - Flight Routes (distributed)",
+    "description": "Testes da componente Flight Routes com 3 réplicas (SIDIS Assignment 1).\nPré-requisito: a partir de code/, `./scripts/start-replicas.sh flightroutes demo` (ou `.\\scripts\\start-replicas.ps1 -Service flightroutes -Profiles demo`).\nUsar o environment FlightRoutes.postman_environment.json e correr as pastas por ordem.\nAntes da pasta 6, PARAR a réplica 2 (porta 8184).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "0. Setup — health e tokens",
+      "item": [
+        {
+          "name": "Health fr1",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{fr1}}/actuator/health"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"UP\", () => pm.expect(pm.response.json().status).to.eql(\"UP\"));",
+                  "pm.test(\"peers component present\", () => pm.expect(pm.response.json().components).to.have.property(\"peers\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Health fr2",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{fr2}}/actuator/health"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"UP\", () => pm.expect(pm.response.json().status).to.eql(\"UP\"));",
+                  "pm.test(\"peers component present\", () => pm.expect(pm.response.json().components).to.have.property(\"peers\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Health fr3",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{fr3}}/actuator/health"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"UP\", () => pm.expect(pm.response.json().status).to.eql(\"UP\"));",
+                  "pm.test(\"peers component present\", () => pm.expect(pm.response.json().components).to.have.property(\"peers\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Token ATCC (dev only)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{fr1}}/auth/dev-token",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"atcc1\",\n  \"roles\": [\n    \"ATCC\"\n  ]\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "pm.environment.set(\"token\", pm.response.json().token);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Token Backoffice Operator (dev only)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{fr1}}/auth/dev-token",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"bo1\",\n  \"roles\": [\n    \"BACKOFFICE_OPERATOR\"\n  ]\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "pm.environment.set(\"boToken\", pm.response.json().token);"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "1. Acesso local",
+      "item": [
+        {
+          "name": "Réplica 3: rotas locais com origem CDG",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{fr3}}/api/routes/search?origin=CDG"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "const r = pm.response.json().find(x => x.destIATA === \"LHR\");",
+                  "pm.test(\"CDG-LHR exists (stored in replica 3)\", () => pm.expect(r).to.be.an(\"object\"));",
+                  "pm.environment.set(\"cdgLhrId\", r.id);",
+                  "pm.test(\"correlation id returned\", () => pm.response.to.have.header(\"X-Correlation-Id\"));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "2. Forwarding peer-to-peer (GET por id)",
+      "item": [
+        {
+          "name": "Réplica 1: rota guardada na réplica 3",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{fr1}}/api/routes/{{cdgLhrId}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"same route returned via forwarding\", () => pm.expect(pm.response.json().id).to.eql(pm.environment.get(\"cdgLhrId\")));",
+                  "pm.test(\"origin CDG\", () => pm.expect(pm.response.json().originIATA).to.eql(\"CDG\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Réplica 2: histórico da rota da réplica 3",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{fr2}}/api/routes/{{cdgLhrId}}/history"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"history not empty\", () => pm.expect(pm.response.json().length).to.be.above(0));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Id inexistente → 404",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{fr1}}/api/routes/does-not-exist"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 404\", () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "3. Agregação de respostas",
+      "item": [
+        {
+          "name": "Todas as rotas a partir de fr1",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{fr1}}/api/routes/search"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"6 routes from the 3 replicas\", () => pm.expect(pm.response.json().length).to.eql(6));",
+                  "pm.test(\"complete response\", () => pm.expect(pm.response.headers.get(\"X-Partial-Response\")).to.be.undefined);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Todas as rotas a partir de fr2",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{fr2}}/api/routes/search"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"6 routes from the 3 replicas\", () => pm.expect(pm.response.json().length).to.eql(6));",
+                  "pm.test(\"complete response\", () => pm.expect(pm.response.headers.get(\"X-Partial-Response\")).to.be.undefined);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Todas as rotas a partir de fr3",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{fr3}}/api/routes/search"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"6 routes from the 3 replicas\", () => pm.expect(pm.response.json().length).to.eql(6));",
+                  "pm.test(\"complete response\", () => pm.expect(pm.response.headers.get(\"X-Partial-Response\")).to.be.undefined);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "US214 rotas ativas por popularidade (voos de todas as réplicas)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{fr2}}/api/routes/active?sortBy=popularity"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "const list = pm.response.json();",
+                  "pm.test(\"6 active routes\", () => pm.expect(list.length).to.eql(6));",
+                  "pm.test(\"sorted by usage\", () => pm.expect(list[0].usageCount).to.be.at.least(list[list.length-1].usageCount));",
+                  "pm.test(\"5 flights in total\", () => pm.expect(list.reduce((s, r) => s + r.usageCount, 0)).to.eql(5));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "US206 horas operacionais (soma das 3 réplicas)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{fr3}}/api/scheduled-flights/operational-hours"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "const tua = pm.response.json().content.find(x => x.registrationNumber === \"CS-TUA\");",
+                  "pm.test(\"CS-TUA = 55+120+65 min\", () => pm.expect(tua.totalMinutes).to.eql(240));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "US215 distância total da rede",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{fr1}}/api/routes/network/total-distance"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"3574 km\", () => pm.expect(pm.response.json().totalDistanceKm).to.eql(3574));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "US213 voos de CS-TUA (paginado, 3 réplicas)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{fr1}}/api/scheduled-flights/search?aircraft=CS-TUA"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"3 flights (one per replica)\", () => pm.expect(pm.response.json().length).to.eql(3));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "US210 rotas por aeroporto (Backoffice)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{boToken}}"
+              }
+            ],
+            "url": "{{fr2}}/api/routes/statistics/count-by-airport"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"MAD in 3 routes\", () => pm.expect(pm.response.json().MAD).to.eql(3));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "4. Comando encaminhado para a réplica dona",
+      "item": [
+        {
+          "name": "Réplica 2: obter id de MAD-CDG",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{fr2}}/api/routes/search?origin=MAD&dest=CDG"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "pm.environment.set(\"madCdgId\", pm.response.json()[0].id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Réplica 1: PATCH da rota da réplica 2",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{fr1}}/api/routes/{{madCdgId}}",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"minCapacity\": 160\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"updated\", () => pm.expect(pm.response.json().minCapacity).to.eql(160));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Réplica 2 (dona) vê a alteração",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{fr2}}/api/routes/{{madCdgId}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"minCapacity 160\", () => pm.expect(pm.response.json().minCapacity).to.eql(160));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Erro de negócio do dono propagado (já ACTIVE → 409)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{fr3}}/api/routes/{{madCdgId}}",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"ACTIVE\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 409\", () => pm.response.to.have.status(409));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "5. Segurança",
+      "item": [
+        {
+          "name": "Sem token → 401",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{fr1}}/api/routes/search"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 401\", () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Role errado → 403",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{boToken}}"
+              }
+            ],
+            "url": "{{fr1}}/api/routes/search"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 403\", () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Pedido \"de peer\" sem X-Service-Key → 401",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "X-Peer-Hops",
+                "value": "1"
+              }
+            ],
+            "url": "{{fr1}}/api/routes/search"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 401\", () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "X-Peer-Hops acima do máximo → 400",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "X-Peer-Hops",
+                "value": "2"
+              },
+              {
+                "key": "X-Service-Key",
+                "value": "{{serviceKey}}"
+              }
+            ],
+            "url": "{{fr1}}/api/routes/search"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 400\", () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Pedido de peer válido → só dados locais (sem reencaminhar)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "X-Peer-Hops",
+                "value": "1"
+              },
+              {
+                "key": "X-Service-Key",
+                "value": "{{serviceKey}}"
+              }
+            ],
+            "url": "{{fr1}}/api/routes/search"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"only the 2 routes of replica 1\", () => pm.expect(pm.response.json().length).to.eql(2));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "6. Falha de uma réplica (PARAR a réplica 2 antes)",
+      "item": [
+        {
+          "name": "Réplica 1 continua a responder com resposta parcial",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{fr1}}/api/routes/search"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"partial response flagged\", () => pm.expect(pm.response.headers.get(\"X-Partial-Response\")).to.eql(\"true\"));",
+                  "pm.test(\"4 routes (replicas 1 and 3)\", () => pm.expect(pm.response.json().length).to.eql(4));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Dados locais continuam acessíveis (réplica 3)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{fr1}}/api/routes/{{cdgLhrId}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Dados só na réplica 2 → 404",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{fr1}}/api/routes/{{madCdgId}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 404\", () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Health mostra o circuito da réplica 2",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{fr1}}/actuator/health"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"peer 8184 not CLOSED\", () => pm.expect(pm.response.json().components.peers.details.peers[\"http://localhost:8184\"]).to.not.eql(\"CLOSED\"));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

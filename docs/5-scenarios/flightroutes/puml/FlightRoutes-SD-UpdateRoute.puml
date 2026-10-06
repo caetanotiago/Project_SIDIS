@@ -1,0 +1,72 @@
+@startuml FlightRoutes-SD-UpdateRoute
+autonumber
+title US112 — Update / deactivate a route (command executed by the owner replica)
+actor "ATCC /\nBackoffice Operator" as User
+
+participant "flightroutes-1\n: FlightRouteController" as Ctrl <<Controller>>
+participant ": UpdateFlightRouteService" as Service <<Service>>
+participant "routeRepo : FlightRouteRepository" as RouteRepo <<Repository>>
+participant "route : FlightRoute" as Route <<Entity>>
+participant ": PeerClient" as Peers
+participant "flightroutes-2 / -3" as Owner
+participant ": FlightRouteAssembler" as Assembler <<Component>>
+
+activate User
+User -> Ctrl : PATCH /api/routes/{id} (UpdateRouteDTO)
+activate Ctrl
+
+Ctrl -> Service : updateRoute(id, dto)
+activate Service
+
+Service -> RouteRepo : findById(id)
+activate RouteRepo
+RouteRepo --> Service : route / empty
+deactivate RouteRepo
+
+alt route stored in this replica
+    opt minRange, minCapacity or estimatedFlightTime present
+        Service -> Route : updateDetails(minRange, minCapacity, estTime)
+        activate Route
+        note right of Route
+          Only changed attributes are replaced.
+          historyLog += RouteHistory.detailsUpdated(previous*, new*)
+        end note
+        Route --> Service
+        deactivate Route
+    end
+    opt status present
+        Service -> Route : changeStatus(status)
+        activate Route
+        note right of Route
+          ACTIVE <-> INACTIVE
+          same state -> IllegalStateException (409)
+        end note
+        Route --> Service
+        deactivate Route
+    end
+    Service -> RouteRepo : save(route)
+    note right of RouteRepo : @Version check\n(concurrent update -> 409)
+    Service -> Assembler : toDTO(savedRoute)
+    Assembler --> Service : FlightRouteDTO
+else route not stored here
+    Service -> Peers : forwardToOwner(PATCH, "/api/routes/{id}", dto)
+    activate Peers
+    loop each peer (unicast, sequential)
+        Peers -> Owner : PATCH /api/routes/{id}\n(X-Peer-Hops: 1, X-Service-Key, JWT)
+        Owner --> Peers : 404 (not mine) → next peer\n| 200 FlightRouteDTO\n| 4xx business error
+    end
+    Peers --> Service : FlightRouteDTO\n(4xx → ResponseStatusException, same status)
+    deactivate Peers
+end
+
+Service --> Ctrl : FlightRouteDTO
+deactivate Service
+Ctrl --> User : 200 OK (FlightRouteDTO)
+deactivate Ctrl
+deactivate User
+
+note over User, Assembler
+  A route is only ever written by its owner replica, so there is a single version of each
+  route (no write conflicts between replicas). No owner found → 404.
+end note
+@enduml

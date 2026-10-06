@@ -1,0 +1,73 @@
+@startuml FlightRoutes-SD-CreateRoute
+autonumber
+actor "ATCC" as ATCC
+
+participant ": FlightRouteController" as Ctrl <<Controller>>
+participant ": CreateFlightRouteService" as Service <<Service>>
+participant "routeRepo : FlightRouteRepository" as RouteRepo <<Repository>>
+participant ": AirportClient" as AirClient <<ACL>>
+participant "Airports\n(microservice)" as AP
+participant ": DistanceCalculatorService" as DistCalc <<Domain Service>>
+participant ": FlightRouteFactory" as Factory <<Factory>>
+participant "newRoute : FlightRoute" as Route <<Entity>>
+participant ": FlightRouteAssembler" as Assembler <<Component>>
+
+activate ATCC
+ATCC -> Ctrl : POST /api/routes (CreateRouteDTO)
+activate Ctrl
+
+Ctrl -> Service : createRoute(dto)
+activate Service
+
+Service -> RouteRepo : existsByOriginAndDestination(originIATA, destIATA)
+activate RouteRepo
+RouteRepo --> Service : false
+deactivate RouteRepo
+
+Service -> Service : peerClient.collectList(\n"/api/routes/search?origin=&dest=")
+note right of Service
+  Duplicate check also in the peer replicas
+  that answer (best-effort, AP — see 4.3).
+  Any result → 400.
+end note
+
+loop origin and destination
+    Service -> AirClient : getAirport(iata)
+    activate AirClient
+    AirClient -> AP : GET /airports/{iata}\n(JWT + X-Service-Key; round-robin, failover)
+    activate AP
+    AP --> AirClient : 200 OK (AirportDetailsResponseDTO)
+    deactivate AP
+    AirClient --> Service : AirportSnapshot
+    deactivate AirClient
+end
+
+Service -> DistCalc : calculateDistance(origin.lat, origin.lon, dest.lat, dest.lon)
+activate DistCalc
+DistCalc --> Service : distance (Haversine, km)
+deactivate DistCalc
+
+Service -> Factory : createRoute(originIata, destIata, distance, minRange, minCapacity, estTime)
+activate Factory
+Factory -> Route ** : new FlightRoute(origin, dest, RouteDistance, RouteRequirements, EstimatedFlightTime)
+note right of Route : status = ACTIVE\nhistoryLog += RouteHistory.created(...)
+Factory --> Service : newRoute
+deactivate Factory
+
+Service -> RouteRepo : save(newRoute)
+activate RouteRepo
+RouteRepo --> Service : savedRoute
+deactivate RouteRepo
+
+Service --> Ctrl : savedRoute
+deactivate Service
+
+Ctrl -> Assembler : toDTO(savedRoute)
+activate Assembler
+Assembler --> Ctrl : FlightRouteDTO
+deactivate Assembler
+
+Ctrl --> ATCC : 201 Created (FlightRouteDTO)
+deactivate Ctrl
+deactivate ATCC
+@enduml

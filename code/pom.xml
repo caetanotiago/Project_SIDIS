@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <!-- POM agregador do monorepo: só junta os módulos num build (reactor), para que o
+         common seja compilado antes dos microsserviços que dependem dele.
+         Não é parent dos módulos: cada um continua a herdar do spring-boot-starter-parent.
+         Build de tudo:          ./mvnw clean install
+         Só um serviço (+common): ./mvnw -pl flightroutes -am install -->
+    <groupId>isep.sidis</groupId>
+    <artifactId>aisafe-microservices</artifactId>
+    <version>0.0.1-SNAPSHOT</version>
+    <packaging>pom</packaging>
+
+    <modules>
+        <module>common</module>
+        <module>aircraftmanagement</module>  <!-- WP#1 :8081 -->
+        <module>maintenance</module>         <!-- WP#4 :8082 -->
+        <module>airports</module>            <!-- WP#2 :8083 -->
+        <module>flightroutes</module>        <!-- WP#3 :8084 -->
+    </modules>
+</project>

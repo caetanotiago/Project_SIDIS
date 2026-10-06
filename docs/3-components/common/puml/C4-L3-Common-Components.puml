@@ -1,0 +1,37 @@
+@startuml C4-L3-Common-Components
+!include <C4/C4_Component>
+LAYOUT_TOP_DOWN()
+title common library — Components (C4 Level 3, embedded in every service)
+
+Container(svc, "Service code", "controllers / services of any AISafe service")
+Container(peers, "Peer replicas", "same service")
+Container(remote, "Other services", "all their replicas")
+
+Container_Boundary(common, "common library (auto-configured in every service container)") {
+    Component(corr, "CorrelationIdFilter", "Servlet filter", "X-Correlation-Id + instance id in the log MDC")
+    Component(audit, "AuditLogFilter", "Servlet filter", "AUDIT log line per request: user, roles, path, status, source")
+    Component(skey, "ServiceKeyFilter", "Servlet filter", "Inter-service authentication (X-Service-Key), hop limit")
+    Component(jwt, "JWT security", "JwtAuthenticationFilter, JwtTokenProvider, JwtSecurityAutoConfiguration", "Stateless JWT, roles from the token, per-service AuthorizationRules")
+    Component(dev, "DevTokenController", "REST Controller (dev only)", "POST /auth/dev-token")
+    Component(peerClient, "PeerClient", "Java", "findFirst / collect / forwardToOwner on the peer replicas")
+    Component(repClient, "ReplicatedServiceClient(Factory)", "Java", "Round-robin + failover to another service")
+    Component(resil, "ResilientExecutor + CircuitBreakerRegistry", "Java", "Retry with exponential backoff, circuit breaker per target")
+    Component(http, "Inter-service RestClient", "HttpClientFactory, InterServiceHeadersInterceptor", "Timeouts, TLS truststore, forwards JWT / correlation id / service key")
+    Component(health, "PeersHealthIndicator", "Spring Boot Actuator", "/actuator/health: state of each peer circuit")
+}
+
+Rel(corr, audit, "then")
+Rel(audit, skey, "then")
+Rel(skey, jwt, "then")
+Rel(jwt, svc, "authorised request")
+Rel(svc, peerClient, "uses")
+Rel(svc, repClient, "uses")
+Rel(peerClient, resil, "uses")
+Rel(repClient, resil, "uses")
+Rel(resil, http, "uses")
+Rel(http, peers, "JSON/HTTPS")
+Rel(http, remote, "JSON/HTTPS")
+Rel(health, resil, "reads circuit state")
+
+SHOW_LEGEND()
+@enduml

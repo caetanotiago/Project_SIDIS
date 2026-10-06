@@ -1,0 +1,102 @@
+@startuml FlightRoutes-DM
+!pragma layout smetana
+skinparam packageStyle rectangle
+skinparam classAttributeIconSize 0
+hide empty members
+
+package "Flight Route Aggregate" {
+    class FlightRoute <<Entity>> <<Root>> {
+        - id : String (UUID)
+        - originIata : String
+        - destinationIata : String
+        - version : Long
+    }
+    class RouteDistance <<Value Object>> {
+        - distance : Double
+    }
+    class RouteRequirements <<Value Object>> {
+        - minRange : Double
+        - minCapacity : Integer
+    }
+    class EstimatedFlightTime <<Value Object>> {
+        - durationMinutes : Integer
+    }
+    class RouteStatus <<Value Object>> {
+        - state : ACTIVE | INACTIVE
+    }
+    class RouteHistory <<Value Object>> {
+        - changeDate : LocalDateTime
+        - description : String
+        - previous* / new* values
+    }
+
+    FlightRoute "1" *-- "1" RouteDistance
+    FlightRoute "1" *-- "1" RouteRequirements
+    FlightRoute "1" *-- "1" EstimatedFlightTime
+    FlightRoute "1" *-- "1" RouteStatus
+    FlightRoute "1" *-- "1..*" RouteHistory : historyLog
+}
+
+package "Scheduled Flight Aggregate" {
+    class ScheduledFlight <<Entity>> <<Root>> {
+        - id : String (UUID)
+        - aircraftRegistration : String
+        - version : Long
+    }
+    class FlightSchedule <<Value Object>> {
+        - date : LocalDate
+        - time : LocalTime
+    }
+    class FlightStatus <<Value Object>> {
+        - state : SCHEDULED | DELAYED | IN_FLIGHT | COMPLETED | CANCELED
+    }
+
+    class RouteReference <<Value Object>> {
+        - routeId : String
+        - originIata : String
+        - destinationIata : String
+        - estimatedFlightTimeMinutes : Integer
+    }
+
+    ScheduledFlight "1" *-- "1" FlightSchedule
+    ScheduledFlight "1" *-- "1" FlightStatus
+    ScheduledFlight "1" *-- "1" RouteReference
+}
+
+package "Read Models (not persisted)" {
+    class RouteSummary <<Read Model>> {
+        id, origin, destination, distance,
+        minRange, minCapacity, flightTime, status
+    }
+    class Itinerary <<Read Model>> {
+        - numberOfStops : int
+        - totalDistance : double
+    }
+    class RouteUsage <<Read Model>> {
+        - usageCount : long
+    }
+}
+
+package "Airports BC (remote)" #EEEEEE {
+    class Airport <<Entity>> <<Root>> {
+        - iataCode
+        - coordinates
+        - status
+    }
+}
+
+package "Aircraft Management BC (remote)" #EEEEEE {
+    class Aircraft <<Entity>> <<Root>> {
+        - registrationNumber
+        - seatingCapacity
+        - status
+    }
+}
+
+RouteReference "0..*" ..> "1" FlightRoute : routeId\n(by identity; route may be\nstored in another replica)
+FlightRoute "0..*" ..> "2" Airport : origin / destination\n(by IATA code)
+ScheduledFlight "0..*" ..> "1" Aircraft : assigned to\n(by registration)
+Itinerary "1" o-- "1..*" RouteSummary : legs
+RouteUsage "1" o-- "1" RouteSummary
+FlightRoute ..> RouteSummary : toSummary()
+@enduml

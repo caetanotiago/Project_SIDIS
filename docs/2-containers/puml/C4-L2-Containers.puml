@@ -1,0 +1,41 @@
+@startuml C4-L2-Containers
+!include <C4/C4_Container>
+LAYOUT_TOP_DOWN()
+title AISafe — Containers (C4 Level 2)
+
+Person(backoffice, "Backoffice Operator")
+Person(atcc, "ATCC")
+Person(maint, "Maintenance Technician / Supervisor")
+
+System_Boundary(aisafe, "AISafe Flight Management System") {
+    Container(am, "Aircraft Management Service", "Java 21, Spring Boot — 3 replicas :8081/:8181/:8281", "Aircraft models and aircraft, operational status (WP#1).")
+    Container(mt, "Maintenance Service", "Java 21, Spring Boot — 3 replicas :8082/:8182/:8282", "Maintenance templates and records (WP#4).")
+    Container(ap, "Airports Service", "Java 21, Spring Boot — 3 replicas :8083/:8183/:8283", "Airports, runways and certification data (WP#2).")
+    Container(fr, "Flight Routes Service", "Java 21, Spring Boot — 3 replicas :8084/:8184/:8284", "Flight routes, route history, scheduled flights and network queries (WP#3).")
+
+    ContainerDb(amdb, "aircraftManagementdb-1..3", "H2 in-memory", "One database per replica")
+    ContainerDb(mtdb, "maintenancedb-1..3", "H2 in-memory", "One database per replica")
+    ContainerDb(apdb, "airportsdb-1..3", "H2 in-memory", "One database per replica")
+    ContainerDb(frdb, "flightRoutesdb-1..3", "H2 in-memory", "One database per replica")
+}
+
+Rel(backoffice, am, "Manages fleet", "JSON/HTTPS + JWT")
+Rel(backoffice, ap, "Manages airports", "JSON/HTTPS + JWT")
+Rel(backoffice, fr, "Updates routes; US210 statistics", "JSON/HTTPS + JWT")
+Rel(atcc, fr, "Routes, scheduled flights, network", "JSON/HTTPS + JWT")
+Rel(maint, mt, "Maintenance records", "JSON/HTTPS + JWT")
+
+Rel(fr, ap, "Airport coordinates and status", "JSON/HTTPS, round-robin + failover")
+Rel(fr, am, "Aircraft status, capacity and model range", "JSON/HTTPS, round-robin + failover")
+Rel(am, fr, "US203 compatible routes, US206 operational hours", "JSON/HTTPS")
+Rel(ap, fr, "US210 routes per airport", "JSON/HTTPS")
+
+Rel(fr, fr, "Peer forwarding / aggregation between replicas", "JSON/HTTPS, X-Peer-Hops")
+
+Rel(am, amdb, "Reads/writes", "JPA/JDBC")
+Rel(mt, mtdb, "Reads/writes", "JPA/JDBC")
+Rel(ap, apdb, "Reads/writes", "JPA/JDBC")
+Rel(fr, frdb, "Reads/writes", "JPA/JDBC")
+
+SHOW_LEGEND()
+@enduml

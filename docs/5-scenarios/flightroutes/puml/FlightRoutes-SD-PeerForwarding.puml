@@ -1,0 +1,51 @@
+@startuml FlightRoutes-SD-PeerForwarding
+autonumber
+title Peer-to-peer query resolution — GET /api/routes/{id} (US113)
+actor "ATCC" as ATCC
+participant "flightroutes-1\n: FlightRouteController" as Ctrl
+participant ": SearchFlightRoutesService" as Service
+participant ": RouteReplicaQueries" as Queries
+participant "routeRepo (H2 #1)" as Repo
+participant ": PeerClient" as Peers
+participant "flightroutes-2" as R2
+participant "flightroutes-3" as R3
+
+activate ATCC
+ATCC -> Ctrl : GET /api/routes/{id}\nAuthorization: Bearer JWT
+activate Ctrl
+Ctrl -> Service : getRouteById(id)
+activate Service
+Service -> Queries : findById(id)
+activate Queries
+Queries -> Repo : findById(id)
+Repo --> Queries : empty (not stored here)
+
+Queries -> Peers : findFirst("/api/routes/{id}")
+activate Peers
+note right of Peers
+  Headers: Authorization (same JWT), X-Correlation-Id,
+  X-Peer-Hops: 1, X-Service-Key, X-Caller-Instance.
+  Parallel calls with timeout + retry + circuit breaker.
+end note
+par
+    Peers -> R2 : GET /api/routes/{id}
+    R2 -> R2 : ServiceKeyFilter ✓, JWT ✓\nhops=1 → local lookup only
+    R2 --> Peers : 404 (not mine)
+else
+    Peers -> R3 : GET /api/routes/{id}
+    R3 --> Peers : 200 FlightRouteDTO
+end
+Peers --> Queries : Optional(dto)
+deactivate Peers
+Queries --> Service : RouteSummary
+deactivate Queries
+Service --> Ctrl : RouteSummary
+deactivate Service
+Ctrl --> ATCC : 200 OK (FlightRouteDTO)
+deactivate Ctrl
+
+note over ATCC, R3
+  No peer has it → 404. A peer down/timing out → counted as unavailable;
+  if nobody answered with the resource the 404 carries X-Partial-Response: true.
+end note
+@enduml

@@ -1,0 +1,109 @@
+@startuml FlightRoutes-CD-ScheduledFlights
+!pragma layout smetana
+skinparam classAttributeIconSize 0
+skinparam packageStyle rectangle
+hide empty members
+
+package "Presentation" {
+    class ScheduledFlightController <<Controller>> {
+        + createScheduledFlight(dto : CreateScheduledFlightDTO)
+        + getScheduledFlightById(id)
+        + getScheduledFlightsByAircraft(aircraft, pageable)
+        + searchScheduledFlights(aircraft, date?, time?)
+        + getOperationalHours(pageable)
+        + usageByRoute()
+        + minutesByAircraft()
+    }
+    class ScheduledFlightAssembler <<Component>> {
+        + toModel(flight) : ScheduledFlightDTO
+        + withLinks(dto) : ScheduledFlightDTO
+    }
+}
+
+package "Application" {
+    class CreateScheduledFlightService <<Service>> {
+        + create(dto) : ScheduledFlight
+    }
+    class ViewScheduledFlightsByAircraftService <<Service>> {
+        + viewByAircraft(reg, pageable) : Page<ScheduledFlightDTO>
+        + search(reg, date, time) : List<ScheduledFlightDTO>
+        + getById(id) : ScheduledFlightDTO
+    }
+    class CalculateOperationalHoursService <<Service>> {
+        + calculateOperationalHours(pageable)
+    }
+    class ScheduledFlightStatisticsService <<Service>> {
+        + usageByRoute() : Map<String, Long>
+        + minutesByAircraft() : Map<String, Long>
+    }
+    class RouteReplicaQueries <<Component>> {
+        + findById(id) : Optional<RouteSummary>
+    }
+}
+
+package "Domain" {
+    class ScheduledFlightFactory <<Factory>> {
+        + create(reg, route : RouteSummary, schedule) : ScheduledFlight
+    }
+    class ScheduledFlight <<Entity>> <<Root>> {
+        - aircraftRegistration : String
+    }
+    class RouteReference <<Value Object>> {
+        - routeId
+        - originIata / destinationIata
+        - estimatedFlightTimeMinutes
+    }
+    class RouteSummary <<Read Model>> {
+        + isActive() : boolean
+        + isMetBy(range, capacity) : boolean
+    }
+    class FlightSchedule <<Value Object>>
+    class FlightStatus <<Value Object>>
+    ScheduledFlight *-- FlightSchedule
+    ScheduledFlight *-- FlightStatus
+    ScheduledFlight *-- RouteReference
+    RouteReference ..> RouteSummary : of(route)
+}
+
+package "Persistence" {
+    interface ScheduledFlightRepository <<Repository>> {
+        + findConflicting(reg, date, time)
+        + findByAircraftRegistration(reg)
+        + countByRoute()
+        + sumMinutesByAircraft()
+    }
+}
+
+package "Integration" {
+    class AircraftClient <<ACL>> {
+        + getAircraft(reg) : AircraftSnapshot
+        + exists(reg) : boolean
+    }
+    class AirportClient <<ACL>> {
+        + getAirport(iata) : AirportSnapshot
+    }
+    class "PeerClient\n(common)" as PeerClient <<Peer-to-peer>>
+}
+
+ScheduledFlightController --> CreateScheduledFlightService
+ScheduledFlightController --> ViewScheduledFlightsByAircraftService
+ScheduledFlightController --> CalculateOperationalHoursService
+ScheduledFlightController --> ScheduledFlightStatisticsService
+ScheduledFlightController --> ScheduledFlightAssembler
+
+CreateScheduledFlightService --> AircraftClient
+CreateScheduledFlightService --> AirportClient
+CreateScheduledFlightService --> RouteReplicaQueries : route (any replica)
+CreateScheduledFlightService --> ViewScheduledFlightsByAircraftService : conflicts (any replica)
+CreateScheduledFlightService --> ScheduledFlightRepository
+CreateScheduledFlightService --> ScheduledFlightFactory
+ViewScheduledFlightsByAircraftService --> AircraftClient
+ViewScheduledFlightsByAircraftService --> ScheduledFlightRepository
+ViewScheduledFlightsByAircraftService --> PeerClient
+CalculateOperationalHoursService --> ScheduledFlightStatisticsService
+ScheduledFlightStatisticsService --> ScheduledFlightRepository
+ScheduledFlightStatisticsService --> PeerClient
+
+ScheduledFlightFactory ..> ScheduledFlight : creates
+ScheduledFlightRepository ..> ScheduledFlight : persists
+@enduml

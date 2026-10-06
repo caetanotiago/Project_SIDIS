@@ -1,0 +1,68 @@
+@startuml FlightRoutes-SD-CreateScheduledFlight
+autonumber
+actor "ATCC" as ATCC
+
+participant ": ScheduledFlightController" as Ctrl <<Controller>>
+participant ": CreateScheduledFlightService" as Service <<Service>>
+participant ": AircraftClient" as AcClient <<ACL>>
+participant "Aircraft Management\n(replicas)" as AM
+participant ": RouteReplicaQueries" as Routes
+participant ": AirportClient" as ApClient <<ACL>>
+participant "Airports\n(replicas)" as AP
+participant ": ViewScheduledFlights\nByAircraftService" as Flights
+participant "Peer replicas" as Peers
+participant ": ScheduledFlightFactory" as Factory <<Factory>>
+participant "sfRepo : ScheduledFlightRepository" as SfRepo <<Repository>>
+
+activate ATCC
+ATCC -> Ctrl : POST /api/scheduled-flights (CreateScheduledFlightDTO)
+activate Ctrl
+Ctrl -> Service : create(dto)
+activate Service
+
+Service -> AcClient : getAircraft(registration)
+activate AcClient
+AcClient -> AM : GET /api/aircrafts/{reg}\n(round-robin, failover)
+AM --> AcClient : AircraftDTO
+AcClient -> AM : GET /api/aircraft-models/{model}
+AM --> AcClient : AircraftModelDTO
+AcClient --> Service : AircraftSnapshot
+deactivate AcClient
+
+Service -> Routes : findById(routeID)
+activate Routes
+note right of Routes : local repository, else\nGET /api/routes/{id} on the peers
+Routes --> Service : RouteSummary (404 if none)
+deactivate Routes
+
+Service -> Service : route.isActive() (409)\nroute.isMetBy(range, capacity) (422)\naircraft.isAvailable() (409)
+
+loop origin and destination
+    Service -> ApClient : getAirport(iata)
+    ApClient -> AP : GET /airports/{iata}
+    AP --> ApClient : AirportDetailsResponseDTO
+    ApClient --> Service : AirportSnapshot (isOperational, else 409)
+end
+
+Service -> Flights : search(reg, date, time)
+activate Flights
+Flights -> Flights : local findConflicting(...)
+Flights -> Peers : GET /api/scheduled-flights/search?aircraft=&date=&time=
+Peers --> Flights : flights at that slot
+Flights --> Service : conflicts (any → 409)
+deactivate Flights
+
+Service -> Factory : create(registration, route, new FlightSchedule(date, time))
+activate Factory
+Factory --> Service : flight (RouteReference = routeId + route snapshot,\nstatus = SCHEDULED)
+deactivate Factory
+
+Service -> SfRepo : save(flight)
+SfRepo --> Service : savedFlight (stored in THIS replica)
+Service --> Ctrl : savedFlight
+deactivate Service
+
+Ctrl --> ATCC : 201 Created, Location (ScheduledFlightDTO + self/route links)
+deactivate Ctrl
+deactivate ATCC
+@enduml

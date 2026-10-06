@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <!-- Mesmo parent dos microsserviços: garante as mesmas versões de Spring/Jackson/etc. -->
+    <parent>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-parent</artifactId>
+        <version>4.0.6</version>
+        <relativePath/> <!-- lookup parent from repository -->
+    </parent>
+
+    <groupId>isep.sidis</groupId>
+    <artifactId>common</artifactId>
+    <version>0.0.1-SNAPSHOT</version>
+    <!-- Biblioteca (JAR normal), não uma aplicação: não há classe main nem spring-boot-maven-plugin,
+         porque o JAR "executável" do Boot não pode ser usado como dependência. -->
+    <packaging>jar</packaging>
+    <name>common</name>
+    <description>AISafe - biblioteca partilhada (segurança JWT) dos microsserviços</description>
+
+    <properties>
+        <java.version>21</java.version>
+        <!-- Permite "mvnw -pl flightroutes -am spring-boot:run" a partir de code/: sem isto o
+             plugin tentava arrancar também este módulo, que não tem classe main. -->
+        <spring-boot.run.skip>true</spring-boot.run.skip>
+    </properties>
+
+    <dependencies>
+        <!-- Transitivas: os microsserviços recebem Spring Security e JJWT ao importar o common -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-security</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.jsonwebtoken</groupId>
+            <artifactId>jjwt-api</artifactId>
+            <version>0.12.5</version>
+        </dependency>
+        <dependency>
+            <groupId>io.jsonwebtoken</groupId>
+            <artifactId>jjwt-impl</artifactId>
+            <version>0.12.5</version>
+            <scope>runtime</scope>
+        </dependency>
+        <dependency>
+            <groupId>io.jsonwebtoken</groupId>
+            <artifactId>jjwt-jackson</artifactId>
+            <version>0.12.5</version>
+            <scope>runtime</scope>
+        </dependency>
+
+        <!-- Transitiva: health checks (/actuator/health) em todos os microsserviços -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+
+        <!-- Necessário para compilar (Servlet API, RestClient), mas cada microsserviço já declara o seu -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-webmvc</artifactId>
+            <optional>true</optional>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+</project>

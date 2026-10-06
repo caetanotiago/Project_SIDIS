@@ -1,0 +1,40 @@
+@startuml C4-L2-Deployment
+!include <C4/C4_Deployment>
+LAYOUT_LEFT_RIGHT()
+title AISafe — Deployment (local development host)
+
+Deployment_Node(host, "Developer machine", "Windows / Linux, JDK 21") {
+    Deployment_Node(fr1, "JVM flightroutes-1", "profile instance1, :8084") {
+        Container(fra, "Flight Routes Service", "Spring Boot")
+        ContainerDb(frda, "flightRoutesdb-1", "H2 in-memory")
+    }
+    Deployment_Node(fr2, "JVM flightroutes-2", "profile instance2, :8184") {
+        Container(frb, "Flight Routes Service", "Spring Boot")
+        ContainerDb(frdb, "flightRoutesdb-2", "H2 in-memory")
+    }
+    Deployment_Node(fr3, "JVM flightroutes-3", "profile instance3, :8284") {
+        Container(frc, "Flight Routes Service", "Spring Boot")
+        ContainerDb(frdc, "flightRoutesdb-3", "H2 in-memory")
+    }
+    Deployment_Node(apn, "JVMs airports-1..3", ":8083 :8183 :8283") {
+        Container(ap, "Airports Service", "Spring Boot")
+    }
+    Deployment_Node(amn, "JVMs aircraftmanagement-1..3", ":8081 :8181 :8281") {
+        Container(am, "Aircraft Management Service", "Spring Boot")
+    }
+    Deployment_Node(mtn, "JVMs maintenance-1..3", ":8082 :8182 :8282") {
+        Container(mt, "Maintenance Service", "Spring Boot")
+    }
+}
+
+Rel(fra, frda, "JDBC")
+Rel(frb, frdb, "JDBC")
+Rel(frc, frdc, "JDBC")
+BiRel(fra, frb, "peer HTTP(S)")
+BiRel(frb, frc, "peer HTTP(S)")
+BiRel(fra, frc, "peer HTTP(S)")
+Rel(fra, ap, "HTTP(S)")
+Rel(fra, am, "HTTP(S)")
+
+SHOW_LEGEND()
+@enduml

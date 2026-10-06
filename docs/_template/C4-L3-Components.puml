@@ -1,0 +1,29 @@
+@startuml C4-L3-<Module>-Components
+!include <C4/C4_Component>
+LAYOUT_TOP_DOWN()
+title <Service> Service — Components (C4 Level 3)
+
+Person(user, "<Actor>")
+Container(peer, "<Service> Service (peer replicas)", "Spring Boot")
+ContainerDb(db, "<db>-N", "H2 in-memory", "Database of THIS replica")
+
+Container_Boundary(svc, "<Service> Service (one replica)") {
+    Component(sec, "Security & Observability filters", "common", "JWT, X-Service-Key, audit, correlation id")
+    Component(ctrl, "<X> Controller", "Spring REST Controller", "...")
+    Component(app, "<X> application services", "Spring Services", "...")
+    Component(domain, "Domain model", "DDD aggregates", "...")
+    Component(repos, "Repositories", "Spring Data JPA", "local data")
+    Component(peerClient, "PeerClient", "common", "peer forwarding / aggregation")
+}
+
+Rel(user, sec, "HTTPS + JWT")
+Rel(sec, ctrl, "authorised requests")
+Rel(ctrl, app, "uses")
+Rel(app, domain, "uses")
+Rel(app, repos, "uses")
+Rel(repos, db, "JPA/JDBC")
+Rel(app, peerClient, "data of other replicas")
+Rel(peerClient, peer, "GET", "JSON/HTTPS, X-Peer-Hops: 1")
+
+SHOW_LEGEND()
+@enduml

@@ -1,0 +1,91 @@
+@startuml Common-CD-Distribution
+!pragma layout smetana
+skinparam classAttributeIconSize 0
+skinparam packageStyle rectangle
+hide empty members
+title common library — distribution core (C4 Level 4)
+
+package "isep.sidis.common.peers" {
+    class PeerClient {
+        - peers : List<String>
+        - aggregationTimeout : Duration
+        + isPeerRequest() : boolean
+        + shouldForward() : boolean
+        + findFirst(uri, type) : Optional<T>
+        + collect(uri, type) : PeerResult<T>
+        + collectList(uri, type) : List<T>
+        + forwardToOwner(method, uri, body, type) : Optional<T>
+    }
+    class "PeerResult<T>" as PeerResult <<record>> {
+        responses : List<T>
+        failedPeers : int
+        totalPeers : int
+        + isPartial() : boolean
+    }
+    class PeersHealthIndicator
+}
+
+package "isep.sidis.common.remote" {
+    class ReplicatedServiceClient {
+        - baseUrls : List<String>
+        + call(request : BiFunction<RestClient, String, T>) : T
+    }
+    class ReplicatedServiceClientFactory {
+        + create(serviceName, baseUrls) : ReplicatedServiceClient
+    }
+    class RemoteServiceUnavailableException
+}
+
+package "isep.sidis.common.resilience" {
+    class ResilientExecutor {
+        - maxRetries : int
+        - initialBackoff : Duration
+        + execute(target, call : Supplier<T>) : T
+        + {static} isTransient(e) : boolean
+    }
+    class CircuitBreakerRegistry {
+        + get(target) : CircuitBreaker
+        + all() : Map<String, CircuitBreaker>
+    }
+    class CircuitBreaker {
+        - state : State
+        - consecutiveFailures : int
+        + allowRequest() : boolean
+        + recordSuccess()
+        + recordFailure()
+    }
+    enum State {
+        CLOSED
+        OPEN
+        HALF_OPEN
+    }
+    class CircuitOpenException
+}
+
+package "isep.sidis.common.http" {
+    class OutboundHeaders {
+        + capture() : Map<String, String>
+    }
+    class AisafeHeaders <<constants>> {
+        CORRELATION_ID, SERVICE_KEY, CALLER_INSTANCE
+        PEER_HOPS, MAX_PEER_HOPS = 1
+        PARTIAL_RESPONSE, UNAVAILABLE_PEERS
+    }
+    class HttpClientFactory
+    class InterServiceHeadersInterceptor
+}
+
+PeerClient --> ResilientExecutor
+PeerClient --> OutboundHeaders
+PeerClient ..> PeerResult : creates
+PeersHealthIndicator --> PeerClient
+PeersHealthIndicator --> CircuitBreakerRegistry
+ReplicatedServiceClientFactory ..> ReplicatedServiceClient : creates
+ReplicatedServiceClient --> ResilientExecutor
+ReplicatedServiceClient ..> RemoteServiceUnavailableException : throws
+ResilientExecutor --> CircuitBreakerRegistry
+CircuitBreakerRegistry "1" o-- "*" CircuitBreaker
+CircuitBreaker --> State
+ResilientExecutor ..> CircuitOpenException : throws
+InterServiceHeadersInterceptor --> OutboundHeaders
+@enduml

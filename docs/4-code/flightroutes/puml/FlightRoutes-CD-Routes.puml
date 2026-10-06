@@ -1,0 +1,140 @@
+@startuml FlightRoutes-CD-Routes
+!pragma layout smetana
+skinparam classAttributeIconSize 0
+skinparam packageStyle rectangle
+hide empty members
+top to bottom direction
+
+package "Presentation" {
+    class FlightRouteController <<Controller>> {
+        + createRoute(dto : CreateRouteDTO)
+        + getRouteById(id : String)
+        + searchRoutes(origin, dest)
+        + updateRoute(id, dto : UpdateRouteDTO)
+        + getRouteHistory(id)
+        + getRoutesByAirport(iata)
+        + listActiveRoutes(sortBy)
+        + getNetworkTotalDistance()
+        + searchAlternativeRoutes(origin, dest)
+        + getCompatibleRoutes(range, capacity)
+        + countRoutesByAirport()
+    }
+    class FlightRouteAssembler <<Component>> {
+        + toDTO(route | summary) : FlightRouteDTO
+        + toSummary(dto) : RouteSummary
+        + toDTOWithUsageList(usages)
+        + toHistoryDTOList(history)
+    }
+    class ItineraryAssembler <<Component>> {
+        + toDTOList(itineraries)
+    }
+}
+
+package "Application" {
+    class CreateFlightRouteService <<Service>> {
+        + createRoute(dto) : FlightRoute
+    }
+    class UpdateFlightRouteService <<Service>> {
+        + updateRoute(id, dto) : FlightRouteDTO
+    }
+    class "SearchFlightRoutesService\nGetRouteHistoryService\nViewRoutesByAirportService\nCountRoutesByAirportService\nCalculateNetworkDistanceService" as QueryServices <<Service>>
+    class ListActiveRoutesService <<Service>> {
+        + listActiveRoutes(sortBy) : List<RouteUsage>
+    }
+    class SearchAlternativeRoutesService <<Service>> {
+        + searchAlternatives(origin, dest) : List<Itinerary>
+    }
+    class RouteReplicaQueries <<Component>> {
+        + findById(id) : Optional<RouteSummary>
+        + withPeers(local, peerUri) : List<RouteSummary>
+        + activeNetwork() : List<RouteSummary>
+    }
+    class ScheduledFlightStatisticsService <<Service>> {
+        + usageByRoute() : Map<String, Long>
+    }
+    interface RouteSortStrategy <<Strategy>> {
+        + key() : String
+        + sort(routes) : List<RouteUsage>
+    }
+    class PopularitySortStrategy
+    class DistanceSortStrategy
+    interface RouteSearchStrategy <<Strategy>> {
+        + search(active, origin, dest) : List<Itinerary>
+    }
+    class MinStopsRouteSearch
+    RouteSortStrategy <|.. PopularitySortStrategy
+    RouteSortStrategy <|.. DistanceSortStrategy
+    RouteSearchStrategy <|.. MinStopsRouteSearch
+}
+
+package "Domain" {
+    class FlightRouteFactory <<Factory>> {
+        + createRoute(...) : FlightRoute
+    }
+    class DistanceCalculatorService <<Domain Service>> {
+        + calculateDistance(lat1, lon1, lat2, lon2) : double
+    }
+    class FlightRoute <<Entity>> <<Root>> {
+        + updateDetails(minRange, minCapacity, time)
+        + changeStatus(newState)
+        + toSummary() : RouteSummary
+    }
+    class RouteSummary <<Read Model>>
+    class Itinerary <<Read Model>>
+    class RouteUsage <<Read Model>>
+}
+
+package "Persistence" {
+    interface FlightRouteRepository <<Repository>>
+}
+
+package "Integration" {
+    class AirportClient <<ACL>> {
+        + getAirport(iata) : AirportSnapshot
+        + exists(iata) : boolean
+    }
+    class "PeerClient\n(common)" as PeerClient <<Peer-to-peer>> {
+        + findFirst(uri, type)
+        + collect / collectList(uri, type)
+        + forwardToOwner(method, uri, body, type)
+        + isPeerRequest() : boolean
+    }
+    class "ReplicatedServiceClient\n(common)" as Replicated <<Load balancing + failover>>
+    AirportClient --> Replicated
+}
+
+FlightRouteController --> CreateFlightRouteService
+FlightRouteController --> UpdateFlightRouteService
+FlightRouteController --> QueryServices
+FlightRouteController --> ListActiveRoutesService
+FlightRouteController --> SearchAlternativeRoutesService
+FlightRouteController --> FlightRouteAssembler
+FlightRouteController --> ItineraryAssembler
+
+CreateFlightRouteService --> AirportClient
+CreateFlightRouteService --> DistanceCalculatorService
+CreateFlightRouteService --> FlightRouteFactory
+CreateFlightRouteService --> FlightRouteRepository
+CreateFlightRouteService --> PeerClient : duplicate check
+UpdateFlightRouteService --> FlightRouteRepository
+UpdateFlightRouteService --> PeerClient : forwardToOwner
+UpdateFlightRouteService ..> FlightRoute : updateDetails / changeStatus
+QueryServices --> RouteReplicaQueries
+QueryServices --> FlightRouteRepository
+QueryServices --> AirportClient
+QueryServices --> PeerClient
+ListActiveRoutesService --> RouteReplicaQueries
+ListActiveRoutesService --> ScheduledFlightStatisticsService
+ListActiveRoutesService --> "1..*" RouteSortStrategy
+SearchAlternativeRoutesService --> RouteReplicaQueries
+SearchAlternativeRoutesService --> AirportClient
+SearchAlternativeRoutesService --> RouteSearchStrategy
+RouteReplicaQueries --> FlightRouteRepository
+RouteReplicaQueries --> PeerClient
+RouteReplicaQueries ..> RouteSummary : creates
+
+FlightRouteFactory ..> FlightRoute : creates
+FlightRouteRepository ..> FlightRoute : persists
+RouteSearchStrategy ..> Itinerary : creates
+RouteSortStrategy ..> RouteUsage : sorts
+@enduml

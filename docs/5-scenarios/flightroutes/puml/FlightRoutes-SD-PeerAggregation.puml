@@ -1,0 +1,53 @@
+@startuml FlightRoutes-SD-PeerAggregation
+autonumber
+title Response aggregation with a failed replica — GET /api/routes/search (US114)
+actor "ATCC" as ATCC
+participant "flightroutes-1\n: FlightRouteController" as Ctrl
+participant ": SearchFlightRoutesService" as Service
+participant ": RouteReplicaQueries" as Queries
+participant "routeRepo (H2 #1)" as Repo
+participant ": PeerClient" as Peers
+participant ": ResilientExecutor\n+ CircuitBreaker" as Res
+participant "flightroutes-2" as R2
+participant "flightroutes-3\n(down)" as R3
+
+activate ATCC
+ATCC -> Ctrl : GET /api/routes/search?origin=OPO
+activate Ctrl
+Ctrl -> Service : searchRoutes("OPO", null)
+activate Service
+Service -> Repo : findByOrigin("OPO")
+Repo --> Service : local routes
+Service -> Queries : withPeers(local, "/api/routes/search?origin=OPO")
+activate Queries
+Queries -> Peers : collectList(uri)
+activate Peers
+par
+    Peers -> Res : execute(R2, GET)
+    Res -> R2 : GET (X-Peer-Hops: 1)
+    R2 --> Res : 200 [routes of #2]
+    Res --> Peers : routes of #2
+else
+    Peers -> Res : execute(R3, GET)
+    Res -> R3 : GET
+    R3 --> Res : connection refused / timeout
+    Res -> Res : retry with exponential backoff\n(100 ms, 200 ms)
+    Res -> Res : recordFailure()\n(3 failures → circuit OPEN:\nR3 is skipped for 10 s)
+    Res --> Peers : failure
+end
+Peers -> Peers : response header\nX-Partial-Response: true\nX-Unavailable-Peers: 1
+Peers --> Queries : [routes of #2]
+deactivate Peers
+Queries -> Queries : merge by id\n(local copy wins)
+Queries --> Service : routes of #1 + #2
+deactivate Queries
+Service --> Ctrl : List<RouteSummary>
+deactivate Service
+Ctrl --> ATCC : 200 OK + X-Partial-Response: true
+deactivate Ctrl
+
+note over ATCC, R3
+  Availability + Partition tolerance (CAP): the replica answers with the data it can reach
+  instead of failing; the client is told the result may be incomplete.
+end note
+@enduml

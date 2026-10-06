@@ -1,0 +1,53 @@
+@startuml FlightRoutes-SD-AlternativeRoutes
+autonumber
+actor "ATCC" as ATCC
+
+participant ": FlightRouteController" as Ctrl <<Controller>>
+participant ": SearchAlternativeRoutesService" as Service <<Service>>
+participant ": AirportClient" as ApClient <<ACL>>
+participant "Airports\n(replicas)" as AP
+participant ": RouteReplicaQueries" as Routes
+participant "Peer replicas" as Peers
+participant "strategy : RouteSearchStrategy\n(MinStopsRouteSearch)" as Strategy <<Strategy>>
+participant ": ItineraryAssembler" as Assembler <<Component>>
+
+activate ATCC
+ATCC -> Ctrl : GET /api/routes/alternatives?origin=&dest=
+activate Ctrl
+Ctrl -> Service : searchAlternatives(origin, dest)
+activate Service
+
+loop origin and destination
+    Service -> ApClient : exists(iata)
+    ApClient -> AP : GET /airports/{iata}
+    AP --> ApClient : 200 OK / 404
+    ApClient --> Service : true (false -> 404)
+end
+
+Service -> Routes : activeNetwork()
+activate Routes
+Routes -> Routes : local findAllActive()
+Routes -> Peers : GET /api/routes/active (parallel)
+Peers --> Routes : their active routes
+Routes --> Service : the whole Network (List<RouteSummary>)
+deactivate Routes
+
+Service -> Strategy : search(network, origin, dest)
+activate Strategy
+note right of Strategy
+  BFS over the graph IATA -> outgoing routes;
+  returns every itinerary with the minimum
+  number of stops (no cycles). Legs may be
+  stored in different replicas.
+end note
+Strategy --> Service : List<Itinerary>
+deactivate Strategy
+Service --> Ctrl : itineraries
+deactivate Service
+
+Ctrl -> Assembler : toDTOList(itineraries)
+Assembler --> Ctrl : List<ItineraryDTO>
+Ctrl --> ATCC : 200 OK (List<ItineraryDTO>)
+deactivate Ctrl
+deactivate ATCC
+@enduml
