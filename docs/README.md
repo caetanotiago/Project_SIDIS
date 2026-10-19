@@ -5,7 +5,7 @@ The architecture is documented with the **C4 model** (Simon Brown) plus a fifth 
 | Level | Question it answers | Audience | Document |
 |---|---|---|---|
 | **L1 — Context** | How does AISafe fit into the world? Who uses it? | everyone (business, managers, team) | [1-context/Context.md](1-context/Context.md) |
-| **L2 — Containers** | Which separately deployable units make up AISafe, and how do they communicate? Replication, consistency, fault tolerance, security, deployment. | engineers, project manager | [2-containers/Containers.md](2-containers/Containers.md) · [Ports.md](2-containers/Ports.md) |
+| **L2 — Containers** | Which separately deployable units make up AISafe, and how do they communicate? Replication, consistency, fault tolerance, security, deployment. | engineers, project manager | [2-containers/Containers.md](2-containers/Containers.md) · [Ports.md](2-containers/Ports.md) · [Integration-Contracts.md](2-containers/Integration-Contracts.md) |
 | **L3 — Components** | What are the main building blocks inside each container? | developers of that service | [3-components/](3-components/) |
 | **L4 — Code** | Which classes implement the components (domain model, class diagrams, patterns)? | developers | [4-code/](4-code/) |
 | **+1 — Scenarios** | How do the elements work together in each use case (user stories, sequence diagrams, tests)? | everyone; validates L1–L4 | [5-scenarios/](5-scenarios/) |

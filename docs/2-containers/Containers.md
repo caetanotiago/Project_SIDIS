@@ -33,6 +33,8 @@ All communication is **synchronous HTTP/REST with JSON** (commands and queries; 
 
 *(Rows for Maintenance and the other services are added by their owners.)*
 
+Exact request/response schemas, status codes, roles and replica behaviour of each call: [Integration-Contracts.md](Integration-Contracts.md).
+
 **Context mapping (DDD):** a caller is a *customer* of the called service (*supplier*); each caller translates the remote DTOs into its own model in an **anti-corruption layer** (`clients` package). Aggregates of other services are referenced only **by identity** (IATA code, registration number). The `common` library is a technical *shared kernel* without domain classes.
 
 **HTTP headers used between containers**
