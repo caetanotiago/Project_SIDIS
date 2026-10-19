@@ -85,7 +85,7 @@ Infrastructure endpoints (from `common`): `GET /actuator/health`, `POST /auth/de
 
 | Component | Calls | Endpoint |
 |---|---|---|
-| `AirportClient` | Airports (all replicas) | `GET /airports/{iata}` |
+| `AirportClient` | Airports (all replicas) | `GET /api/airports/{iata}` |
 | `AircraftClient` | Aircraft Management (all replicas) | `GET /api/aircrafts/{reg}`, `GET /api/aircraft-models/{model}` |
 | `PeerClient` | Flight Routes peer replicas | the same endpoint as the incoming request, `X-Peer-Hops: 1` |
 

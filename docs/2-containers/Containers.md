@@ -25,7 +25,7 @@ All communication is **synchronous HTTP/REST with JSON** (commands and queries; 
 | From | To | Endpoints | Purpose |
 |---|---|---|---|
 | Users | every service | REST API (Swagger at `/swagger-ui.html`) | Use cases, with `Authorization: Bearer <JWT>` |
-| Flight Routes | Airports | `GET /airports/{iata}` | Coordinates (route distance) and operational status (US110, US209, US212, US216) |
+| Flight Routes | Airports | `GET /api/airports/{iata}` | Coordinates (route distance) and operational status (US110, US209, US212, US216) |
 | Flight Routes | Aircraft Management | `GET /api/aircrafts/{reg}`, `GET /api/aircraft-models/{model}` | Status, seating capacity and range (US212, US213) |
 | Aircraft Management | Flight Routes | `GET /api/routes/compatible`, `GET /api/scheduled-flights/operational-hours` | US203, US206 |
 | Airports | Flight Routes | `GET /api/routes/statistics/count-by-airport` | US210 |

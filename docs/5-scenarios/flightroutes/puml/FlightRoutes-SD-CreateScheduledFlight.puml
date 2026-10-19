@@ -39,7 +39,7 @@ Service -> Service : route.isActive() (409)\nroute.isMetBy(range, capacity) (422
 
 loop origin and destination
     Service -> ApClient : getAirport(iata)
-    ApClient -> AP : GET /airports/{iata}
+    ApClient -> AP : GET /api/airports/{iata}
     AP --> ApClient : AirportDetailsResponseDTO
     ApClient --> Service : AirportSnapshot (isOperational, else 409)
 end

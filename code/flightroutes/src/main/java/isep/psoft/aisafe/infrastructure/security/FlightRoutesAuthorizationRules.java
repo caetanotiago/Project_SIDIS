@@ -20,7 +20,7 @@ public class FlightRoutesAuthorizationRules implements AuthorizationRules {
                 // por isso os roles são os do endpoint original em cada serviço).
                 // US203 — GET /api/aircrafts/{reg}/compatible-routes (Aircraft Management)
                 .requestMatchers(HttpMethod.GET,   "/api/routes/compatible").hasAnyRole("ATCC", "MAINTENANCE_SUPERVISOR", "MAINTENANCE_TECHNICIAN")
-                // US210 — GET /airports/statistics/busiest (Airports)
+                // US210 — GET /api/airports/statistics/busiest (Airports)
                 .requestMatchers(HttpMethod.GET,   "/api/routes/statistics/count-by-airport").hasRole("BACKOFFICE_OPERATOR")
 
                 //Regras para o WP#3A (FlightRoutes)

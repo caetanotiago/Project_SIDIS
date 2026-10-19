@@ -79,8 +79,8 @@ Everything below is **auto-configured** (no `@Import` needed); just inject the b
 **Access rules** — fill in `infrastructure/security/<Service>AuthorizationRules.java`:
 
 ```java
-auth.requestMatchers(HttpMethod.POST, "/airports").hasRole("BACKOFFICE_OPERATOR")
-    .requestMatchers(HttpMethod.GET,  "/airports/**").hasAnyRole("ATCC", "BACKOFFICE_OPERATOR");
+auth.requestMatchers(HttpMethod.POST, "/api/airports").hasRole("BACKOFFICE_OPERATOR")
+    .requestMatchers(HttpMethod.GET,  "/api/airports/**").hasAnyRole("ATCC", "BACKOFFICE_OPERATOR");
 ```
 
 **Calling another service** (all its replicas, with load balancing, failover, retry, circuit breaker, JWT/service-key propagation) — see `flightroutes/clients/RestClientConfig.java` and `AirportClient.java`:
@@ -104,16 +104,16 @@ FlightRouteDTO r = flightRoutesService.call((rest, baseUrl) -> rest.get()
 ```java
 // GET by id: local first, then the peers
 repo.findById(id).map(assembler::toDTO)
-    .or(() -> peerClient.findFirst("/airports/" + id, AirportDTO.class))
+    .or(() -> peerClient.findFirst("/api/airports/" + id, AirportDTO.class))
     .orElseThrow(() -> new EntityNotFoundException("Airport not found: " + id));
 
 // GET collection: local + the same GET on the peers, merged by id
 List<AirportDTO> all = new ArrayList<>(local);
-peerClient.collectList("/airports?country=PT", new ParameterizedTypeReference<List<AirportDTO>>() {})
+peerClient.collectList("/api/airports?country=PT", new ParameterizedTypeReference<List<AirportDTO>>() {})
           .forEach(dto -> { if (all.stream().noneMatch(a -> a.getIata().equals(dto.getIata()))) all.add(dto); });
 
 // Update of a resource stored in another replica: forward the command to its owner
-peerClient.forwardToOwner(HttpMethod.PATCH, "/airports/" + id, dto, AirportDTO.class);
+peerClient.forwardToOwner(HttpMethod.PATCH, "/api/airports/" + id, dto, AirportDTO.class);
 ```
 
 Rules: call the peers on **the same endpoint** the client called (same authorization); never forward when `peerClient.isPeerRequest()` (the `PeerClient` already handles it); DTOs exchanged between replicas should have `@JsonIgnoreProperties(ignoreUnknown = true)`; paginate **after** merging.

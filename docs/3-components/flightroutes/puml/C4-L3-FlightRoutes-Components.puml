@@ -47,7 +47,7 @@ Rel(acl, repClient, "uses")
 Rel(peerClient, resil, "uses")
 Rel(repClient, resil, "uses")
 Rel(resil, peer, "GET/PATCH", "JSON/HTTPS, X-Peer-Hops: 1")
-Rel(resil, ap, "GET /airports/{iata}", "JSON/HTTPS")
+Rel(resil, ap, "GET /api/airports/{iata}", "JSON/HTTPS")
 Rel(resil, am, "GET /api/aircrafts, /api/aircraft-models", "JSON/HTTPS")
 
 SHOW_LEGEND()

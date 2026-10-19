@@ -34,7 +34,7 @@ end note
 loop origin and destination
     Service -> AirClient : getAirport(iata)
     activate AirClient
-    AirClient -> AP : GET /airports/{iata}\n(JWT + X-Service-Key; round-robin, failover)
+    AirClient -> AP : GET /api/airports/{iata}\n(JWT + X-Service-Key; round-robin, failover)
     activate AP
     AP --> AirClient : 200 OK (AirportDetailsResponseDTO)
     deactivate AP

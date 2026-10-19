@@ -20,7 +20,7 @@ import java.util.function.BiFunction;
  *
  * <pre>
  * AirportResponse a = airports.call((rest, baseUrl) -> rest.get()
- *         .uri(baseUrl + "/airports/{iata}", iata)
+ *         .uri(baseUrl + "/api/airports/{iata}", iata)
  *         .retrieve()
  *         .body(AirportResponse.class));
  * </pre>

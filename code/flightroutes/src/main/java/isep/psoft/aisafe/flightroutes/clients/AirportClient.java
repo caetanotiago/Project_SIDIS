@@ -10,7 +10,7 @@ import org.springframework.web.server.ResponseStatusException;
 
 /**
  * Cliente HTTP do microsserviço Airports (anti-corruption layer).
- * Usa o endpoint existente GET /airports/{iataCode} (US107).
+ * Usa o endpoint existente GET /api/airports/{iataCode} (US107).
  */
 @Component
 public class AirportClient {
@@ -27,7 +27,7 @@ public class AirportClient {
     public AirportSnapshot getAirport(String iataCode) {
         String code = iataCode.toUpperCase();
         AirportResponse airport = airportsService.call((rest, baseUrl) -> rest.get()
-                .uri(baseUrl + "/airports/{iata}", code)
+                .uri(baseUrl + "/api/airports/{iata}", code)
                 .retrieve()
                 .onStatus(s -> s.value() == 404, (req, res) -> {
                     throw new EntityNotFoundException("Airport not found: " + code);

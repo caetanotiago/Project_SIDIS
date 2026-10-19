@@ -280,7 +280,7 @@ class ReplicaCollaborationTest {
         HttpServer server = HttpServer.create(new InetSocketAddress("localhost", 0), 0);
         server.createContext("/", exchange -> {
             String path = exchange.getRequestURI().getPath();
-            String body = path.startsWith("/airports/") ? airports.get(path.substring("/airports/".length())) : other.get(path);
+            String body = path.startsWith("/api/airports/") ? airports.get(path.substring("/api/airports/".length())) : other.get(path);
             byte[] bytes = (body == null ? "{\"error\":\"not found\"}" : body).getBytes(StandardCharsets.UTF_8);
             exchange.getResponseHeaders().add("Content-Type", "application/json");
             exchange.sendResponseHeaders(body == null ? 404 : 200, bytes.length);
