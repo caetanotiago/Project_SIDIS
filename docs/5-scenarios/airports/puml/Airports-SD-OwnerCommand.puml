@@ -1,0 +1,56 @@
+@startuml Airports-SD-OwnerCommand
+autonumber
+title Command forwarded to the owner replica — PATCH /api/airports/{iata}/status (US109; same for US106a, US208)
+actor "Backoffice Operator" as BO
+participant "airports-1\n: AirportController" as Ctrl
+participant ": UpdateAirportService" as Service
+participant "airportRepo (H2 #1)" as Repo
+participant ": PeerClient" as Peers
+participant "airports-2\n(owner of MAD)" as R2
+participant "airportRepo (H2 #2)" as Repo2
+participant "airports-3" as R3
+
+activate BO
+BO -> Ctrl : PATCH /api/airports/MAD/status\n{"status":"UNDER_MAINTENANCE"}
+activate Ctrl
+Ctrl -> Service : changeStatus("MAD", dto)
+activate Service
+Service -> Service : AirportStatus.from(dto.status)\n(unknown → 400, before forwarding)
+Service -> Repo : findById("MAD")
+Repo --> Service : empty (not stored here)
+
+Service -> Peers : forwardToOwner(PATCH, "/api/airports/MAD/status", dto)
+activate Peers
+note right of Peers
+  Unicast: peers are tried ONE AT A TIME.
+  Same method, path, body and JWT; X-Peer-Hops: 1.
+end note
+Peers -> R3 : PATCH /api/airports/MAD/status
+R3 -> R3 : hops=1 → no re-forwarding
+R3 --> Peers : 404 (not mine) → try next peer
+Peers -> R2 : PATCH /api/airports/MAD/status
+activate R2
+R2 -> Repo2 : findById("MAD")
+Repo2 --> R2 : Airport (version 3)
+R2 -> R2 : airport.changeStatus(UNDER_MAINTENANCE)
+R2 -> Repo2 : saveAndFlush(airport)
+note right of Repo2
+  @Version: UPDATE ... WHERE version = 3.
+  A concurrent change already committed → 409.
+end note
+Repo2 --> R2 : Airport (version 4)
+R2 --> Peers : 200 AirportDTO
+deactivate R2
+Peers --> Service : Optional(dto)
+deactivate Peers
+Service --> Ctrl : AirportDTO
+deactivate Service
+Ctrl --> BO : 200 OK (AirportDTO)
+deactivate Ctrl
+
+note over BO, R3
+  Single owner: each airport has exactly one copy, so replicas never have conflicting versions.
+  Owner answers 4xx (e.g. 409 certification already exists) → same status to the client.
+  No replica has the airport → 404. No peer answers → 503.
+end note
+@enduml

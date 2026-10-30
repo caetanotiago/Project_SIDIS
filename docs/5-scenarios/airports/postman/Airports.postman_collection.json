@@ -1,0 +1,1182 @@
+{
+  "info": {
+    "name": "AISafe - Airports (distributed)",
+    "description": "Testes da componente Airports com 3 réplicas (SIDIS Assignment 1).\nPré-requisito: a partir de code/, `./scripts/start-replicas.sh airports demo` (ou `.\\scripts\\start-replicas.ps1 -Service airports -Profiles demo`).\nA pasta 6 (US210) precisa também do Flight Routes com o perfil demo.\nUsar o environment Airports.postman_environment.json e correr as pastas por ordem.\nAntes da pasta 7, PARAR a réplica 2 (porta 8183).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "0. Setup — health e tokens",
+      "item": [
+        {
+          "name": "Health ap1",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{ap1}}/actuator/health"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"UP\", () => pm.expect(pm.response.json().status).to.eql(\"UP\"));",
+                  "pm.test(\"peers component present\", () => pm.expect(pm.response.json().components).to.have.property(\"peers\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Health ap2",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{ap2}}/actuator/health"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"UP\", () => pm.expect(pm.response.json().status).to.eql(\"UP\"));",
+                  "pm.test(\"peers component present\", () => pm.expect(pm.response.json().components).to.have.property(\"peers\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Health ap3",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{ap3}}/actuator/health"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"UP\", () => pm.expect(pm.response.json().status).to.eql(\"UP\"));",
+                  "pm.test(\"peers component present\", () => pm.expect(pm.response.json().components).to.have.property(\"peers\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Token ATCC (dev only)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{ap1}}/auth/dev-token",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"atcc1\",\n  \"roles\": [\n    \"ATCC\"\n  ]\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "pm.environment.set(\"atccToken\", pm.response.json().token);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Token Backoffice Operator (dev only)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{ap1}}/auth/dev-token",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"backoffice1\",\n  \"roles\": [\n    \"BACKOFFICE_OPERATOR\"\n  ]\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "pm.environment.set(\"boToken\", pm.response.json().token);"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "1. Acesso local",
+      "item": [
+        {
+          "name": "US107 — OPO on replica 1 (stored locally)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{atccToken}}"
+              }
+            ],
+            "url": "{{ap1}}/api/airports/OPO"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "const a = pm.response.json();",
+                  "pm.test(\"B2 contract fields\", () => { pm.expect(a.iataCode).to.eql(\"OPO\"); pm.expect(a.latitude).to.be.a(\"number\"); pm.expect(a.longitude).to.be.a(\"number\"); pm.expect(a.status).to.eql(\"OPERATIONAL\"); });",
+                  "pm.test(\"runways present\", () => pm.expect(a.runways.length).to.be.above(0));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "2. Forwarding peer-to-peer (GET por IATA)",
+      "item": [
+        {
+          "name": "US107 — LHR asked to replica 1 (stored in replica 3)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{atccToken}}"
+              }
+            ],
+            "url": "{{ap1}}/api/airports/LHR"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"found in peer\", () => pm.expect(pm.response.json().country).to.eql(\"United Kingdom\"));",
+                  "pm.test(\"correlation id\", () => pm.expect(pm.response.headers.has(\"X-Correlation-Id\")).to.eql(true));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "US107 — lowercase opo asked to replica 2",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{boToken}}"
+              }
+            ],
+            "url": "{{ap2}}/api/airports/opo"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"normalised IATA\", () => pm.expect(pm.response.json().iataCode).to.eql(\"OPO\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "US107 — unknown airport → 404 in every replica",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{atccToken}}"
+              }
+            ],
+            "url": "{{ap1}}/api/airports/XXX"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 404\", () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "US107 — invalid IATA → 400",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{atccToken}}"
+              }
+            ],
+            "url": "{{ap1}}/api/airports/X1"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 400\", () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "3. Agregação de respostas (US108, US211)",
+      "item": [
+        {
+          "name": "US108 — all airports from replica 1",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{atccToken}}"
+              }
+            ],
+            "url": "{{ap1}}/api/airports"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "const iatas = pm.response.json().map(a => a.iataCode);",
+                  "pm.test(\"6 demo airports from the 3 replicas\", () => [\"CDG\",\"FNC\",\"LHR\",\"LIS\",\"MAD\",\"OPO\"].forEach(c => pm.expect(iatas).to.include(c)));",
+                  "pm.test(\"sorted by IATA\", () => pm.expect(iatas).to.eql([...iatas].sort()));",
+                  "pm.test(\"complete response (no X-Partial-Response)\", () => pm.expect(pm.response.headers.has(\"X-Partial-Response\")).to.eql(false));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "US108 — all airports from replica 3 (same answer)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{atccToken}}"
+              }
+            ],
+            "url": "{{ap3}}/api/airports"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "const iatas = pm.response.json().map(a => a.iataCode);",
+                  "pm.test(\"same airports\", () => [\"CDG\",\"FNC\",\"LHR\",\"LIS\",\"MAD\",\"OPO\"].forEach(c => pm.expect(iatas).to.include(c)));",
+                  "pm.test(\"complete response (no X-Partial-Response)\", () => pm.expect(pm.response.headers.has(\"X-Partial-Response\")).to.eql(false));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "US108 — search by country (filter applied in every replica)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{atccToken}}"
+              }
+            ],
+            "url": "{{ap2}}/api/airports?country=portugal"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "const iatas = pm.response.json().map(a => a.iataCode);",
+                  "pm.test(\"FNC (rep 3), LIS and OPO (rep 1)\", () => [\"FNC\",\"LIS\",\"OPO\"].forEach(c => pm.expect(iatas).to.include(c)));",
+                  "pm.test(\"no other country\", () => pm.response.json().forEach(a => pm.expect(a.country).to.eql(\"Portugal\")));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "US108 — search by name",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{atccToken}}"
+              }
+            ],
+            "url": "{{ap1}}/api/airports?name=heathrow"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "const iatas = pm.response.json().map(a => a.iataCode);",
+                  "pm.test(\"LHR\", () => pm.expect(iatas).to.eql([\"LHR\"]));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "US211 — grouped by country",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{atccToken}}"
+              }
+            ],
+            "url": "{{ap1}}/api/airports/grouped?by=country"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "const pt = pm.response.json().find(g => g.group === \"Portugal\");",
+                  "pm.test(\"Portugal groups airports of replicas 1 and 3\", () => pm.expect(pt.count).to.be.at.least(3));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "US211 — grouped by region",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{atccToken}}"
+              }
+            ],
+            "url": "{{ap3}}/api/airports/grouped?by=region"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Europe\", () => pm.expect(pm.response.json().map(g => g.group)).to.include(\"Europe\"));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "4. Comandos na réplica dona (US106, US106a, US109, US208)",
+      "item": [
+        {
+          "name": "US106 — register a new airport on replica 1",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{boToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{ap1}}/api/airports",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"iataCode\": \"{{newIata}}\",\n  \"name\": \"Test Airport\",\n  \"city\": \"Faro\",\n  \"country\": \"Portugal\",\n  \"region\": \"Europe\",\n  \"timezone\": \"Europe/Lisbon\",\n  \"latitude\": 37.0144,\n  \"longitude\": -7.9659,\n  \"runways\": [\n    {\n      \"name\": \"10/28\",\n      \"lengthMeters\": 2490,\n      \"orientation\": 100,\n      \"surface\": \"ASPHALT\"\n    }\n  ],\n  \"terminals\": 1,\n  \"gates\": 16,\n  \"services\": [\n    \"WIFI\"\n  ],\n  \"photoUrls\": [],\n  \"operationalHours\": \"05:00-24:00\",\n  \"contactEmail\": \"info@test.pt\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const letters = \"ABCDEFGHIJKLMNOPQRSTUVWXYZ\";",
+                  "pm.environment.set(\"newIata\", \"Q\" + letters[Math.floor(Math.random()*26)] + letters[Math.floor(Math.random()*26)]);",
+                  "pm.environment.set(\"newModel\", \"TEST-\" + Date.now());"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 201\", () => pm.response.to.have.status(201));",
+                  "pm.test(\"Location header\", () => pm.expect(pm.response.headers.get(\"Location\")).to.include(\"/api/airports/\"));",
+                  "pm.test(\"OPERATIONAL\", () => pm.expect(pm.response.json().status).to.eql(\"OPERATIONAL\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "US106 — new airport visible from replica 3",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{atccToken}}"
+              }
+            ],
+            "url": "{{ap3}}/api/airports/{{newIata}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "US106 — duplicate MAD on replica 1 (MAD is in replica 2) → 409",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{boToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{ap1}}/api/airports",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"iataCode\": \"MAD\",\n  \"name\": \"Duplicate\",\n  \"city\": \"Madrid\",\n  \"country\": \"Spain\",\n  \"timezone\": \"Europe/Madrid\",\n  \"latitude\": 40.47,\n  \"longitude\": -3.56,\n  \"runways\": [\n    {\n      \"name\": \"14L/32R\",\n      \"lengthMeters\": 3500,\n      \"orientation\": 140\n    }\n  ]\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 409\", () => pm.response.to.have.status(409));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "US106 — invalid input → 400",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{boToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{ap1}}/api/airports",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"iataCode\": \"MADRID\",\n  \"name\": \"\",\n  \"city\": \"Madrid\",\n  \"country\": \"Spain\",\n  \"timezone\": \"Europe/Madrid\",\n  \"latitude\": 140,\n  \"longitude\": -3.56,\n  \"runways\": []\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 400\", () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "US109 — status of MAD changed through replica 1 (owner: replica 2)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{boToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{ap1}}/api/airports/MAD/status",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"UNDER_MAINTENANCE\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"UNDER_MAINTENANCE\", () => pm.expect(pm.response.json().status).to.eql(\"UNDER_MAINTENANCE\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "US109 — change stored in the owner (replica 2)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{atccToken}}"
+              }
+            ],
+            "url": "{{ap2}}/api/airports/MAD"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"UNDER_MAINTENANCE\", () => pm.expect(pm.response.json().status).to.eql(\"UNDER_MAINTENANCE\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "US109 — MAD back to OPERATIONAL",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{boToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{ap3}}/api/airports/MAD/status",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"OPERATIONAL\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "US109 — unknown status → 400",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{boToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{ap1}}/api/airports/MAD/status",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"OPEN\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 400\", () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "US106a — certify a model on CDG through replica 3 (owner: replica 2)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{atccToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{ap3}}/api/airports/CDG/certifications",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"aircraftModel\": \"{{newModel}}\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 201\", () => pm.response.to.have.status(201));",
+                  "pm.test(\"certified\", () => pm.expect(pm.response.json().certifiedModels).to.include(pm.environment.get(\"newModel\")));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "US106a — same model again → 409 propagated from the owner",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{atccToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{ap1}}/api/airports/CDG/certifications",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"aircraftModel\": \"{{newModel}}\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 409\", () => pm.response.to.have.status(409));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "US208 — update details of CDG through replica 1",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{boToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{ap1}}/api/airports/CDG",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"gates\": 310,\n  \"contactPhone\": \"+33 1 70 36 39 50\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "const a = pm.response.json();",
+                  "pm.test(\"gates changed\", () => pm.expect(a.gates).to.eql(310));",
+                  "pm.test(\"other fields kept\", () => pm.expect(a.terminals).to.eql(3));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "5. Segurança",
+      "item": [
+        {
+          "name": "No token → 401",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{ap1}}/api/airports"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 401\", () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "ATCC cannot register airports (US106) → 403",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{atccToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{ap1}}/api/airports",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"iataCode\": \"QQQ\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 403\", () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Backoffice Operator cannot search (US108) → 403",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{boToken}}"
+              }
+            ],
+            "url": "{{ap1}}/api/airports"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 403\", () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "ATCC cannot see statistics (US210) → 403",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{atccToken}}"
+              }
+            ],
+            "url": "{{ap1}}/api/airports/statistics/busiest"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 403\", () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Peer request without service key → 401",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{atccToken}}"
+              },
+              {
+                "key": "X-Peer-Hops",
+                "value": "1"
+              }
+            ],
+            "url": "{{ap2}}/api/airports"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 401\", () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Peer request with wrong service key → 401",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{atccToken}}"
+              },
+              {
+                "key": "X-Peer-Hops",
+                "value": "1"
+              },
+              {
+                "key": "X-Service-Key",
+                "value": "wrong"
+              }
+            ],
+            "url": "{{ap2}}/api/airports"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 401\", () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "X-Peer-Hops above the maximum → 400",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{atccToken}}"
+              },
+              {
+                "key": "X-Peer-Hops",
+                "value": "2"
+              },
+              {
+                "key": "X-Service-Key",
+                "value": "{{serviceKey}}"
+              }
+            ],
+            "url": "{{ap2}}/api/airports"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 400\", () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Valid peer request → only the local data of replica 2",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{atccToken}}"
+              },
+              {
+                "key": "X-Peer-Hops",
+                "value": "1"
+              },
+              {
+                "key": "X-Service-Key",
+                "value": "{{serviceKey}}"
+              }
+            ],
+            "url": "{{ap2}}/api/airports"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "const iatas = pm.response.json().map(a => a.iataCode);",
+                  "pm.test(\"only MAD and CDG\", () => pm.expect(iatas).to.eql([\"CDG\",\"MAD\"]));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "6. Integração com o Flight Routes (US210)",
+      "item": [
+        {
+          "name": "US210 — busiest airports (Flight Routes demo must be running)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{boToken}}"
+              }
+            ],
+            "url": "{{ap1}}/api/airports/statistics/busiest?limit=3"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "const r = pm.response.json();",
+                  "pm.test(\"3 airports ranked\", () => { pm.expect(r.length).to.eql(3); pm.expect(r[0].rank).to.eql(1); });",
+                  "pm.test(\"top has 3 routes (LIS and MAD in the demo data)\", () => pm.expect(r[0].routeCount).to.eql(3));",
+                  "pm.test(\"details joined from the Airports replicas\", () => r.forEach(a => pm.expect(a.name).to.be.a(\"string\")));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "US210 — invalid limit → 400",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{boToken}}"
+              }
+            ],
+            "url": "{{ap1}}/api/airports/statistics/busiest?limit=0"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 400\", () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "7. Falha de uma réplica (PARAR a réplica 2 antes)",
+      "item": [
+        {
+          "name": "Aggregation without replica 2 → partial response",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{atccToken}}"
+              }
+            ],
+            "url": "{{ap1}}/api/airports"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "const iatas = pm.response.json().map(a => a.iataCode);",
+                  "pm.test(\"X-Partial-Response: true\", () => pm.expect(pm.response.headers.get(\"X-Partial-Response\")).to.eql(\"true\"));",
+                  "pm.test(\"data of replicas 1 and 3 still returned\", () => [\"OPO\",\"LIS\",\"LHR\",\"FNC\"].forEach(c => pm.expect(iatas).to.include(c)));",
+                  "pm.test(\"data of replica 2 missing\", () => pm.expect(iatas).to.not.include(\"MAD\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Local data still available",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{atccToken}}"
+              }
+            ],
+            "url": "{{ap1}}/api/airports/OPO"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Airport only in replica 2 → 404",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{atccToken}}"
+              }
+            ],
+            "url": "{{ap1}}/api/airports/MAD"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 404\", () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Health of replica 1 shows the peer down",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{ap1}}/actuator/health"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"health answers\", () => pm.expect(pm.response.code).to.be.oneOf([200, 503]));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,43 @@
+@startuml Airports-SD-BusiestAirports
+autonumber
+title Busiest airports by number of routes — GET /api/airports/statistics/busiest (US210, contract B5)
+actor "Backoffice Operator" as BO
+participant "airports-1\n: AirportController" as Ctrl
+participant ": AirportStatisticsService" as Service
+participant ": FlightRoutesClient" as Client
+participant ": ReplicatedServiceClient" as Rep
+participant "Flight Routes\n(any replica)" as FR
+participant ": AirportReplicaQueries" as Queries
+
+activate BO
+BO -> Ctrl : GET /api/airports/statistics/busiest?limit=3
+activate Ctrl
+Ctrl -> Service : busiestAirports(3)
+activate Service
+Service -> Client : routeCountsByAirport()
+activate Client
+Client -> Rep : call(GET /api/routes/statistics/count-by-airport)
+Rep -> FR : GET (round-robin; failover to the next replica)
+FR -> FR : sums the counts of ALL its replicas
+FR --> Rep : 200 {"LIS":3, "MAD":3, "OPO":2, "CDG":2, ...}
+Rep --> Client : Map<String, Long>
+deactivate Client
+note right of Rep
+  401/403 → same status.
+  No Flight Routes replica answers → 503.
+end note
+Service -> Service : sort by count desc, then IATA;\nkeep top 3
+loop for each IATA of the top 3
+    Service -> Queries : findByIata(iata)
+    Queries --> Service : AirportDTO (local or from a peer)
+end
+note right of Service
+  Lookup by IATA (allowed to Backoffice Operator),
+  not the US108 search (ATCC only): the user's JWT
+  is forwarded to the peers, which apply the same rules.
+end note
+Service --> Ctrl : [rank 1 LIS 3, rank 2 MAD 3, rank 3 CDG 2]
+deactivate Service
+Ctrl --> BO : 200 List<BusiestAirportDTO>
+deactivate Ctrl
+@enduml

@@ -1,0 +1,109 @@
+@startuml Airports-CD
+!pragma layout smetana
+skinparam classAttributeIconSize 0
+hide empty members
+
+package controllers {
+    class AirportController {
+        + register(CreateAirportDTO)
+        + getByIata(String)
+        + search(city, country, name)
+        + busiestAirports(limit)
+        + groupAirports(by)
+        + addCertification(String, AddCertificationDTO)
+        + changeStatus(String, UpdateAirportStatusDTO)
+        + updateDetails(String, UpdateAirportDetailsDTO)
+    }
+}
+
+package services {
+    class RegisterAirportService {
+        + register(CreateAirportDTO) : Airport
+    }
+    class SearchAirportsService {
+        + getByIata(String) : AirportDTO
+        + search(city, country, name) : List<AirportDTO>
+    }
+    class UpdateAirportService {
+        + addCertification(...) : AirportDTO
+        + changeStatus(...) : AirportDTO
+        + updateDetails(...) : AirportDTO
+        - onOwner(iata, method, subPath, body, change)
+    }
+    class AirportStatisticsService {
+        + busiestAirports(Integer) : List<BusiestAirportDTO>
+    }
+    class GroupAirportsService {
+        + groupBy(String) : List<AirportGroupDTO>
+    }
+    class AirportReplicaQueries {
+        + findByIata(String) : Optional<AirportDTO>
+        + withPeers(List<Airport>, String) : List<AirportDTO>
+    }
+}
+
+package factories {
+    class AirportFactory {
+        + create(CreateAirportDTO) : Airport
+    }
+}
+
+package assemblers {
+    class AirportAssembler {
+        + toDTO(Airport) : AirportDTO
+    }
+}
+
+package repositories {
+    interface AirportRepository {
+        + search(city, country, namePattern)
+        + findById(String)
+    }
+}
+
+package clients {
+    class FlightRoutesClient {
+        + routeCountsByAirport() : Map<String, Long>
+    }
+}
+
+package "common (library)" {
+    class PeerClient {
+        + findFirst(uri, type)
+        + collectList(uri, type)
+        + forwardToOwner(method, uri, body, type)
+    }
+    class ReplicatedServiceClient {
+        + call(request)
+    }
+}
+
+package domain {
+    class Airport <<Root>>
+}
+
+AirportController --> RegisterAirportService
+AirportController --> SearchAirportsService
+AirportController --> UpdateAirportService
+AirportController --> AirportStatisticsService
+AirportController --> GroupAirportsService
+AirportController --> AirportAssembler
+
+RegisterAirportService --> AirportReplicaQueries : IATA unique?
+RegisterAirportService --> AirportFactory
+RegisterAirportService --> AirportRepository
+SearchAirportsService --> AirportReplicaQueries
+SearchAirportsService --> AirportRepository
+GroupAirportsService --> SearchAirportsService
+AirportStatisticsService --> FlightRoutesClient
+AirportStatisticsService --> AirportReplicaQueries
+UpdateAirportService --> AirportRepository
+UpdateAirportService --> PeerClient : forwardToOwner
+UpdateAirportService --> AirportAssembler
+AirportReplicaQueries --> AirportRepository
+AirportReplicaQueries --> PeerClient
+AirportReplicaQueries --> AirportAssembler
+FlightRoutesClient --> ReplicatedServiceClient
+AirportFactory ..> Airport : creates
+AirportRepository ..> Airport
+@enduml

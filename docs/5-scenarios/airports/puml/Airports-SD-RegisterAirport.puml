@@ -1,0 +1,56 @@
+@startuml Airports-SD-RegisterAirport
+autonumber
+title Register airport — POST /api/airports (US106 / US207)
+actor "Backoffice Operator" as BO
+participant "airports-1\n: AirportController" as Ctrl
+participant ": RegisterAirportService" as Service
+participant ": AirportReplicaQueries" as Queries
+participant ": PeerClient" as Peers
+participant "airports-2 / airports-3" as Others
+participant ": AirportFactory" as Factory
+participant ": Airport" as Airport
+participant "airportRepo (H2 #1)" as Repo
+participant ": AirportAssembler" as Asm
+
+activate BO
+BO -> Ctrl : POST /api/airports {CreateAirportDTO}
+activate Ctrl
+Ctrl -> Ctrl : @Valid (IATA 3 letters, coordinates range,\nat least one runway, email...) → 400
+Ctrl -> Service : register(dto)
+activate Service
+Service -> Queries : findByIata(iata)
+activate Queries
+Queries -> Repo : findById(iata)
+Repo --> Queries : empty
+Queries -> Peers : findFirst("/api/airports/{iata}")
+Peers -> Others : GET (parallel, X-Peer-Hops: 1)
+Others --> Peers : 404 / 404
+Peers --> Queries : empty
+Queries --> Service : empty
+deactivate Queries
+note right of Service
+  Found in any replica → 409.
+  A peer that does not answer is ignored (AP):
+  under a partition a duplicate IATA is possible.
+end note
+Service -> Factory : create(dto)
+activate Factory
+Factory -> Airport ** : new Airport(iata, ..., Coordinates, Runways)
+note right of Airport
+  Invariants: IATA normalised, valid IANA timezone,
+  >= 1 runway, unique runway names; status OPERATIONAL
+end note
+Factory -> Airport : describeFacilities(...) (US207)
+Factory -> Airport : updateContactDetails(...)
+Factory --> Service : airport
+deactivate Factory
+Service -> Repo : save(airport)
+note right of Repo : stored in THIS replica\n(it becomes the owner)
+Repo --> Service : airport
+Service --> Ctrl : airport
+deactivate Service
+Ctrl -> Asm : toDTO(airport)
+Asm --> Ctrl : AirportDTO
+Ctrl --> BO : 201 Created\nLocation: /api/airports/{iata}
+deactivate Ctrl
+@enduml

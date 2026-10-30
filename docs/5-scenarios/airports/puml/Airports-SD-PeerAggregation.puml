@@ -1,0 +1,54 @@
+@startuml Airports-SD-PeerAggregation
+autonumber
+title Response aggregation with a failed replica — GET /api/airports?country=Portugal (US108; same for US211)
+actor "ATCC" as ATCC
+participant "airports-1\n: AirportController" as Ctrl
+participant ": SearchAirportsService" as Service
+participant ": AirportReplicaQueries" as Queries
+participant "airportRepo (H2 #1)" as Repo
+participant ": PeerClient" as Peers
+participant ": ResilientExecutor\n+ CircuitBreaker" as Res
+participant "airports-2\n(down)" as R2
+participant "airports-3" as R3
+
+activate ATCC
+ATCC -> Ctrl : GET /api/airports?country=Portugal
+activate Ctrl
+Ctrl -> Service : search(null, "Portugal", null)
+activate Service
+Service -> Repo : search(null, "portugal", null)
+Repo --> Service : [OPO, LIS]
+Service -> Queries : withPeers(local, "/api/airports?country=Portugal")
+activate Queries
+Queries -> Peers : collectList(uri)
+activate Peers
+par
+    Peers -> Res : execute(R2, GET)
+    Res -> R2 : GET (X-Peer-Hops: 1)
+    R2 --> Res : connection refused / timeout
+    Res -> Res : retry with exponential backoff\n(100 ms, 200 ms)
+    Res -> Res : recordFailure()\n(3 failures → circuit OPEN:\nR2 is skipped for 10 s)
+    Res --> Peers : failure
+else
+    Peers -> Res : execute(R3, GET)
+    Res -> R3 : GET (X-Peer-Hops: 1)
+    R3 --> Res : 200 [FNC]
+    Res --> Peers : [FNC]
+end
+Peers -> Peers : response header\nX-Partial-Response: true\nX-Unavailable-Peers: 1
+Peers --> Queries : [FNC]
+deactivate Peers
+Queries -> Queries : merge by IATA (local copy wins)\nsort by IATA
+Queries --> Service : [FNC, LIS, OPO]
+deactivate Queries
+Service --> Ctrl : List<AirportDTO>
+deactivate Service
+Ctrl --> ATCC : 200 OK + X-Partial-Response: true
+deactivate Ctrl
+
+note over ATCC, R3
+  Availability + Partition tolerance (CAP): the replica answers with the data it can reach
+  instead of failing; the client is told the result may be incomplete.
+  US211 groups only AFTER this merge — a country can have airports in different replicas.
+end note
+@enduml

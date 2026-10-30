@@ -16,7 +16,7 @@ The architecture is documented with the **C4 model** (Simon Brown) plus a fifth 
 |---|---|---|---|---|
 | Aircraft Management (WP#1) | TBD | [Components](3-components/aircraftmanagement/AircraftManagement-Components.md) | [Code](4-code/aircraftmanagement/AircraftManagement-Code.md) | [Scenarios](5-scenarios/aircraftmanagement/AircraftManagement-Scenarios.md) |
 | Maintenance (WP#4) | TBD | [Components](3-components/maintenance/Maintenance-Components.md) | [Code](4-code/maintenance/Maintenance-Code.md) | [Scenarios](5-scenarios/maintenance/Maintenance-Scenarios.md) |
-| Airports (WP#2) | TBD | [Components](3-components/airports/Airports-Components.md) | [Code](4-code/airports/Airports-Code.md) | [Scenarios](5-scenarios/airports/Airports-Scenarios.md) |
+| **Airports (WP#2)** | complete | [Components](3-components/airports/Airports-Components.md) | [Code](4-code/airports/Airports-Code.md) | [Scenarios](5-scenarios/airports/Airports-Scenarios.md) |
 | **Flight Routes (WP#3)** | complete | [Components](3-components/flightroutes/FlightRoutes-Components.md) | [Code](4-code/flightroutes/FlightRoutes-Code.md) | [Scenarios](5-scenarios/flightroutes/FlightRoutes-Scenarios.md) |
 | *common library* (shared) | — | [Components](3-components/common/Common-Components.md) | [Code](4-code/common/Common-Code.md) | (exercised by every scenario) |
 

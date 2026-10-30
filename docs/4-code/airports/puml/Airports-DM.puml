@@ -1,0 +1,70 @@
+@startuml Airports-DM
+!pragma layout smetana
+skinparam packageStyle rectangle
+skinparam classAttributeIconSize 0
+hide empty members
+
+package "Airport Aggregate" {
+    class Airport <<Entity>> <<Root>> {
+        - iataCode : String  {id}
+        - name : String
+        - city : String
+        - country : String
+        - region : String [0..1]
+        - timezone : String (IANA)
+        - terminals : Integer [0..1]
+        - gates : Integer [0..1]
+        - services : Set<String>
+        - photoUrls : List<String>
+        - certifiedModels : Set<String>
+        - operationalHours : String [0..1]
+        - contactEmail : String [0..1]
+        - contactPhone : String [0..1]
+        - version : Long
+        --
+        + describeFacilities(...)
+        + updateContactDetails(...)
+        + updateDetails(...)
+        + changeStatus(AirportStatus)
+        + certifyModel(String)
+        + isCertifiedFor(String) : boolean
+        + isOperational() : boolean
+    }
+    class Coordinates <<Value Object>> {
+        - latitude : double  [-90, 90]
+        - longitude : double [-180, 180]
+    }
+    class Runway <<Value Object>> {
+        - name : String
+        - lengthMeters : int  [> 0]
+        - orientation : int  [0, 359]
+        - surface : String [0..1]
+    }
+    enum AirportStatus <<Value Object>> {
+        OPERATIONAL
+        CLOSED
+        UNDER_MAINTENANCE
+    }
+    class IataCode <<Value Object>> {
+        + {static} normalize(String) : String
+        .. exactly 3 letters, upper case ..
+    }
+}
+
+Airport *-- "1" Coordinates
+Airport *-- "1..*" Runway
+Airport --> "1" AirportStatus
+Airport ..> IataCode : identity
+
+class "Aircraft model\n(Aircraft Management)" as Model <<external>>
+class "FlightRoute\n(Flight Routes)" as Route <<external>>
+
+Airport ..> Model : certifiedModels\n(by name)
+Route ..> Airport : origin / destination\n(by IATA code)
+
+note bottom of Airport
+  Stored in the replica that registered it (owner replica).
+  Changes are executed only by the owner; @Version detects
+  concurrent changes inside it (409).
+end note
+@enduml

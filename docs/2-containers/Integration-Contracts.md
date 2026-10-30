@@ -155,12 +155,12 @@ Source: `COMMON/config/AisafeProperties.java`, `COMMON/resilience/ResilientExecu
 |---|---|---|---|---|
 | B1a | Flight Routes → Aircraft Management | Aircraft status, capacity and model (US212, US213) | `GET /api/aircrafts/{registrationNumber}` | `CONSUMER-ONLY` |
 | B1b | Flight Routes → Aircraft Management | Maximum range of the aircraft model (US212) | `GET /api/aircraft-models/{modelName}` | `CONSUMER-ONLY` |
-| B2 | Flight Routes → Airports | Coordinates, existence, operational status (US110, US209, US212, US216) | `GET /api/airports/{iataCode}` | `CONSUMER-ONLY` |
+| B2 | Flight Routes → Airports | Coordinates, existence, operational status (US110, US209, US212, US216) | `GET /api/airports/{iataCode}` | `IMPLEMENTED` |
 | B3a | Maintenance → Aircraft Management | Aircraft exists and its model, for template applicability (US115) | reuse B1a (`GET /api/aircrafts/{registrationNumber}`) | `IMPLEMENTED (consumer only)`; provider = B1a |
 | B3b | Maintenance → Aircraft Management | Set the status to `UNDER_MAINTENANCE` / back to available (US115, US119) | `PATCH /api/aircrafts/{registrationNumber}/status` (US105) | `IMPLEMENTED (consumer only)`; provider = `PROPOSED` |
 | B4a | Aircraft Management → Flight Routes | Total operational hours per aircraft (US206) | `GET /api/scheduled-flights/operational-hours` | `IMPLEMENTED (provider only)` |
 | B4b | Aircraft Management → Flight Routes | Flight minutes per aircraft, to rank models (US204) | `GET /api/scheduled-flights/statistics/minutes-by-aircraft` | `IMPLEMENTED (provider only)`, if "utilisation" means flight time (Q5) |
-| B5 | Airports → Flight Routes | Number of routes per airport (US210) | `GET /api/routes/statistics/count-by-airport` | `IMPLEMENTED (provider only)` |
+| B5 | Airports → Flight Routes | Number of routes per airport (US210) | `GET /api/routes/statistics/count-by-airport` | `IMPLEMENTED` |
 | B6 | Aircraft Management → Flight Routes | Active routes compatible with an aircraft (US203) | `GET /api/routes/compatible?range=&capacity=` | `IMPLEMENTED (provider only)` |
 
 **Design rule:** Aircraft Management's aircraft `status` is the **single source of truth for availability**. Maintenance changes it through B3b. **Flight Routes never calls Maintenance**; it only reads the status through B1a.
@@ -234,9 +234,9 @@ US212 then applies its own rules to the data:
 
 ---
 
-### B2: Flight Routes → Airports (`CONSUMER-ONLY`)
+### B2: Flight Routes → Airports (`IMPLEMENTED`)
 
-**Consumer:** `AirportClient` (Flight Routes). **Provider:** Airports.
+**Consumer:** `AirportClient` (Flight Routes). **Provider:** Airports — `AirportController.getByIata` (US107), any replica, case-insensitive IATA.
 
 **Use cases that trigger the call:**
 
@@ -394,12 +394,12 @@ Flight Routes only knows **registrations**, not models. Aircraft Management ther
 
 ---
 
-### B5: Airports → Flight Routes (route counts per airport), `IMPLEMENTED (provider only)`
+### B5: Airports → Flight Routes (route counts per airport), `IMPLEMENTED`
 
-**Consumer:** Airports (to be written). **Provider:** Flight Routes. **Use case:** US210, busiest airports by number of routes.
+**Consumer:** Airports — `FlightRoutesClient`, used by `AirportStatisticsService`. **Provider:** Flight Routes. **Use case:** US210, busiest airports by number of routes.
 
 **Who owns which endpoint:**
-- **Airports owns the user-facing endpoint** `GET /api/airports/statistics/busiest` (US210). That endpoint does not exist yet; it is only mentioned in a comment in `FlightRoutesAuthorizationRules`.
+- **Airports owns the user-facing endpoint** `GET /api/airports/statistics/busiest` (US210). Implemented by `AirportController.busiestAirports` (`?limit=`, 1–100, default 5).
 - **Flight Routes only provides the raw counts.** Ranking, the top-N cut and the airport details are Airports' job.
 
 #### `GET /api/routes/statistics/count-by-airport`
@@ -503,7 +503,7 @@ Every service runs 3 replicas, and **each replica has its own database**. Data i
 ## 7. Open decisions (need group agreement)
 
 - **Q1.** After maintenance (US119), should the aircraft go back to **`AVAILABLE`** (the value Flight Routes requires to schedule flights) or to `ACTIVE`? This document assumes `AVAILABLE`. Choosing `ACTIVE` would require a code change in Flight Routes.
-- **Q2.** What are the airport status values besides `OPERATIONAL`? Flight Routes treats any other value as "not operational".
+- **Q2.** ~~What are the airport status values besides `OPERATIONAL`?~~ **Decided (Airports):** `OPERATIONAL`, `CLOSED`, `UNDER_MAINTENANCE` (US109). Flight Routes treats any value other than `OPERATIONAL` as "not operational".
 - **Q3.** US106a: should US212 check that the destination/origin airport is **certified for the aircraft model**? If so, B2 needs a certifications field (proposed: `certifiedModels: string[]`) and Flight Routes needs a code change.
 - **Q4.** Which **roles** perform US204, US206 (Aircraft Management), US115/US119 (Maintenance) and US210 (Airports)? Flight Routes currently allows only `ATCC` on `/api/scheduled-flights/**` (B4) and only `BACKOFFICE_OPERATOR` on count-by-airport (B5). Providers must allow `ATCC` on B1/B2.
 - **Q5.** US204: is "most utilised" measured by **flight time** (B4b, implemented) or by **number of flights** (needs `flights-by-aircraft`, proposed)?

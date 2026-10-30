@@ -1,0 +1,38 @@
+@startuml Airports-SSD
+title Airports — System Sequence Diagram ("System" = any of the 3 replicas)
+actor "Backoffice Operator" as BO
+actor "ATCC" as ATCC
+participant "Airports Service" as SYS
+
+== US106 / US207 — register an airport ==
+BO -> SYS : POST /api/airports {iataCode, name, city, country, region, timezone,\nlatitude, longitude, runways[], terminals, gates, services, photoUrls, ...}
+SYS --> BO : 201 Created + Location + AirportDTO (status OPERATIONAL)
+
+== US107 — airport details ==
+ATCC -> SYS : GET /api/airports/{iata}
+SYS --> ATCC : 200 AirportDTO | 404 | 400 (invalid IATA)
+
+== US108 — search ==
+ATCC -> SYS : GET /api/airports?city=&country=&name=
+SYS --> ATCC : 200 List<AirportDTO> (all replicas)
+
+== US106a — certify an aircraft model ==
+BO -> SYS : POST /api/airports/{iata}/certifications {aircraftModel}
+SYS --> BO : 201 AirportDTO | 409 (already certified)
+
+== US109 — operational status ==
+BO -> SYS : PATCH /api/airports/{iata}/status {status}
+SYS --> BO : 200 AirportDTO | 400 (unknown status)
+
+== US208 — details (hours, contacts, facilities) ==
+BO -> SYS : PATCH /api/airports/{iata} {operationalHours?, contactEmail?, gates?, ...}
+SYS --> BO : 200 AirportDTO
+
+== US210 — busiest airports ==
+BO -> SYS : GET /api/airports/statistics/busiest?limit=5
+SYS --> BO : 200 List<BusiestAirportDTO> {rank, iataCode, name, city, country, routeCount}
+
+== US211 — grouped ==
+ATCC -> SYS : GET /api/airports/grouped?by=country|region
+SYS --> ATCC : 200 List<AirportGroupDTO> {group, count, airports[]}
+@enduml
