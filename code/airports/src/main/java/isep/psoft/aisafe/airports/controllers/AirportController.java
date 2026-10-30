@@ -2,16 +2,22 @@ package isep.psoft.aisafe.airports.controllers;
 
 import isep.psoft.aisafe.airports.assemblers.AirportAssembler;
 import isep.psoft.aisafe.airports.domain.Airport;
+import isep.psoft.aisafe.airports.dto.AddCertificationDTO;
 import isep.psoft.aisafe.airports.dto.AirportDTO;
 import isep.psoft.aisafe.airports.dto.CreateAirportDTO;
+import isep.psoft.aisafe.airports.dto.UpdateAirportDetailsDTO;
+import isep.psoft.aisafe.airports.dto.UpdateAirportStatusDTO;
 import isep.psoft.aisafe.airports.services.RegisterAirportService;
 import isep.psoft.aisafe.airports.services.SearchAirportsService;
+import isep.psoft.aisafe.airports.services.UpdateAirportService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -37,6 +43,7 @@ public class AirportController {
 
     private final RegisterAirportService registerService;
     private final SearchAirportsService searchService;
+    private final UpdateAirportService updateService;
     private final AirportAssembler assembler;
 
     // US106 / US207: registar aeroporto (fica guardado nesta réplica)
@@ -64,5 +71,32 @@ public class AirportController {
             @RequestParam(required = false) String country,
             @RequestParam(required = false) String name) {
         return ResponseEntity.ok(searchService.search(city, country, name));
+    }
+
+    // US106a: certificar um modelo de aeronave no aeroporto (executado na réplica dona)
+    @PostMapping("/{iataCode}/certifications")
+    @Operation(summary = "US106a — Certify an aircraft model to fly to/from the airport (forwarded to the owner replica)")
+    public ResponseEntity<AirportDTO> addCertification(
+            @PathVariable String iataCode,
+            @Valid @RequestBody AddCertificationDTO dto) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(updateService.addCertification(iataCode, dto));
+    }
+
+    // US109: alterar o estado operacional (executado na réplica dona)
+    @PatchMapping("/{iataCode}/status")
+    @Operation(summary = "US109 — Update the operational status (OPERATIONAL, CLOSED, UNDER_MAINTENANCE)")
+    public ResponseEntity<AirportDTO> changeStatus(
+            @PathVariable String iataCode,
+            @Valid @RequestBody UpdateAirportStatusDTO dto) {
+        return ResponseEntity.ok(updateService.changeStatus(iataCode, dto));
+    }
+
+    // US208: atualizar horário, contactos e instalações (parcial; executado na réplica dona)
+    @PatchMapping("/{iataCode}")
+    @Operation(summary = "US208 — Update airport details: operational hours, contacts and facilities")
+    public ResponseEntity<AirportDTO> updateDetails(
+            @PathVariable String iataCode,
+            @Valid @RequestBody UpdateAirportDetailsDTO dto) {
+        return ResponseEntity.ok(updateService.updateDetails(iataCode, dto));
     }
 }

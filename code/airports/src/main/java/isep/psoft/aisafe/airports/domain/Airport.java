@@ -162,6 +162,47 @@ public class Airport {
         }
     }
 
+    /**
+     * US208 — atualização parcial dos detalhes: horário, contactos e instalações.
+     * Cada parâmetro a null = atributo não alterado; uma lista/conjunto vazio limpa o atributo.
+     */
+    public void updateDetails(String operationalHours, String contactEmail, String contactPhone,
+                              Integer terminals, Integer gates, Set<String> services, List<String> photoUrls) {
+        updateContactDetails(operationalHours, contactEmail, contactPhone);
+        describeFacilities(
+                terminals != null ? terminals : this.terminals,
+                gates != null ? gates : this.gates,
+                services != null ? services : new LinkedHashSet<>(this.services),
+                photoUrls != null ? photoUrls : new ArrayList<>(this.photoUrls));
+    }
+
+    /** US109 — mudar o estado operacional (operational, closed, under maintenance). */
+    public void changeStatus(AirportStatus newStatus) {
+        if (newStatus == null) {
+            throw new IllegalArgumentException("Airport status is required.");
+        }
+        this.status = newStatus;
+    }
+
+    /**
+     * US106a — certificar um modelo de aeronave para operar neste aeroporto.
+     * O modelo é referenciado pelo nome (identidade no Aircraft Management), tal como o IATA é
+     * referenciado pelos outros serviços. Certificar o mesmo modelo duas vezes → 409.
+     */
+    public void certifyModel(String aircraftModel) {
+        String model = required(aircraftModel, "Aircraft model");
+        boolean alreadyCertified = certifiedModels.stream().anyMatch(m -> m.equalsIgnoreCase(model));
+        if (alreadyCertified) {
+            throw new IllegalStateException("Aircraft model " + model + " is already certified for airport " + iataCode + ".");
+        }
+        certifiedModels.add(model);
+    }
+
+    public boolean isCertifiedFor(String aircraftModel) {
+        return aircraftModel != null
+                && certifiedModels.stream().anyMatch(m -> m.equalsIgnoreCase(aircraftModel.trim()));
+    }
+
     public boolean isOperational() {
         return status == AirportStatus.OPERATIONAL;
     }
