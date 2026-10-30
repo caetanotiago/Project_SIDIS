@@ -2,6 +2,7 @@ package isep.sidis.common.peers;
 
 import isep.sidis.common.http.AisafeHeaders;
 import isep.sidis.common.http.OutboundHeaders;
+import isep.sidis.common.remote.RemoteServiceUnavailableException;
 import isep.sidis.common.resilience.ResilientExecutor;
 import jakarta.servlet.http.HttpServletResponse;
 import org.slf4j.Logger;
@@ -47,8 +48,10 @@ import java.util.function.Supplier;
  * seus dados locais e não volta a encaminhar (sem forwarding circular). Levam também o JWT do
  * utilizador (mesmo controlo de acessos), o correlation id e a {@code X-Service-Key}.
  *
- * <p>Se algum peer não responder, a resposta ao cliente leva {@code X-Partial-Response: true}
- * (Availability + Partition tolerance: responde-se com o que se tem, em vez de falhar).
+ * <p>Queries agregadas respondem com os dados disponíveis e assinalam peers indisponíveis com
+ * {@code X-Partial-Response: true}. Commands to an owner fail with 503 when no peer is reachable.
+ *
+ * @author Diogo Fernandes - 1240632
  */
 public class PeerClient implements AutoCloseable {
 
@@ -191,6 +194,7 @@ public class PeerClient implements AutoCloseable {
         log.info("Not found locally: forwarding {} {} to the owner replica", method, uri);
         Map<String, String> headers = peerHeaders();
         int failed = 0;
+        RuntimeException lastFailure = null;
 
         for (String peer : peers) {
             try {
@@ -205,11 +209,15 @@ public class PeerClient implements AutoCloseable {
                 throw new ResponseStatusException(HttpStatus.valueOf(e.getStatusCode().value()), errorMessage(e), e);
             } catch (RuntimeException e) {
                 failed++;
+                lastFailure = e;
                 log.warn("Peer {} did not answer {} {}: {}", peer, method, uri, rootMessage(e));
             }
         }
         if (failed > 0) {
             markPartial(failed);
+            if (failed == peers.size()) {
+                throw new RemoteServiceUnavailableException("Peer replicas", lastFailure);
+            }
         }
         return Optional.empty();
     }

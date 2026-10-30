@@ -17,7 +17,7 @@ Every statement about existing code was taken from the code and has a **Source**
 | `CONSUMER-ONLY` | The consumer exists in code; the **provider must implement exactly this contract**. |
 | `PROPOSED` | Agreed design; nothing implemented on either side. |
 
-Requirements that come only from the work order or the assignment (US105, US106a, US115, US119, US204) are labelled *(from the assignment, not in code)*.
+Requirements that originate in the work order or assignment (US105, US106a, US115, US119, US204) are identified as assignment requirements; bridge status indicates which consumer/provider sides are implemented.
 
 ---
 
@@ -156,8 +156,8 @@ Source: `COMMON/config/AisafeProperties.java`, `COMMON/resilience/ResilientExecu
 | B1a | Flight Routes → Aircraft Management | Aircraft status, capacity and model (US212, US213) | `GET /api/aircrafts/{registrationNumber}` | `CONSUMER-ONLY` |
 | B1b | Flight Routes → Aircraft Management | Maximum range of the aircraft model (US212) | `GET /api/aircraft-models/{modelName}` | `CONSUMER-ONLY` |
 | B2 | Flight Routes → Airports | Coordinates, existence, operational status (US110, US209, US212, US216) | `GET /api/airports/{iataCode}` | `CONSUMER-ONLY` |
-| B3a | Maintenance → Aircraft Management | Aircraft exists and its model, for template applicability (US115) | reuse B1a (`GET /api/aircrafts/{registrationNumber}`) | `PROPOSED` (consumer); provider = B1a |
-| B3b | Maintenance → Aircraft Management | Set the status to `UNDER_MAINTENANCE` / back to available (US115, US119) | `PATCH /api/aircrafts/{registrationNumber}/status` (US105) | `PROPOSED` |
+| B3a | Maintenance → Aircraft Management | Aircraft exists and its model, for template applicability (US115) | reuse B1a (`GET /api/aircrafts/{registrationNumber}`) | `IMPLEMENTED (consumer only)`; provider = B1a |
+| B3b | Maintenance → Aircraft Management | Set the status to `UNDER_MAINTENANCE` / back to available (US115, US119) | `PATCH /api/aircrafts/{registrationNumber}/status` (US105) | `IMPLEMENTED (consumer only)`; provider = `PROPOSED` |
 | B4a | Aircraft Management → Flight Routes | Total operational hours per aircraft (US206) | `GET /api/scheduled-flights/operational-hours` | `IMPLEMENTED (provider only)` |
 | B4b | Aircraft Management → Flight Routes | Flight minutes per aircraft, to rank models (US204) | `GET /api/scheduled-flights/statistics/minutes-by-aircraft` | `IMPLEMENTED (provider only)`, if "utilisation" means flight time (Q5) |
 | B5 | Airports → Flight Routes | Number of routes per airport (US210) | `GET /api/routes/statistics/count-by-airport` | `IMPLEMENTED (provider only)` |
@@ -287,9 +287,9 @@ US212 then answers **409** `"Origin airport <IATA> is not operational."` (or Des
 
 ---
 
-### B3: Maintenance → Aircraft Management (`PROPOSED`)
+### B3: Maintenance → Aircraft Management (consumer implemented; B3b provider proposed)
 
-**Consumer:** Maintenance (to be written). **Provider:** Aircraft Management (to be written).
+**Consumer:** Maintenance (`code/maintenance/.../maintenance/clients/AircraftClient.java`). **Provider:** Aircraft Management (B3a reuses B1a; the B3b status-update endpoint remains to be implemented).
 
 **Use cases** *(from the assignment, not in code)*:
 - US115: start a maintenance record.

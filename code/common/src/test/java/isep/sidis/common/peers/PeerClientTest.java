@@ -3,6 +3,7 @@ package isep.sidis.common.peers;
 import com.sun.net.httpserver.HttpServer;
 import isep.sidis.common.http.AisafeHeaders;
 import isep.sidis.common.http.OutboundHeaders;
+import isep.sidis.common.remote.RemoteServiceUnavailableException;
 import isep.sidis.common.resilience.CircuitBreakerRegistry;
 import isep.sidis.common.resilience.ResilientExecutor;
 import org.junit.jupiter.api.AfterEach;
@@ -35,6 +36,8 @@ import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * Testa o encaminhamento peer-to-peer contra servidores HTTP reais (réplicas falsas).
+ *
+ * @author Diogo Fernandes - 1240632
  */
 class PeerClientTest {
 
@@ -176,6 +179,19 @@ class PeerClientTest {
 
         assertEquals(409, ex.getStatusCode().value());
         assertEquals("Route is already INACTIVE.", ex.getReason());
+    }
+
+    @Test
+    void forwardToOwnerReportsServiceUnavailableWhenAllPeersAreDown() throws IOException {
+        String down1 = deadPeer();
+        String down2 = deadPeer();
+        MockHttpServletResponse response = bindRequest(null);
+
+        assertThrows(RemoteServiceUnavailableException.class, () -> client(List.of(down1, down2))
+                .forwardToOwner(HttpMethod.PATCH, "/api/routes/r1", Map.of("status", "INACTIVE"), Map.class));
+
+        assertEquals("true", response.getHeader(AisafeHeaders.PARTIAL_RESPONSE));
+        assertEquals("2", response.getHeader(AisafeHeaders.UNAVAILABLE_PEERS));
     }
 
     private static MockHttpServletResponse bindRequest(String hops) {

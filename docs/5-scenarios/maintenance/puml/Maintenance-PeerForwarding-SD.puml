@@ -1,0 +1,19 @@
+@startuml Maintenance-PeerForwarding-SD
+title Maintenance — Peer Forwarding
+
+actor "Técnico" as Ator
+participant "Réplica 1" as Replica1
+participant "Réplica 2" as Replica2
+
+Ator -> Replica1: PATCH /api/maintenance/{id}/complete
+activate Replica1
+Replica1 -> Replica1: Procurar registo na BD local
+Replica1 -> Replica2: PATCH /api/maintenance/{id}/complete\nX-Service-Key + X-Peer-Hops: 1
+activate Replica2
+Replica2 -> Replica2: Atualizar registo na BD local
+Replica2 --> Replica1: 200 OK
+deactivate Replica2
+Replica1 --> Ator: 200 OK
+deactivate Replica1
+
+@enduml

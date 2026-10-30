@@ -1,0 +1,134 @@
+{
+  "info": {
+    "_postman_id": "88ec48fc-5d5a-4573-9d4c-9c2ca7003cd2",
+    "name": "Maintenance Service",
+    "description": "Testa o agendamento, a conclusão e o histórico de manutenções. Requer um JWT válido na variável jwt_token e uma aeronave CS-TST existente no Aircraft Management. O pedido de agendamento guarda automaticamente o id para os pedidos seguintes.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{jwt_token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "item": [
+    {
+      "name": "Agendar Manutenção",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"aircraftRegistration\": \"CS-TST\",\n  \"scheduledDate\": \"2027-01-01\",\n  \"serviceType\": \"Routine Inspection\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": "{{baseUrl}}/api/maintenance"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"Maintenance was created\", function () {",
+              "    pm.response.to.have.status(201);",
+              "    const maintenance = pm.response.json();",
+              "    pm.expect(maintenance.id).to.be.ok;",
+              "    pm.expect(maintenance.status).to.eql(\"SCHEDULED\");",
+              "    pm.collectionVariables.set(\"maintenance_id\", maintenance.id);",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Concluir Intervenção",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"completionDate\": \"2027-01-02\",\n  \"report\": {\n    \"text\": \"Routine inspection completed; no defects found.\"\n  }\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": "{{baseUrl}}/api/maintenance/{{maintenance_id}}/complete"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"Maintenance was completed\", function () {",
+              "    pm.response.to.have.status(200);",
+              "    pm.expect(pm.response.json().status).to.eql(\"COMPLETED\");",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Consultar Histórico",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/api/maintenance/aircraft/CS-TST"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"Maintenance history was returned\", function () {",
+              "    pm.response.to.have.status(200);",
+              "    pm.expect(pm.response.json()).to.be.an(\"array\");",
+              "});"
+            ]
+          }
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8082",
+      "type": "string"
+    },
+    {
+      "key": "jwt_token",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "maintenance_id",
+      "value": "",
+      "type": "string"
+    }
+  ]
+}

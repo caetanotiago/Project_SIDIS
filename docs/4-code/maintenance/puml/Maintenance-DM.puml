@@ -1,0 +1,35 @@
+@startuml Maintenance-DM
+title Maintenance — Domain Model (C4 Level 4)
+
+skinparam classAttributeIconSize 0
+
+class Maintenance <<Aggregate Root>> {
+    - id: UUID
+    - aircraftRegistration: String
+    - scheduledDate: LocalDate
+    - completionDate: LocalDate
+    - serviceType: String
+    - status: MaintenanceStatus
+    - report: MaintenanceReport
+    --
+    + Maintenance(aircraftRegistration: String, scheduledDate: LocalDate, serviceType: String)
+    + complete(report: MaintenanceReport, date: LocalDate): void
+}
+
+enum MaintenanceStatus {
+    SCHEDULED
+    IN_PROGRESS
+    COMPLETED
+    CANCELLED
+}
+
+class MaintenanceReport <<Value Object>> {
+    - text: String
+    --
+    + MaintenanceReport(text: String)
+}
+
+Maintenance --> MaintenanceStatus : status
+Maintenance "1" *-- "0..1" MaintenanceReport : report
+
+@enduml

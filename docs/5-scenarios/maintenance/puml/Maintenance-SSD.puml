@@ -1,0 +1,20 @@
+@startuml Maintenance-SSD
+title Agendar Manutenção — System Sequence Diagram
+
+actor "Gestor de Manutenção" as Manager
+participant "Maintenance Service" as Maintenance
+participant "Aircraft Management Service" as AircraftManagement
+
+Manager -> Maintenance: Agendar manutenção(matrícula, data prevista, tipo de serviço)
+activate Maintenance
+
+Maintenance -> AircraftManagement: Validar matrícula(registration)
+activate AircraftManagement
+AircraftManagement --> Maintenance: 200 OK — aeronave existe
+deactivate AircraftManagement
+
+Maintenance -> Maintenance: Persistir agendamento(status = SCHEDULED)
+Maintenance --> Manager: 201 Created — manutenção agendada
+deactivate Maintenance
+
+@enduml

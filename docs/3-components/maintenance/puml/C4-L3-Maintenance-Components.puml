@@ -3,27 +3,23 @@
 LAYOUT_TOP_DOWN()
 title Maintenance Service — Components (C4 Level 3)
 
-Person(user, "<Actor>")
-Container(peer, "Maintenance Service (peer replicas)", "Spring Boot")
-ContainerDb(db, "maintenancedb-N", "H2 in-memory", "Database of THIS replica")
+Person(client, "Client")
+Container(aircraftService, "Aircraft Management Service", "Spring Boot", "Manages aircraft and registrations")
 
-Container_Boundary(svc, "Maintenance Service (one replica)") {
-    Component(sec, "Security & Observability filters", "common", "JWT, X-Service-Key, audit, correlation id")
-    Component(ctrl, "<X> Controller", "Spring REST Controller", "...")
-    Component(app, "<X> application services", "Spring Services", "...")
-    Component(domain, "Domain model", "DDD aggregates", "...")
-    Component(repos, "Repositories", "Spring Data JPA", "local data")
-    Component(peerClient, "PeerClient", "common", "peer forwarding / aggregation")
+Container_Boundary(maintenance, "Maintenance Service") {
+    Component(controller, "MaintenanceController", "Spring REST Controller", "REST API for scheduling, completing, and querying maintenance")
+    Component(service, "MaintenanceRecordService", "Spring Application Service", "Orchestrates use cases and business validation")
+    Component(repository, "MaintenanceRepository", "Spring Data JPA", "Persistence interface for maintenance aggregates")
+    Component(aircraftClient, "AircraftClient", "Spring HTTP Client", "Reads aircraft details and updates aircraft status")
+    ContainerDb(database, "Maintenance DB", "H2", "Stores maintenance records")
 }
 
-Rel(user, sec, "HTTPS + JWT")
-Rel(sec, ctrl, "authorised requests")
-Rel(ctrl, app, "uses")
-Rel(app, domain, "uses")
-Rel(app, repos, "uses")
-Rel(repos, db, "JPA/JDBC")
-Rel(app, peerClient, "data of other replicas")
-Rel(peerClient, peer, "GET", "JSON/HTTPS, X-Peer-Hops: 1")
+Rel(client, controller, "Makes requests", "JSON/HTTPS")
+Rel(controller, service, "Delegates use cases to")
+Rel(service, repository, "Reads and writes maintenance records")
+Rel(service, aircraftClient, "Validates aircraft registration")
+Rel(repository, database, "Reads and writes", "JPA")
+Rel(aircraftClient, aircraftService, "Checks aircraft registration", "HTTP/JSON")
 
 SHOW_LEGEND()
 @enduml
