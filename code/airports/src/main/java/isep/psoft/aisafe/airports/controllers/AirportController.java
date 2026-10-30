@@ -4,9 +4,13 @@ import isep.psoft.aisafe.airports.assemblers.AirportAssembler;
 import isep.psoft.aisafe.airports.domain.Airport;
 import isep.psoft.aisafe.airports.dto.AddCertificationDTO;
 import isep.psoft.aisafe.airports.dto.AirportDTO;
+import isep.psoft.aisafe.airports.dto.AirportGroupDTO;
+import isep.psoft.aisafe.airports.dto.BusiestAirportDTO;
 import isep.psoft.aisafe.airports.dto.CreateAirportDTO;
 import isep.psoft.aisafe.airports.dto.UpdateAirportDetailsDTO;
 import isep.psoft.aisafe.airports.dto.UpdateAirportStatusDTO;
+import isep.psoft.aisafe.airports.services.AirportStatisticsService;
+import isep.psoft.aisafe.airports.services.GroupAirportsService;
 import isep.psoft.aisafe.airports.services.RegisterAirportService;
 import isep.psoft.aisafe.airports.services.SearchAirportsService;
 import isep.psoft.aisafe.airports.services.UpdateAirportService;
@@ -44,6 +48,8 @@ public class AirportController {
     private final RegisterAirportService registerService;
     private final SearchAirportsService searchService;
     private final UpdateAirportService updateService;
+    private final AirportStatisticsService statisticsService;
+    private final GroupAirportsService groupService;
     private final AirportAssembler assembler;
 
     // US106 / US207: registar aeroporto (fica guardado nesta réplica)
@@ -71,6 +77,22 @@ public class AirportController {
             @RequestParam(required = false) String country,
             @RequestParam(required = false) String name) {
         return ResponseEntity.ok(searchService.search(city, country, name));
+    }
+
+    // US210: aeroportos com mais rotas (contagens vindas do Flight Routes, contrato B5)
+    @GetMapping("/statistics/busiest")
+    @Operation(summary = "US210 — Busiest airports by number of routes (route counts from Flight Routes)")
+    public ResponseEntity<List<BusiestAirportDTO>> busiestAirports(
+            @RequestParam(required = false) Integer limit) {
+        return ResponseEntity.ok(statisticsService.busiestAirports(limit));
+    }
+
+    // US211: aeroportos agrupados por região ou país (todas as réplicas)
+    @GetMapping("/grouped")
+    @Operation(summary = "US211 — Airports grouped by region or country (by=country|region, default country)")
+    public ResponseEntity<List<AirportGroupDTO>> groupAirports(
+            @RequestParam(defaultValue = "country") String by) {
+        return ResponseEntity.ok(groupService.groupBy(by));
     }
 
     // US106a: certificar um modelo de aeronave no aeroporto (executado na réplica dona)
