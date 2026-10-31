@@ -1,12 +1,12 @@
 {
   "info": {
     "name": "AISafe - Flight Routes (distributed)",
-    "description": "Testes da componente Flight Routes com 3 réplicas (SIDIS Assignment 1).\nPré-requisito: a partir de code/, `./scripts/start-replicas.sh flightroutes demo` (ou `.\\scripts\\start-replicas.ps1 -Service flightroutes -Profiles demo`).\nUsar o environment FlightRoutes.postman_environment.json e correr as pastas por ordem.\nAntes da pasta 6, PARAR a réplica 2 (porta 8184).",
+    "description": "Tests of the Flight Routes component with 3 replicas (SIDIS Assignment 1).\nPrerequisite: from code/, `./scripts/start-replicas.sh flightroutes demo` (or `.\\scripts\\start-replicas.ps1 -Service flightroutes -Profiles demo`).\nFolders 7 and 8 also need Aircraft Management (am1, port 8081) and Airports (ap1, port 8083): `./scripts/start-all.sh 1 demo` plus flightroutes replicas 2 and 3, or `./scripts/start-all.sh 3 demo`.\nUse the environment FlightRoutes.postman_environment.json and run the folders in order (folder 0 creates the tokens).\nBefore folder 6, STOP replica 2 (port 8184). Folders 7 and 8 create their own data with random identifiers, so they can be run again; they still work with replica 2 stopped.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "item": [
     {
-      "name": "0. Setup — health e tokens",
+      "name": "0. Setup — health and tokens",
       "item": [
         {
           "name": "Health fr1",
@@ -132,10 +132,10 @@
       ]
     },
     {
-      "name": "1. Acesso local",
+      "name": "1. Local access",
       "item": [
         {
-          "name": "Réplica 3: rotas locais com origem CDG",
+          "name": "Replica 3: local routes with origin CDG",
           "request": {
             "method": "GET",
             "header": [
@@ -165,10 +165,10 @@
       ]
     },
     {
-      "name": "2. Forwarding peer-to-peer (GET por id)",
+      "name": "2. Peer-to-peer forwarding (GET by id)",
       "item": [
         {
-          "name": "Réplica 1: rota guardada na réplica 3",
+          "name": "Replica 1: route stored in replica 3",
           "request": {
             "method": "GET",
             "header": [
@@ -194,7 +194,7 @@
           ]
         },
         {
-          "name": "Réplica 2: histórico da rota da réplica 3",
+          "name": "Replica 2: history of the route stored in replica 3",
           "request": {
             "method": "GET",
             "header": [
@@ -219,7 +219,7 @@
           ]
         },
         {
-          "name": "Id inexistente → 404",
+          "name": "Unknown id → 404",
           "request": {
             "method": "GET",
             "header": [
@@ -245,10 +245,10 @@
       ]
     },
     {
-      "name": "3. Agregação de respostas",
+      "name": "3. Response aggregation",
       "item": [
         {
-          "name": "Todas as rotas a partir de fr1",
+          "name": "All routes from fr1",
           "request": {
             "method": "GET",
             "header": [
@@ -274,7 +274,7 @@
           ]
         },
         {
-          "name": "Todas as rotas a partir de fr2",
+          "name": "All routes from fr2",
           "request": {
             "method": "GET",
             "header": [
@@ -300,7 +300,7 @@
           ]
         },
         {
-          "name": "Todas as rotas a partir de fr3",
+          "name": "All routes from fr3",
           "request": {
             "method": "GET",
             "header": [
@@ -326,7 +326,7 @@
           ]
         },
         {
-          "name": "US214 rotas ativas por popularidade (voos de todas as réplicas)",
+          "name": "US214 active routes by popularity (flights from all replicas)",
           "request": {
             "method": "GET",
             "header": [
@@ -354,13 +354,17 @@
           ]
         },
         {
-          "name": "US206 horas operacionais (soma das 3 réplicas)",
+          "name": "US206 operational hours (sum of the 3 replicas; service call with X-Service-Key)",
           "request": {
             "method": "GET",
             "header": [
               {
                 "key": "Authorization",
                 "value": "Bearer {{token}}"
+              },
+              {
+                "key": "X-Service-Key",
+                "value": "{{serviceKey}}"
               }
             ],
             "url": "{{fr3}}/api/scheduled-flights/operational-hours"
@@ -380,7 +384,7 @@
           ]
         },
         {
-          "name": "US215 distância total da rede",
+          "name": "US215 total network distance",
           "request": {
             "method": "GET",
             "header": [
@@ -405,7 +409,7 @@
           ]
         },
         {
-          "name": "US213 voos de CS-TUA (paginado, 3 réplicas)",
+          "name": "US213 flights of CS-TUA (paginated, 3 replicas)",
           "request": {
             "method": "GET",
             "header": [
@@ -430,13 +434,17 @@
           ]
         },
         {
-          "name": "US210 rotas por aeroporto (Backoffice)",
+          "name": "US210 routes per airport (Backoffice; service call with X-Service-Key)",
           "request": {
             "method": "GET",
             "header": [
               {
                 "key": "Authorization",
                 "value": "Bearer {{boToken}}"
+              },
+              {
+                "key": "X-Service-Key",
+                "value": "{{serviceKey}}"
               }
             ],
             "url": "{{fr2}}/api/routes/statistics/count-by-airport"
@@ -457,10 +465,10 @@
       ]
     },
     {
-      "name": "4. Comando encaminhado para a réplica dona",
+      "name": "4. Command forwarded to the owner replica",
       "item": [
         {
-          "name": "Réplica 2: obter id de MAD-CDG",
+          "name": "Replica 2: get the id of MAD-CDG",
           "request": {
             "method": "GET",
             "header": [
@@ -485,7 +493,7 @@
           ]
         },
         {
-          "name": "Réplica 1: PATCH da rota da réplica 2",
+          "name": "Replica 1: PATCH of the route stored in replica 2",
           "request": {
             "method": "PATCH",
             "header": [
@@ -518,7 +526,7 @@
           ]
         },
         {
-          "name": "Réplica 2 (dona) vê a alteração",
+          "name": "Replica 2 (owner) sees the change",
           "request": {
             "method": "GET",
             "header": [
@@ -543,7 +551,7 @@
           ]
         },
         {
-          "name": "Erro de negócio do dono propagado (já ACTIVE → 409)",
+          "name": "Owner's business error propagated (already ACTIVE → 409)",
           "request": {
             "method": "PATCH",
             "header": [
@@ -577,10 +585,10 @@
       ]
     },
     {
-      "name": "5. Segurança",
+      "name": "5. Security",
       "item": [
         {
-          "name": "Sem token → 401",
+          "name": "No token → 401",
           "request": {
             "method": "GET",
             "header": [],
@@ -599,7 +607,7 @@
           ]
         },
         {
-          "name": "Role errado → 403",
+          "name": "Wrong role → 403",
           "request": {
             "method": "GET",
             "header": [
@@ -623,7 +631,7 @@
           ]
         },
         {
-          "name": "Pedido \"de peer\" sem X-Service-Key → 401",
+          "name": "\"Peer\" request without X-Service-Key → 401",
           "request": {
             "method": "GET",
             "header": [
@@ -651,7 +659,7 @@
           ]
         },
         {
-          "name": "X-Peer-Hops acima do máximo → 400",
+          "name": "X-Peer-Hops above the maximum → 400",
           "request": {
             "method": "GET",
             "header": [
@@ -683,7 +691,7 @@
           ]
         },
         {
-          "name": "Pedido de peer válido → só dados locais (sem reencaminhar)",
+          "name": "Valid peer request → local data only (not forwarded)",
           "request": {
             "method": "GET",
             "header": [
@@ -714,14 +722,64 @@
               }
             }
           ]
+        },
+        {
+          "name": "Service-only endpoint without X-Service-Key → 401 (US210 route counts)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{boToken}}"
+              }
+            ],
+            "url": "{{fr2}}/api/routes/statistics/count-by-airport"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 401 even with a valid JWT\", () => pm.response.to.have.status(401));",
+                  "pm.test(\"service-only message\", () => pm.expect(pm.response.json().error).to.include(\"only available to AISafe services\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Service-only endpoint without X-Service-Key → 401 (US206 operational hours)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{fr3}}/api/scheduled-flights/operational-hours"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 401 even with a valid JWT\", () => pm.response.to.have.status(401));",
+                  "pm.test(\"service-only message\", () => pm.expect(pm.response.json().error).to.include(\"only available to AISafe services\"));"
+                ]
+              }
+            }
+          ]
         }
       ]
     },
     {
-      "name": "6. Falha de uma réplica (PARAR a réplica 2 antes)",
+      "name": "6. Replica failure (STOP replica 2 first)",
       "item": [
         {
-          "name": "Réplica 1 continua a responder com resposta parcial",
+          "name": "Replica 1 keeps answering with a partial response",
           "request": {
             "method": "GET",
             "header": [
@@ -747,7 +805,7 @@
           ]
         },
         {
-          "name": "Dados locais continuam acessíveis (réplica 3)",
+          "name": "Local data still reachable (replica 3)",
           "request": {
             "method": "GET",
             "header": [
@@ -771,7 +829,7 @@
           ]
         },
         {
-          "name": "Dados só na réplica 2 → 404",
+          "name": "Data only in replica 2 → 404",
           "request": {
             "method": "GET",
             "header": [
@@ -795,7 +853,7 @@
           ]
         },
         {
-          "name": "Health mostra o circuito da réplica 2",
+          "name": "Health shows the circuit of replica 2",
           "request": {
             "method": "GET",
             "header": [],
@@ -809,6 +867,689 @@
                 "exec": [
                   "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
                   "pm.test(\"peer 8184 not CLOSED\", () => pm.expect(pm.response.json().components.peers.details.peers[\"http://localhost:8184\"]).to.not.eql(\"CLOSED\"));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "7. Cross-service (needs Aircraft Management and Airports running)",
+      "description": "Flight Routes calling Airports (B2) and Aircraft Management (B1a/B1b). Creates 2 OPERATIONAL airports, 1 aircraft model and 1 AVAILABLE aircraft with random identifiers, so the folder can be run more than once. Needs folder 0 (tokens).",
+      "item": [
+        {
+          "name": "Setup: random identifiers + Airports health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{ap1}}/actuator/health"
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// IATA codes only with letters A-W, so \"ZZZ\" (used below) never exists",
+                  "const L = \"ABCDEFGHIJKLMNOPQRSTUVW\";",
+                  "const pick = n => Array.from({ length: n }, () => L[Math.floor(Math.random() * L.length)]).join(\"\");",
+                  "const origin = pick(3); let dest = pick(3); while (dest === origin) dest = pick(3);",
+                  "pm.environment.set(\"xsOrigin\", origin);",
+                  "pm.environment.set(\"xsDest\", dest);",
+                  "pm.environment.set(\"xsModel\", \"PM-\" + pick(4));",
+                  "pm.environment.set(\"xsReg\", \"CS-\" + pick(4));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Airports is UP\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Setup: Aircraft Management health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{am1}}/actuator/health"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Aircraft Management is UP\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Setup: register the origin airport (Airports, Backoffice) → 201",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{boToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{ap1}}/api/airports",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"iataCode\": \"{{xsOrigin}}\",\n  \"name\": \"Postman Origin\",\n  \"city\": \"Postman Origin\",\n  \"country\": \"Portugal\",\n  \"region\": \"Europe\",\n  \"timezone\": \"Europe/Lisbon\",\n  \"latitude\": 41.2481,\n  \"longitude\": -8.6814,\n  \"runways\": [\n    {\n      \"name\": \"17/35\",\n      \"lengthMeters\": 3400,\n      \"orientation\": 170,\n      \"surface\": \"asphalt\"\n    }\n  ]\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 201\", () => pm.response.to.have.status(201));",
+                  "pm.test(\"OPERATIONAL\", () => pm.expect(pm.response.json().status).to.eql(\"OPERATIONAL\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Setup: register the destination airport (Airports, Backoffice) → 201",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{boToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{ap1}}/api/airports",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"iataCode\": \"{{xsDest}}\",\n  \"name\": \"Postman Destination\",\n  \"city\": \"Postman Destination\",\n  \"country\": \"Portugal\",\n  \"region\": \"Europe\",\n  \"timezone\": \"Europe/Lisbon\",\n  \"latitude\": 38.7742,\n  \"longitude\": -9.1342,\n  \"runways\": [\n    {\n      \"name\": \"17/35\",\n      \"lengthMeters\": 3400,\n      \"orientation\": 170,\n      \"surface\": \"asphalt\"\n    }\n  ]\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 201\", () => pm.response.to.have.status(201));",
+                  "pm.test(\"OPERATIONAL\", () => pm.expect(pm.response.json().status).to.eql(\"OPERATIONAL\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Setup: register an aircraft model (Aircraft Management, Backoffice) → 201",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{boToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{am1}}/api/aircraft-models",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"modelName\": \"{{xsModel}}\",\n  \"manufacturer\": \"Postman\",\n  \"seatingCapacity\": 180,\n  \"fuelCapacity\": 20000,\n  \"maximumRange\": 6000,\n  \"cruisingSpeed\": 830\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 201\", () => pm.response.to.have.status(201));",
+                  "pm.test(\"range 6000\", () => pm.expect(pm.response.json().maximumRange).to.eql(6000));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Setup: register an AVAILABLE aircraft (Aircraft Management, ATCC) → 201",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{am1}}/api/aircrafts",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"registrationNumber\": \"{{xsReg}}\",\n  \"modelName\": \"{{xsModel}}\",\n  \"seatingCapacity\": 180,\n  \"manufacturingDate\": \"2020-05-01\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 201\", () => pm.response.to.have.status(201));",
+                  "pm.test(\"AVAILABLE\", () => pm.expect(pm.response.json().status).to.eql(\"AVAILABLE\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "US110 create a route between the two airports → 201 (Flight Routes → Airports)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{fr1}}/api/routes",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"originIATA\": \"{{xsOrigin}}\",\n  \"destIATA\": \"{{xsDest}}\",\n  \"estimatedFlightTime\": 55,\n  \"minRange\": 500,\n  \"minCapacity\": 100\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 201\", () => pm.response.to.have.status(201));",
+                  "const r = pm.response.json();",
+                  "pm.environment.set(\"xsRouteId\", r.id);",
+                  "pm.test(\"origin/destination from Airports\", () => { pm.expect(r.originIATA).to.eql(pm.environment.get(\"xsOrigin\")); pm.expect(r.destIATA).to.eql(pm.environment.get(\"xsDest\")); });",
+                  "pm.test(\"distance computed from the airport coordinates (~278 km)\", () => pm.expect(r.distance).to.be.within(270, 285));",
+                  "pm.test(\"ACTIVE\", () => pm.expect(r.status).to.eql(\"ACTIVE\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "US110 route to an unknown airport → 400",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{fr2}}/api/routes",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"originIATA\": \"{{xsOrigin}}\",\n  \"destIATA\": \"ZZZ\",\n  \"estimatedFlightTime\": 55,\n  \"minRange\": 500,\n  \"minCapacity\": 100\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"airport not found\", () => pm.expect(pm.response.json().error).to.include(\"airport not found\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "US212 schedule a flight → 201 (Flight Routes → Aircraft Management + Airports)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{fr3}}/api/scheduled-flights",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"aircraftRegistration\": \"{{xsReg}}\",\n  \"routeID\": \"{{xsRouteId}}\",\n  \"date\": \"2027-03-15\",\n  \"time\": \"08:00:00\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 201\", () => pm.response.to.have.status(201));",
+                  "pm.test(\"Location header\", () => pm.response.to.have.header(\"Location\"));",
+                  "pm.test(\"aircraft and route\", () => { const f = pm.response.json(); pm.expect(f.aircraftRegistration).to.eql(pm.environment.get(\"xsReg\")); pm.expect(f.routeID).to.eql(pm.environment.get(\"xsRouteId\")); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "US212 unknown aircraft → 404",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{fr1}}/api/scheduled-flights",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"aircraftRegistration\": \"XX-NONE\",\n  \"routeID\": \"{{xsRouteId}}\",\n  \"date\": \"2027-03-15\",\n  \"time\": \"08:00:00\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 404\", () => pm.response.to.have.status(404));",
+                  "pm.test(\"aircraft not found\", () => pm.expect(pm.response.json().error).to.include(\"Aircraft not found\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Aircraft set to UNDER_MAINTENANCE (Aircraft Management status endpoint) → 200",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{am1}}/api/aircrafts/{{xsReg}}/status",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"UNDER_MAINTENANCE\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"UNDER_MAINTENANCE\", () => pm.expect(pm.response.json().status).to.eql(\"UNDER_MAINTENANCE\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "US212 aircraft under maintenance → 409",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{fr2}}/api/scheduled-flights",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"aircraftRegistration\": \"{{xsReg}}\",\n  \"routeID\": \"{{xsRouteId}}\",\n  \"date\": \"2027-03-16\",\n  \"time\": \"08:00:00\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 409\", () => pm.response.to.have.status(409));",
+                  "pm.test(\"not available\", () => pm.expect(pm.response.json().error).to.include(\"is not available\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Aircraft set back to AVAILABLE → 200",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{am1}}/api/aircrafts/{{xsReg}}/status",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"AVAILABLE\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"AVAILABLE\", () => pm.expect(pm.response.json().status).to.eql(\"AVAILABLE\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "US212 schedule again after maintenance → 201",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{fr1}}/api/scheduled-flights",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"aircraftRegistration\": \"{{xsReg}}\",\n  \"routeID\": \"{{xsRouteId}}\",\n  \"date\": \"2027-03-16\",\n  \"time\": \"08:00:00\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 201\", () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "8. Concurrency (run after folder 7)",
+      "description": "FlightRoute has optimistic locking (@Version) and a write conflict is answered with 409, but the version is NOT part of the API: GET does not return it and PATCH does not accept it (no ETag/If-Match). A client therefore cannot be told that it is updating stale data: sequential updates are last-writer-wins. A 409 only happens when two PATCHes overlap inside the owner replica.\nThis folder (1) shows the last-writer-wins behaviour, (2) sends 6 PATCHes in parallel through the 3 replicas from a test script and checks that every answer is 200 or 409 and that the final state is one of the values written.\nMore load: run sub-folder 8.1 many times from two runners at the same time, e.g. two Postman Collection Runner windows with 50 iterations each, or two terminals with\n`npx newman run FlightRoutes.postman_collection.json -e <env exported after folders 0, 7 and 8> --folder \"8.1 Concurrent update (run with iterations)\" -n 50`\n(export the environment with `--export-environment` so both runs use the same ccRouteId and token). Every answer must be 200 or 409.",
+      "item": [
+        {
+          "name": "Setup: route for the concurrency test (reverse of the folder 7 route) → 201",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{fr1}}/api/routes",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"originIATA\": \"{{xsDest}}\",\n  \"destIATA\": \"{{xsOrigin}}\",\n  \"estimatedFlightTime\": 60,\n  \"minRange\": 500,\n  \"minCapacity\": 100\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 201\", () => pm.response.to.have.status(201));",
+                  "pm.environment.set(\"ccRouteId\", pm.response.json().id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Client A updates minCapacity to 110 → 200",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{fr2}}/api/routes/{{ccRouteId}}",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"minCapacity\": 110\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"minCapacity 110\", () => pm.expect(pm.response.json().minCapacity).to.eql(110));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Client B, still holding the old state, updates minCapacity to 120 → 200 (last writer wins: the version is not exposed)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{fr3}}/api/routes/{{ccRouteId}}",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"minCapacity\": 120\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200: the stale update is not detected (no version in the API)\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"B overwrote A\", () => pm.expect(pm.response.json().minCapacity).to.eql(120));",
+                  "pm.test(\"no version field returned to the client\", () => pm.expect(pm.response.json()).to.not.have.property(\"version\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "6 parallel PATCHes through the 3 replicas → each 200 or 409, final state consistent",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{fr1}}/api/routes/{{ccRouteId}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"route readable\", () => pm.response.to.have.status(200));",
+                  "const id = pm.environment.get(\"ccRouteId\");",
+                  "const bases = [pm.environment.get(\"fr1\"), pm.environment.get(\"fr2\"), pm.environment.get(\"fr3\")];",
+                  "const values = [131, 132, 133, 134, 135, 136];",
+                  "const statuses = [];",
+                  "values.forEach((v, i) => pm.sendRequest({",
+                  "    url: bases[i % 3] + \"/api/routes/\" + id, method: \"PATCH\",",
+                  "    header: { \"Authorization\": \"Bearer \" + pm.environment.get(\"token\"), \"Content-Type\": \"application/json\" },",
+                  "    body: { mode: \"raw\", raw: JSON.stringify({ minCapacity: v }) }",
+                  "}, (err, res) => {",
+                  "    statuses.push(err ? \"error\" : res.code);",
+                  "    if (statuses.length < values.length) return;",
+                  "    console.log(\"parallel PATCH statuses: \" + statuses.join(\", \"));",
+                  "    pm.test(\"every answer is 200 or 409 (never 5xx)\", () => statuses.forEach(s => pm.expect([200, 409]).to.include(s)));",
+                  "    pm.test(\"at least one update succeeded\", () => pm.expect(statuses).to.include(200));",
+                  "    pm.sendRequest({ url: bases[1] + \"/api/routes/\" + id, method: \"GET\",",
+                  "        header: { \"Authorization\": \"Bearer \" + pm.environment.get(\"token\") } }, (e2, final) => {",
+                  "        pm.test(\"final minCapacity is one of the values written\", () => pm.expect(values).to.include(final.json().minCapacity));",
+                  "    });",
+                  "}));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "8.1 Concurrent update (run with iterations)",
+          "description": "Run this sub-folder from two Collection Runners (or two newman processes with -n) at the same time; see the description of folder 8.",
+          "item": [
+            {
+              "name": "Concurrent update of minCapacity (random value) → 200 or 409",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{token}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": "{{fr2}}/api/routes/{{ccRouteId}}",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"minCapacity\": {{ccCapacity}}\n}"
+                }
+              },
+              "event": [
+                {
+                  "listen": "prerequest",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.variables.set(\"ccCapacity\", 100 + Math.floor(Math.random() * 50));"
+                    ]
+                  }
+                },
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"200 or 409 (never 5xx)\", () => pm.expect([200, 409]).to.include(pm.response.code));",
+                      "if (pm.response.code === 409) pm.test(\"conflict message\", () => pm.expect(pm.response.json().error).to.include(\"updated by another user\"));"
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Final state is consistent (read through another replica)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{fr3}}/api/routes/{{ccRouteId}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"minCapacity is a value that was written\", () => pm.expect(pm.response.json().minCapacity).to.be.within(100, 149));",
+                  "pm.test(\"still ACTIVE\", () => pm.expect(pm.response.json().status).to.eql(\"ACTIVE\"));"
                 ]
               }
             }

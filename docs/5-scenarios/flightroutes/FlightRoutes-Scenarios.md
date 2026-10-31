@@ -103,7 +103,7 @@ From `code/`: `./mvnw test` — 43 tests, all passing.
 10. No token → `401`; wrong role → `403`; health `UP` with `peers`.
 11. Replica B stopped: A answers `200` with `X-Partial-Response: true`; local route `200`; route only in B → `404` (S2).
 
-**Postman:** [postman/FlightRoutes.postman_collection.json](postman/FlightRoutes.postman_collection.json) + [environment](postman/FlightRoutes.postman_environment.json), against the three replicas with the `demo` profile — folders: setup, local access, forwarding, aggregation, command forwarding, security, replica failure (stop replica 2 before the last folder). Verified with Newman: 30 requests, 60 assertions, 0 failures.
+**Postman:** [postman/FlightRoutes.postman_collection.json](postman/FlightRoutes.postman_collection.json) + [environment](postman/FlightRoutes.postman_environment.json), against the three replicas with the `demo` profile — folders: 0 setup, 1 local access, 2 forwarding, 3 aggregation (the service-only statistics are called with `X-Service-Key`, as Airports and Aircraft Management do), 4 command forwarding, 5 security (including the service-only endpoints without `X-Service-Key` → `401`), 6 replica failure (stop replica 2 before this folder), 7 cross-service (Airports and Aircraft Management must also be running: routes, scheduled flights, `400`/`404`/`409` from the remote data), 8 concurrency (last-writer-wins without a version in the API; parallel updates answered with `200` or `409`). 52 requests. Verified with Newman, all folders except 6: 55 requests (including 7 sent from test scripts), 99 assertions, 0 failures.
 
 ## 6. Demo
 
