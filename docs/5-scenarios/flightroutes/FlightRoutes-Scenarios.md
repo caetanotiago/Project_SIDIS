@@ -18,7 +18,7 @@
 | 3B | US215 | Calculate the total distance of the network | ATCC |
 | 3B | US216 | Search for alternative routes between two airports | ATCC |
 
-Supplied to other containers: **US203** compatible routes and **US206** operational hours (Aircraft Management), **US210** routes per airport (Airports).
+Supplied to other containers (service-only endpoints, `X-Service-Key` required): **US203** compatible routes (B6) and the flight minutes per aircraft used by **US204** and **US206** (B4b) to Aircraft Management; **US210** routes per airport (B5) to Airports.
 
 ### Clarifications
 
@@ -28,13 +28,13 @@ Supplied to other containers: **US203** compatible routes and **US206** operatio
 
 ## 2. Acceptance criteria
 
-**Flight routes:** AC1 airports must exist (else `400`); AC2 one route per origin/destination in every replica that answers (else `400`); AC3 distance by Haversine, never changes; AC4 `minRange`, `minCapacity`, `estimatedFlightTime` positive; AC5 created `ACTIVE`, changing to the current state → `409`; AC6 history records only the changed attributes; AC7 concurrent updates → `409`.
+**Flight routes:** AC1 airports must exist (else `400`); AC2 one route per origin/destination in every replica that answers (else `400`); AC3 distance by Haversine, never changes; AC4 `minRange`, `minCapacity`, `estimatedFlightTime` positive; AC5 created `ACTIVE`, changing to the current state → `409`; AC6 history records only the changed attributes; AC7 two **overlapping** updates of a route → one `200` and one `409` (`@Version`). The version is not exposed, so an update from stale data is accepted (last writer wins, known limitation).
 
 **Scheduled flights:** AC8 aircraft and route (any replica) must exist (else `404`); AC9 range/capacity must meet the requirements (else `422`); AC10 route `ACTIVE`, aircraft `AVAILABLE`, airports `OPERATIONAL`, no other flight of the aircraft at that date/time in any replica that answers (else `409`); AC11 `201` + `Location` + HATEOAS links; AC12 per-aircraft list paginated after merging the replicas.
 
 **Network:** AC13 US214–US216 use only `ACTIVE` routes of every replica; AC14 sorting and search are strategies; unknown `sortBy` → `400`.
 
-**Distribution:** AC15 any replica answers with the data of all replicas, `404` if no replica has it; AC16 a failed peer gives a `200` with `X-Partial-Response: true`; AC17 a route is only modified by its owner replica; AC18 peer requests without valid `X-Service-Key` → `401`, `X-Peer-Hops > 1` → `400`; AC19 JWT + roles on every endpoint, every request audited; AC20 `503` when no replica of a remote service answers.
+**Distribution:** AC15 any replica answers with the data of all replicas, `404` if no replica has it; AC16 a failed peer gives a `200` with `X-Partial-Response: true`; AC17 a route is only modified by its owner replica; AC18 peer requests without valid `X-Service-Key` → `401`, `X-Peer-Hops > 1` → `400`; requests to the service-only endpoints (`count-by-airport`, `compatible`, `minutes-by-aircraft`, `operational-hours`, `usage-by-route`) without `X-Service-Key` → `401` even with a valid JWT, with the key the role rules still apply (`minutes-by-aircraft`: ATCC or Backoffice Operator); AC19 JWT + roles on every endpoint, every request audited; AC20 `503` when no replica of a remote service answers.
 
 ## 3. System sequence diagram
 
@@ -78,7 +78,7 @@ Supplied to other containers: **US203** compatible routes and **US206** operatio
 
 ## 5. Tests
 
-From `code/`: `./mvnw test` — 43 tests, all passing.
+From `code/`: `./mvnw test` — `flightroutes` 34 tests and `common` 29 tests, all passing.
 
 | Test class | Type | What is verified |
 |---|---|---|
@@ -87,6 +87,8 @@ From `code/`: `./mvnw test` — 43 tests, all passing.
 | `RouteStrategiesTest` | Unit | BFS with fewest stops (no cycles, unreachable), popularity/distance sorting |
 | `PeerClientTest` (common) | Integration with fake HTTP replicas | first answer, nobody has it, headers sent, aggregation with a dead peer, slow peer timeout, no re-forwarding, command forwarding and `409` propagation |
 | `CircuitBreakerTest`, `ResilientExecutorTest` (common) | Unit | open/half-open/close; retry, give-up, no retry on 4xx, fail fast |
+| `ServiceKeyFilterTest`, `AuthorizationRulesGuardTest` (common) | Unit / context | peer and service-only requests without or with a wrong key → `401`, valid key passes, encoded paths caught; a service whose rules call `anyRequest()` fails to start with the class name |
+| **`ServiceOnlyEndpointsSecurityTest`** | Integration — one real replica | each of the 5 service-only endpoints → `401` without the key even with a valid JWT; wrong key → `401`; valid key + wrong role → `403`; `minutes-by-aircraft` allowed for ATCC and Backoffice Operator; user endpoints need no key |
 | **`ReplicaCollaborationTest`** | **Distributed** — two real replicas + stubs of Airports and Aircraft Management | scenarios below |
 
 `ReplicaCollaborationTest` (week 4 scenarios 1–3 and the replica-failure test):
@@ -116,7 +118,7 @@ From `code/`:
 5. Run the Postman collection, or by hand:
    - `GET :8084/api/routes/search` and `:8184/...` → the same 6 routes.
    - `GET :8084/api/routes/{id of CDG-LHR}` → `200`; log of replica 1: `Not found locally: forwarding GET ...`; replica 3: `AUDIT ... source=peer:flightroutes-1` with the same correlation id.
-   - `GET :8184/api/scheduled-flights/operational-hours` → CS-TUA = 240 min (flights in 3 replicas).
+   - `GET :8184/api/scheduled-flights/operational-hours` with header `X-Service-Key: dev-only-service-key-aisafe-2026` → CS-TUA = 240 min (flights in 3 replicas); without the header → `401` (service-only endpoint).
    - `PATCH :8084/api/routes/{id of MAD-CDG}` `{"minCapacity":160}` → executed by replica 2.
    - Stop replica 2 → search returns 4 routes with `X-Partial-Response: true`; `/actuator/health` shows `8184` `OPEN`.
    - HTTPS: add the `tls` profile (`demo,tls`) and use `https://`.
@@ -125,6 +127,9 @@ H2 console: `http://localhost:8084/h2-console` (JDBC URL `jdbc:h2:mem:flightRout
 
 ## 7. Observations
 
-- Cross-replica uniqueness is best-effort (AP, see [L2 §3.3](../../2-containers/Containers.md#33-consistency-model-cap)); deterministic ownership (hash → replica) is a possible improvement.
+- Cross-replica uniqueness is best-effort (AP, see [L2 §3.3](../../2-containers/Containers.md#33-consistency-model-cap)); deterministic ownership (hash → replica) is a possible improvement. The "one flight per aircraft and slot" rule is also a check before the insert, so two truly simultaneous bookings are not excluded.
+- Optimistic locking only catches **overlapping** updates of a route. The version is not returned by GET nor accepted by PATCH, so a client updating from stale data is not detected; folder 8 of the Postman collection shows both behaviours. Exposing the version (`ETag`/`If-Match` or a `version` field) is the fix.
+- US212 does not check the airport certifications of the aircraft model (Airports stores them, Flight Routes does not read them).
+- The folders 7 (cross-service) and 8 (concurrency) of the Postman collection also need Aircraft Management and Airports: `./scripts/start-all.sh 1 demo` plus the flightroutes replicas 2 and 3, or `./scripts/start-all.sh 3 demo` (`.\scripts\start-all.ps1 -Profiles demo`).
 - Shared secrets have development defaults; outside development use `JWT_SECRET`, `AISAFE_SERVICE_KEY`, `AISAFE_TLS_PASSWORD`, `AISAFE_DEV_TOKEN=false`.
 - No events/message queues (Assignment 1 allows HTTP/REST commands only): popularity and operational hours are computed on demand from all replicas.

@@ -15,7 +15,7 @@
 | Scheduled Flight | [`ScheduledFlight`](../../../code/flightroutes/src/main/java/isep/psoft/aisafe/flightroutes/domain/ScheduledFlight.java) | [`RouteReference`](../../../code/flightroutes/src/main/java/isep/psoft/aisafe/flightroutes/domain/RouteReference.java), `FlightSchedule`, `FlightStatus` | Required aircraft, route, date and time; created as `SCHEDULED` |
 
 - `FlightRoute` has no setters: its state only changes through `updateDetails` and `changeStatus`, which guarantees a complete history (US111). Value Objects are immutable and self-validating; on update they are **replaced**.
-- Both roots have `@Version` (optimistic locking): concurrent updates of a route, or concurrent bookings in the same replica, fail with `409`.
+- Both roots have `@Version` (optimistic locking). For `FlightRoute`, two **overlapping** updates on the owner replica give one success and one `409` (`ObjectOptimisticLockingFailureException` in `GlobalExceptionHandler`). The version is not part of `FlightRouteDTO` or `UpdateRouteDTO` (no `ETag`/`If-Match`), so a PATCH built from stale data is not detected: sequential updates are last-writer-wins (known limitation). A `ScheduledFlight` is never updated after it is created, so its `@Version` is not exercised; the "one flight per aircraft and slot" rule is a check before the insert (`search` on every replica that answers), not a database constraint, so two truly simultaneous bookings of the same slot are not excluded.
 - **`ScheduledFlight` → `FlightRoute` by identity.** The route may be stored in another replica, so a JPA association (foreign key/JOIN) is impossible. `RouteReference` keeps the `routeId` and a snapshot of the data the flight needs (origin, destination, flight time); the snapshot also preserves the flight as scheduled if the route changes later.
 - **Read models** (not persisted, no identity): [`RouteSummary`](../../../code/flightroutes/src/main/java/isep/psoft/aisafe/flightroutes/domain/RouteSummary.java) — a replica-independent view of a route, created from local routes (`FlightRoute.toSummary()`) and from routes received from peers (`FlightRouteDTO`); `Itinerary` (US216); `RouteUsage` (US214).
 - Other aggregates are referenced by identity only: `FlightRoute` → Airport (IATA code), `ScheduledFlight` → Aircraft (registration).
@@ -54,7 +54,7 @@
 | ...sending the command to the replica that stores the route? | `PeerClient.forwardToOwner` | **Indirection** — a route has a single owner |
 | ...applying the partial update, recording only changed values? | `FlightRoute.updateDetails` | **Information Expert / Aggregate Root** |
 | ...validating the status transition? | `FlightRoute.changeStatus` | **Information Expert** |
-| ...detecting concurrent updates? | `@Version` | **Optimistic Locking** |
+| ...detecting concurrent updates? | `@Version` (overlapping updates only; the version is not exposed in the API) | **Optimistic Locking** |
 
 **Create scheduled flight (US212)**
 
@@ -105,7 +105,7 @@
 
 | File | Content |
 |---|---|
-| [`application.properties`](../../../code/flightroutes/src/main/resources/application.properties) | Defaults (= replica 1), remote URLs, resilience, security, logging, actuator |
+| [`application.properties`](../../../code/flightroutes/src/main/resources/application.properties) | Defaults (= replica 1), remote URLs, resilience, security (including `aisafe.security.service-only-paths`), logging, actuator |
 | `application-instance1/2/3.properties` | Port, instance id, database, peers and demo data of each replica |
 | `application-demo.properties` / `application-tls.properties` | Demo data / HTTPS |
 

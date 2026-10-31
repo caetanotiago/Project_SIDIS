@@ -48,7 +48,7 @@
   - [AISafe - Aircraft Management (distributed)](#sec-aisafe-aircraft-management-distributed)
   - [AISafe - Airports (distributed)](#sec-aisafe-airports-distributed)
   - [AISafe - Flight Routes (distributed)](#sec-aisafe-flight-routes-distributed)
-  - [Maintenance Service](#sec-maintenance-service)
+  - [AISafe - Maintenance Service (WP#4)](#sec-aisafe-maintenance-service-wp-4)
 - [Appendix B — Source files](#sec-appendix-b-source-files)
 
 <div style="page-break-before: always;"></div>
@@ -85,15 +85,37 @@ The architecture is documented with the **C4 model** (Simon Brown) plus a fifth 
 
 #### Contents per container
 
-| Container | Owner | L3 Components | L4 Code | +1 Scenarios |
-|---|---|---|---|---|
-| Aircraft Management (WP#1) | TBD | [Components](#src-3-components-aircraftmanagement-aircraftmanagement-component) | [Code](#src-4-code-aircraftmanagement-aircraftmanagement-code) | [Scenarios](#src-5-scenarios-aircraftmanagement-aircraftmanagement-scenarios) |
-| Maintenance (WP#4) | TBD | [Components](#src-3-components-maintenance-maintenance-components) | [Code](#src-4-code-maintenance-maintenance-code) | [Scenarios](#src-5-scenarios-maintenance-maintenance-scenarios) |
-| **Airports (WP#2)** | complete | [Components](#src-3-components-airports-airports-components) | [Code](#src-4-code-airports-airports-code) | [Scenarios](#src-5-scenarios-airports-airports-scenarios) |
-| **Flight Routes (WP#3)** | complete | [Components](#src-3-components-flightroutes-flightroutes-components) | [Code](#src-4-code-flightroutes-flightroutes-code) | [Scenarios](#src-5-scenarios-flightroutes-flightroutes-scenarios) |
-| *common library* (shared) | — | [Components](#src-3-components-common-common-components) | [Code](#src-4-code-common-common-code) | (exercised by every scenario) |
+| Container | Owner | Status | L3 Components | L4 Code | +1 Scenarios |
+|---|---|---|---|---|---|
+| Aircraft Management (WP#1) | Tiago Moreira | — | [Components](#src-3-components-aircraftmanagement-aircraftmanagement-component) | [Code](#src-4-code-aircraftmanagement-aircraftmanagement-code) | [Scenarios](#src-5-scenarios-aircraftmanagement-aircraftmanagement-scenarios) |
+| **Maintenance (WP#4)** | Diogo Fernandes | complete | [Components](#src-3-components-maintenance-maintenance-components) | [Code](#src-4-code-maintenance-maintenance-code) | [Scenarios](#src-5-scenarios-maintenance-maintenance-scenarios) |
+| **Airports (WP#2)** | Afonso Ribeiro | complete | [Components](#src-3-components-airports-airports-components) | [Code](#src-4-code-airports-airports-code) | [Scenarios](#src-5-scenarios-airports-airports-scenarios) |
+| **Flight Routes (WP#3)** | Tiago Caetano | complete | [Components](#src-3-components-flightroutes-flightroutes-components) | [Code](#src-4-code-flightroutes-flightroutes-code) | [Scenarios](#src-5-scenarios-flightroutes-flightroutes-scenarios) |
+| *common library* (shared) | Tiago Caetano | — | [Components](#src-3-components-common-common-components) | [Code](#src-4-code-common-common-code) | (exercised by every scenario) |
 
 L1 and L2 describe the **whole system** and are shared by the team; L3, L4 and +1 are written **per container** by its owner. Flight Routes is the reference example.
+
+
+<a id="sec-how-to-build-and-run"></a>
+
+#### How to build and run
+
+Requirements: **JDK 21**. Maven is not needed: the wrapper `./mvnw` (`mvnw.cmd` on Windows) is in `code/`. All commands below run from `code/`.
+
+```bash
+./mvnw -q -DskipTests package         # build the 4 services and common
+./mvnw -q test                        # unit and multi-replica tests
+
+./scripts/start-all.sh [replicas] [profiles] [jvm-options]      # e.g. ./scripts/start-all.sh 3 demo
+.\scripts\start-all.ps1 [-Replicas 1-3] [-Profiles demo,tls] [-Memory "-Xmx320m"]
+./scripts/stop-all.sh              # or .\scripts\stop-all.ps1
+```
+
+- **`start-all`** starts every service with `replicas` (1–3, default 3) replicas, extra Spring `profiles` (default none) and JVM options (default `-Xmx320m`). It builds the jars first if they are missing, writes logs and PID files to `code/logs/`, waits for `/actuator/health` and prints the URL of each replica. **`stop-all`** stops them. 12 JVMs need several GB of RAM; use 1 replica per service on a small machine. One service only: `scripts/start-replicas.*`; one replica: `scripts/run-instance.*`.
+- **Profiles:** `demo` loads demonstration data (different in each replica) in Airports, Flight Routes and Maintenance; Aircraft Management always loads its demo fleet. `tls` switches every replica and every inter-service call to HTTPS. Before the first `tls` run, create the development certificate with `./scripts/generate-dev-certs.sh` (or `.\scripts\generate-dev-certs.ps1`) and rebuild; it is not stored in git.
+- **Tokens:** `POST /auth/dev-token` on any replica with `{"username": "atcc1", "roles": ["ATCC"]}` returns a JWT for Postman or Swagger (`/swagger-ui.html`).
+- **Postman:** one collection and environment per service in `5-scenarios/<container>/postman/` (`AircraftManagement`, `Airports`, `FlightRoutes`, `Maintenance`). Run them in the Postman app or with `npx newman run <collection>.json -e <environment>.json`; each collection's description lists the services and profiles it needs, and the "replica failure" folder needs replica 2 stopped by hand first.
+- **Full document:** `Documentation.md` contains all of this documentation in one file (for PDF export). Regenerate it after any change with `powershell -ExecutionPolicy Bypass -File docs\tools\build-full-doc.ps1` or `bash docs/tools/build-full-doc.sh` (from the repository root).
 
 
 <a id="sec-folder-layout-and-conventions"></a>
@@ -103,16 +125,18 @@ L1 and L2 describe the **whole system** and are shared by the team; L3, L4 and +
 ```text
 docs/
 ├── README.md                     this index
+├── Documentation.md              generated: all the documentation in one file (docs/tools/)
 ├── 1-context/                    L1 — Context.md + puml/ + svg/
-├── 2-containers/                 L2 — Containers.md, Ports.md + puml/ + svg/
+├── 2-containers/                 L2 — Containers.md, Ports.md, Integration-Contracts.md + puml/ + svg/
 ├── 3-components/<container>/     L3 — <Container>-Components.md + puml/ + svg/
 ├── 4-code/<container>/           L4 — <Container>-Code.md + puml/ + svg/
 ├── 5-scenarios/<container>/      +1 — <Container>-Scenarios.md + puml/ + svg/ + postman/
+├── tools/                        build-full-doc.ps1 / .sh (generate Documentation.md)
 └── _template/                    templates for L3, L4 and +1
 ```
 
 - **Notation.** L1–L3 use the [C4-PlantUML](https://github.com/plantuml-stdlib/C4-PlantUML) library (`!include <C4/C4_Context>`, `<C4/C4_Container>`, `<C4/C4_Component>`, `<C4/C4_Deployment>`), so persons, systems, containers and components look the same in every diagram. L4 and +1 use UML (class and sequence diagrams).
-- **Diagrams as code.** PlantUML sources in `puml/`, rendered SVGs in `svg/`, both committed. To render (from the folder of the level): `java -jar plantuml.jar -tsvg -o ../svg puml/*.puml`. No Graphviz is needed (`!pragma layout smetana` in UML diagrams). The VS Code *PlantUML* extension previews them.
+- **Diagrams as code.** PlantUML sources in `puml/`, rendered SVGs in `svg/`, both committed. To render (from the folder of the level): `java -jar plantuml.jar -tsvg -o ../svg puml/*.puml`. Sequence diagrams and the L4 class/domain diagrams (`!pragma layout smetana`) need no Graphviz. The C4 diagrams (L1–L3 and deployment) are laid out with Graphviz `dot`: the PlantUML jar bundles it on Windows (`java -jar plantuml.jar -testdot` shows the version in use); on Linux/macOS install Graphviz. The VS Code *PlantUML* extension previews them.
 - **Keep diagrams in sync with the code.** L3 components and L4 classes use the real class/package names and link to the source files; update them in the same commit as the code.
 - **Language:** English for documentation, consistent naming across levels.
 
@@ -145,9 +169,9 @@ It was originally a monolith (PSOFT). In SIDIS it is redesigned as a distributed
 
 | Person | What they do with AISafe |
 |---|---|
-| **Administrator** | Manages users and their roles. |
-| **Backoffice Operator** | Registers airports, aircraft models and aircraft; updates and deactivates routes; consults statistics such as the busiest airports. |
-| **Air Traffic Control Coordinator (ATCC)** | Defines flight routes, assigns aircraft to routes at a date/time, and queries the route network (popular routes, network distance, alternative itineraries); follows maintenance hours and costs of the fleet and checks which aircraft are due for maintenance. |
+| **Administrator** | Would manage users and their roles. The role exists, but user management is not part of Assignment 1: no AISafe function uses it yet. |
+| **Backoffice Operator** | Registers and updates airports (including their status and certified aircraft models) and aircraft models; updates and deactivates routes; consults statistics such as the busiest airports and the most utilised aircraft models. |
+| **Air Traffic Control Coordinator (ATCC)** | Registers aircraft and changes their status; looks up and searches airports; defines flight routes, assigns aircraft to routes at a date/time, and queries the route network (popular routes, network distance, alternative itineraries, routes compatible with an aircraft, operational hours); follows maintenance hours and costs of the fleet and checks which aircraft are due for maintenance. |
 | **Maintenance Technician / Supervisor** | Defines maintenance templates, records and completes the maintenance of the aircraft (taking them out of service while it lasts), and follows ongoing maintenance and turnaround times. |
 
 Every person authenticates and is given a **role**; each role can only use the functions meant for it.
@@ -166,9 +190,8 @@ AISafe does not depend on external software systems in this assignment. Users ar
 
 | From | To | Purpose |
 |---|---|---|
-| Administrator | AISafe | Manage users and access |
-| Backoffice Operator | AISafe | Register airports and fleet, manage routes, read statistics |
-| ATCC | AISafe | Create routes, schedule flights, query the network |
+| Backoffice Operator | AISafe | Register airports and aircraft models, manage routes, read statistics |
+| ATCC | AISafe | Register aircraft, create routes, schedule flights, query airports and the network |
 | Maintenance Technician / Supervisor | AISafe | Record maintenance, check aircraft status |
 
 
@@ -205,7 +228,7 @@ The monolith was decomposed by **bounded context** (domain-driven segregation). 
 | Container | Technology | Replicas (port) | Data | Responsibility (bounded context) | Details |
 |---|---|---|---|---|---|
 | **Aircraft Management Service** | Java 21, Spring Boot 4 | 8081 / 8181 / 8281 | H2 `aircraftManagementdb-N` | *Fleet*: aircraft models, aircraft, operational status (WP#1) | [L3](#src-3-components-aircraftmanagement-aircraftmanagement-component) |
-| **Maintenance Service** | Java 21, Spring Boot 4 | 8082 / 8182 / 8282 | H2 `maintenancedb-N` | *Maintenance*: templates and records (WP#4) | [L3](#src-3-components-maintenance-maintenance-components) |
+| **Maintenance Service** | Java 21, Spring Boot 4 | 8082 / 8182 / 8282 | H2 `maintenancedb-N` | *Maintenance*: templates, records, reports and due-maintenance alerts (WP#4) | [L3](#src-3-components-maintenance-maintenance-components) |
 | **Airports Service** | Java 21, Spring Boot 4 | 8083 / 8183 / 8283 | H2 `airportsdb-N` | *Airport infrastructure*: airports, runways, certification (WP#2) | [L3](#src-3-components-airports-airports-components) |
 | **Flight Routes Service** | Java 21, Spring Boot 4 | 8084 / 8184 / 8284 | H2 `flightRoutesdb-N` | *Flight operations*: routes, history, scheduled flights, network queries (WP#3) | [L3](#src-3-components-flightroutes-flightroutes-components) |
 | *common* (library, not a container) | Java library | embedded in every service | — | Security, peer forwarding, resilience, audit — the same distributed behaviour in every container | [L3](#src-3-components-common-common-components) |
@@ -219,17 +242,32 @@ Ports, database names and per-replica configuration: [Ports.md](#src-2-container
 
 All communication is **synchronous HTTP/REST with JSON** (commands and queries; the assignment does not allow events/message queues).
 
+**Users** call every service's REST API (Swagger at `/swagger-ui.html`) with `Authorization: Bearer <JWT>`. Which role reaches which container is decided by each service's `<Service>AuthorizationRules`:
+
+| Role | Aircraft Management | Airports | Flight Routes | Maintenance |
+|---|---|---|---|---|
+| Backoffice Operator | registers aircraft models (US101); US204 top models; reads aircraft and models | registers and updates airports, operational status, certifications (US106, US106a, US109, US208); US210 busiest airports | updates / deactivates routes (US112) | — |
+| ATCC | registers aircraft (US102); status (US105); US203, US204, US206; reads aircraft and models | airport details, search and grouping (US107, US108, US211); certifications (US106a) | routes, route history, scheduled flights, network queries (US110–US114, US209, US212–US216) | statistics, cost report and alerts (US117, US220, US222) |
+| Maintenance Technician / Supervisor | reads aircraft and models; status (US105) | — | — | templates, records, categorisation, ongoing records, turnaround report |
+
+The `ADMIN` role exists in the token, but no endpoint requires it.
+
+Calls **between** containers:
+
 | From | To | Endpoints | Purpose |
 |---|---|---|---|
-| Users | every service | REST API (Swagger at `/swagger-ui.html`) | Use cases, with `Authorization: Bearer <JWT>` |
-| Flight Routes | Airports | `GET /api/airports/{iata}` | Coordinates (route distance) and operational status (US110, US209, US212, US216) |
-| Flight Routes | Aircraft Management | `GET /api/aircrafts/{reg}`, `GET /api/aircraft-models/{model}` | Status, seating capacity and range (US212, US213) |
-| Aircraft Management | Flight Routes | `GET /api/routes/compatible`, `GET /api/scheduled-flights/operational-hours` | US203, US206 |
-| Airports | Flight Routes | `GET /api/routes/statistics/count-by-airport` | US210 |
-| Maintenance | Aircraft Management | `GET /api/aircrafts/{reg}`, `PATCH /api/aircrafts/{reg}/status` | Aircraft exists and its model; `UNDER_MAINTENANCE` when a record starts, `AVAILABLE` when the last ongoing record is completed (US115, US116, US119) |
-| Maintenance | Aircraft Management | `GET /api/aircraft-models/{model}` | Applicable models of a template exist (US115 templates) |
-| Maintenance | Aircraft Management | `GET /api/aircrafts`, `GET /api/aircrafts/operational-hours` | Fleet and flight hours for due-maintenance alerts (US222) |
+| Flight Routes | Airports | B2: `GET /api/airports/{iata}` | Coordinates (route distance) and operational status (US110, US209, US212, US216) |
+| Flight Routes | Aircraft Management | B1: `GET /api/aircrafts/{reg}`, `GET /api/aircraft-models/{model}` | Status, seating capacity and range (US212, US213) |
+| Aircraft Management | Flight Routes | B4b: `GET /api/scheduled-flights/statistics/minutes-by-aircraft` | Flight minutes per aircraft for US204 (top models) and US206 (operational hours) |
+| Aircraft Management | Flight Routes | B6: `GET /api/routes/compatible?range=&capacity=` | Active routes compatible with an aircraft (US203) |
+| Airports | Flight Routes | B5: `GET /api/routes/statistics/count-by-airport` | Route counts per airport, ranked by Airports (US210 busiest airports) |
+| Maintenance | Aircraft Management | B3a: `GET /api/aircrafts/{reg}` | Aircraft exists, its model and status (US115 records, US116 history) |
+| Maintenance | Aircraft Management | B3b: `PATCH /api/aircrafts/{reg}/status` | `UNDER_MAINTENANCE` when a record starts (US115), `AVAILABLE` when the last ongoing record is completed (US119), compensation on rollback |
+| Maintenance | Aircraft Management | B3c: `GET /api/aircraft-models/{model}` | Applicable models of a template exist (US115 templates) |
+| Maintenance | Aircraft Management | B3d: `GET /api/aircrafts?page=&size=100`, `GET /api/aircrafts/operational-hours?page=&size=100` (all pages) | Fleet and flight hours for due-maintenance alerts (US222) |
 | Replica | other replicas of the **same** service | the same endpoint that was called (or its non-paginated `/search` / statistics variant), with `X-Peer-Hops: 1` | Peer forwarding / aggregation (section 3.2) |
+
+The B4b, B5 and B6 endpoints are **service-only** (section 3.5): a user calling them directly gets `401`, even with a valid JWT. Flight Routes also provides `GET /api/scheduled-flights/operational-hours` (B4a), but no other service calls it.
 
 Maintenance is only a consumer: no other service calls it, and the aircraft status in Aircraft Management is the single source of truth for availability (Flight Routes never calls Maintenance).
 
@@ -244,7 +282,7 @@ Exact request/response schemas, status codes, roles and replica behaviour of eac
 | `Authorization: Bearer <JWT>` | request | End user; forwarded unchanged to peers and remote services |
 | `X-Correlation-Id` | request/response | Request id, propagated to every replica/service and written in every log line |
 | `X-Peer-Hops` | request | Present only in replica-to-replica calls; the receiver answers with local data only |
-| `X-Service-Key` | request | Shared secret that authenticates the calling service |
+| `X-Service-Key` | request | Shared secret that authenticates the calling service. Sent automatically by `common` on every inter-service and peer call; **required** on peer calls and on the service-only Flight Routes endpoints |
 | `X-Caller-Instance` | request | Calling replica/service (audit) |
 | `X-Partial-Response`, `X-Unavailable-Peers` | response | A replica did not answer; the result may be incomplete |
 
@@ -288,7 +326,8 @@ AISafe favours **Availability and Partition tolerance (AP)** with **eventual con
 
 - During a failure or partition every reachable replica keeps answering reads (with the data it can reach, flagged with `X-Partial-Response: true`) and accepting writes.
 - Data stored in an unreachable replica is temporarily invisible (a GET by id returns `404`, flagged as partial) and reappears as soon as the replica recovers — there is no stale copy to reconcile, because each record has a single owner.
-- Cross-replica uniqueness rules (e.g. one route per origin/destination, one flight per aircraft and time slot) are checked against the local data **and the peers that answer**. Under a partition, or with truly simultaneous writes on two replicas, a duplicate can be created — the accepted price of AP. Inside a replica, optimistic locking (`@Version`) prevents lost updates.
+- Cross-replica uniqueness rules (e.g. one route per origin/destination, one flight per aircraft and time slot) are checked against the local data **and the peers that answer**. Under a partition, or with truly simultaneous writes on two replicas, a duplicate can be created — the accepted price of AP.
+- Inside the owner replica, optimistic locking (`@Version`) turns two **overlapping** updates of the same record into one success and one `409`. The version is not part of any update request (no `version` field, `ETag` or `If-Match`), so a client that updates from stale data is not detected: sequential updates are last-writer-wins ([Integration-Contracts §8](#sec-8-known-limitations)).
 - A strongly consistent alternative (single writer / quorum / consensus) would block writes during partitions and is out of scope for Assignment 1.
 
 
@@ -314,10 +353,11 @@ AISafe favours **Availability and Partition tolerance (AP)** with **eventual con
 | Concern | Implementation |
 |---|---|
 | **Access control (RBAC)** | Stateless JWT validated by every replica (shared `jwt.secret`), roles in the token, per-endpoint rules in each service (`<Service>AuthorizationRules`). Unauthenticated → `401`, wrong role → `403`. |
-| **Inter-service authentication** | Shared secret `X-Service-Key` (`aisafe.security.service-key`, env `AISAFE_SERVICE_KEY`), compared in constant time; mandatory on replica-to-replica calls. The user's JWT is still checked. |
-| **Encryption in transit** | Profile `tls`: HTTPS (TLS 1.3/1.2) on every replica and on every outgoing call (`aisafe.scheme=https`, truststore `aisafe.tls.trust-store`). Development certificate (CN/SAN `localhost`) in `code/common/src/main/resources/tls/`, regenerated with `code/scripts/generate-dev-certs.*`. |
+| **Inter-service authentication** | Shared secret `X-Service-Key` (`aisafe.security.service-key`, env `AISAFE_SERVICE_KEY`), compared in constant time, **sent automatically on every inter-service and peer call** by the `common` `RestClient`. It is **required** (otherwise `401`) on replica-to-replica calls (`X-Peer-Hops`) and on the **service-only** endpoints a provider lists in `aisafe.security.service-only-paths` — in Flight Routes: `count-by-airport` (B5), `compatible` (B6), `minutes-by-aircraft` (B4b), `operational-hours` (B4a) and `usage-by-route`. A wrong key is always rejected. The user's JWT and role are still checked. |
+| **Encryption in transit** | Profile `tls`: HTTPS (TLS 1.3/1.2) on every replica and on every outgoing call (`aisafe.scheme=https`, truststore `aisafe.tls.trust-store`). The development certificate (CN/SAN `localhost`) is **not in git**: `code/scripts/generate-dev-certs.*` creates it in `code/common/src/main/resources/tls/`, and the jars must be rebuilt afterwards (the start scripts stop with instructions if it is missing). |
 | **Audit logging** | Logger `AUDIT`: one line per request with user, roles, method, path, status, source (`client:<ip>`, `peer:<replica>`, `service:<name>`), duration and correlation id; one log file per replica (`code/logs/<service>-N.log`). |
-| **Development token** | `POST /auth/dev-token` only while there is no login service; disabled with `AISAFE_DEV_TOKEN=false`. |
+| **Development token** | `POST /auth/dev-token` only while there is no login service; **enabled by default**, disabled with `AISAFE_DEV_TOKEN=false`. `jwt.secret` and the service key also have development defaults in `application.properties` and must be overridden (`JWT_SECRET`, `AISAFE_SERVICE_KEY`) outside development. |
+| **Per-service rules** | Each `<Service>AuthorizationRules` lists only its own endpoints and must not call `anyRequest()`: `common` adds `anyRequest().authenticated()` and stops the service at start-up with a message naming the class if a rule calls it. |
 
 
 <a id="sec-4-deployment"></a>
@@ -326,15 +366,20 @@ AISafe favours **Availability and Partition tolerance (AP)** with **eventual con
 
 ![C4-L2-Deployment](2-containers/svg/C4-L2-Deployment.svg)
 
-Local deployment: every replica is a JVM on the developer machine, started from `code/` with:
+Local deployment: every replica is a JVM on the developer machine (12 JVMs with 3 replicas of each service), started from `code/` with:
 
 ```bash
-./scripts/start-replicas.sh <service> [demo][,tls]              # 3 replicas in background, logs in code/logs/
-.\scripts\start-replicas.ps1 -Service <service> [-Profiles demo]   # Windows
-./scripts/run-instance.sh <service> <1|2|3> [profiles]           # a single replica
+./scripts/start-all.sh [replicas 1-3] [profiles] [jvm-options]                 # all 4 services; defaults: 3, none, -Xmx320m
+.\scripts\start-all.ps1 [-Replicas 1-3] [-Profiles demo,tls] [-Memory "-Xmx320m"]   # Windows
+./scripts/stop-all.sh            .\scripts\stop-all.ps1                         # stops everything start-all started
+./scripts/start-replicas.sh <service> [demo][,tls]                             # the 3 replicas of one service
+.\scripts\start-replicas.ps1 -Service <service> [-Profiles demo]
+./scripts/run-instance.sh <service> <1|2|3> [profiles]                          # a single replica
 ```
 
-The diagram details Flight Routes; the other services are deployed the same way (one JVM and one H2 database per replica).
+`start-all` builds the jars once if they are missing (or older than the TLS certificate), starts every replica through `run-instance`, writes `code/logs/<service>-<n>.out` and `.pid` (git-ignored), waits for `/actuator/health` and prints a table of URLs and health. `stop-all` stops every replica listed in `code/logs/*.pid`, including the JVM under each wrapper. Each replica also writes its own log `code/logs/<service>-<n>.log` (including the audit lines). On a machine with little memory, use 1 replica per service.
+
+The diagram details Flight Routes; the other services are deployed the same way (one JVM and one H2 database per replica). Ports and per-replica configuration: [Ports.md](#src-2-containers-ports).
 
 <a id="src-2-containers-ports"></a>
 
@@ -366,7 +411,7 @@ Each module has, in `src/main/resources/`:
 | `application.properties` | Shared configuration; defaults = replica 1 |
 | `application-instance1/2/3.properties` | `server.port`, `aisafe.instance-id`, `spring.datasource.url` and `aisafe.peers.urls` (the **other** two replicas) of each replica |
 | `application-tls.properties` | HTTPS (`aisafe.scheme=https`, server keystore, client truststore) |
-| `application-demo.properties` | Optional demo data (see `flightroutes`) |
+| `application-demo.properties` | Optional demo data, different in each replica (`airports`, `flightroutes`, `maintenance`). Aircraft Management has no `demo` profile: it always loads its demo models and aircraft (`aisafe.bootstrap.enabled=true`); Maintenance always loads its reference templates |
 
 ```properties
 # application-instance2.properties of airports
@@ -382,7 +427,7 @@ Calls to **other** services list all their replicas (round-robin + failover):
 services.airports.urls=${aisafe.scheme}://localhost:8083,${aisafe.scheme}://localhost:8183,${aisafe.scheme}://localhost:8283
 ```
 
-Start a replica with `--spring.profiles.active=instanceN` (or `scripts/run-instance.*`). Without a profile a service starts as replica 1.
+Start a replica with `--spring.profiles.active=instanceN` (or `scripts/run-instance.*`); start everything with `scripts/start-all.*` and stop it with `scripts/stop-all.*` ([Containers §4](#sec-4-deployment)). Without a profile a service starts as replica 1.
 Spring Boot defaults to port 8080: without these properties only the first service to start would boot (`Port 8080 was already in use`).
 
 <a id="src-2-containers-integration-contracts"></a>
@@ -396,7 +441,7 @@ Spring Boot defaults to port 8080: without these properties only the first servi
 
 This is the reference for the REST calls **between** AISafe services. If you implement a service that another service calls, implement exactly what is written here. If you call another service, expect exactly this.
 
-Every statement about existing code was taken from the code and has a **Source** line. Anything that is not implemented yet is marked as such.
+Every statement about existing code was taken from the code and has a **Source** line. All bridges are implemented on both sides, except B4a, which has no consumer. The decisions are closed (section 7); what the code does not do is listed in **Known limitations** (section 8).
 
 > FR = `code/flightroutes/src/main/java/isep/psoft/aisafe` · COMMON = `code/common/src/main/java/isep/sidis/common`
 
@@ -410,7 +455,7 @@ Every statement about existing code was taken from the code and has a **Source**
 | Status | Meaning |
 |---|---|
 | `IMPLEMENTED` | Provider and consumer both exist in code. |
-| `IMPLEMENTED (provider only)` | The provider endpoint exists in code; the consumer service still has to call it. |
+| `IMPLEMENTED (provider only)` | The provider endpoint exists in code; no other service calls it. |
 | `CONSUMER-ONLY` | The consumer exists in code; the **provider must implement exactly this contract**. |
 | `PROPOSED` | Agreed design; nothing implemented on either side. |
 
@@ -428,7 +473,7 @@ Requirements that originate in the work order or assignment (US105, US106a, US11
 
 ##### 2.1 Paths
 - Every business endpoint is under **`/api`**, declared in the controller's class-level `@RequestMapping` (there is no context-path or global prefix).
-- Resource names are used **exactly as in code**: `/api/routes`, `/api/scheduled-flights`, `/api/aircrafts` (sic), `/api/aircraft-models`, `/api/airports`.
+- Resource names are used **exactly as in code**: `/api/routes`, `/api/scheduled-flights`, `/api/aircrafts` (sic), `/api/aircraft-models`, `/api/airports`, `/api/maintenance-templates`, `/api/maintenance-records`, `/api/maintenance-alerts`.
 - Paths that are not business endpoints (no `/api`):
   - `POST /auth/dev-token`
   - `/actuator/health`, `/actuator/health/**`, `/actuator/info`
@@ -453,7 +498,7 @@ Requirements that originate in the work order or assignment (US105, US106a, US11
 - **Units:**
   - distances in km (Haversine)
   - flight times in minutes
-  - `maximumRange` / `minRange` are compared directly, so they must use the same unit as the route distance (see open decision Q9)
+  - `maximumRange` / `minRange` are compared directly, so they use the same unit as the route distance: kilometres (Q9)
 - **Unknown fields are ignored** by the Flight Routes clients (`@JsonIgnoreProperties(ignoreUnknown = true)`). Providers may add fields, including HATEOAS `_links`, but must not rename or remove the ones listed here.
 - Source: `FR/flightroutes/dto/ScheduledFlightDTO.java`, `FR/flightroutes/dto/FlightRouteDTO.java`, `FR/flightroutes/controllers/ScheduledFlightController.java`, `FR/flightroutes/services/CreateScheduledFlightService.java` (aircraft status comment), `FR/flightroutes/clients/AircraftSnapshot.java`, `FR/flightroutes/clients/AirportSnapshot.java`, `FR/flightroutes/domain/RouteStatus.java`, `FR/flightroutes/domain/FlightStatus.java`, `FR/flightroutes/domain/RouteDistance.java`
 
@@ -465,7 +510,7 @@ Requirements that originate in the work order or assignment (US105, US106a, US11
 | Identifier | Format in code | Notes |
 |---|---|---|
 | IATA code | 3 characters (`@Size(min=3,max=3)` on `CreateRouteDTO`). Flight Routes **upper-cases** it before calling Airports | No letters-only regex exists. Providers should accept and return upper case |
-| Aircraft registration (`registrationNumber`) | Free string (`@NotBlank` only), e.g. `CS-TUA`. Sent **as received**, not normalised | No format validation anywhere (open decision Q10) |
+| Aircraft registration (`registrationNumber`) | Validated by Aircraft Management on creation (`^[A-Z0-9]{1,2}-[A-Z0-9]{2,5}$`, upper case), e.g. `CS-TUA`. Flight Routes sends it **as received** (`@NotBlank` only); Maintenance trims and upper-cases it | Lookups are exact and case-sensitive (Q10, section 8) |
 | Aircraft model (`modelName`) | Free string, e.g. `A320`. Taken from the aircraft response and used as a path variable | |
 | Route ID, scheduled-flight ID | UUID string (`@GeneratedValue(strategy = UUID)`) | Generated by the replica that stores the entity, so it is globally unique across replicas |
 
@@ -485,7 +530,7 @@ Every service has a `GlobalExceptionHandler` (each skeleton already contains one
 
 Exceptions to this shape:
 - **Bean Validation failures** (`@Valid`) return a map from field to message, with no `error` key: `{"minRange": "Minimum range must be positive"}`.
-- **401 for a missing or invalid JWT** has an **empty body** (`HttpStatusEntryPoint`).
+- **401 for a missing or invalid JWT** has an **empty body** (`HttpStatusEntryPoint`). A **401 from `ServiceKeyFilter`** (missing or wrong `X-Service-Key`, section 2.8) does use `{"error": "..."}`.
 - **403 (wrong role)** and **errors without a handler** (e.g. a missing required query parameter) use Spring Boot's default error body, not `{"error": ...}`.
 
 Consumers should therefore decide on the **status code**, not on the body.
@@ -495,7 +540,7 @@ Consumers should therefore decide on the **status code**, not on the body.
 | 200 | OK |
 | 201 | Created. `POST /api/scheduled-flights` also sets `Location`; `POST /api/routes` does not |
 | 400 | `IllegalArgumentException`, validation failure, invalid `X-Peer-Hops` |
-| 401 | No or invalid JWT; peer request without `X-Service-Key`; wrong `X-Service-Key` |
+| 401 | No or invalid JWT; peer request without `X-Service-Key`; request to a service-only endpoint without `X-Service-Key` (section 2.8); wrong `X-Service-Key` |
 | 403 | Authenticated, but the role is not allowed |
 | 404 | `EntityNotFoundException` (local entity, or remote aircraft/airport not found) |
 | 409 | `IllegalStateException` (business conflict) or `ObjectOptimisticLockingFailureException` (`@Version` clash; message `"The resource was updated by another user. Please refresh and try again."`) |
@@ -513,7 +558,7 @@ Source: `FR/exceptions/GlobalExceptionHandler.java`, `code/aircraftmanagement/sr
 | Header | Direction | Set by | Checked by |
 |---|---|---|---|
 | `Authorization: Bearer <JWT>` | request | End user. On every inter-service and peer call it is **copied from the incoming request** (`OutboundHeaders.capture`, added by `InterServiceHeadersInterceptor`) | `JwtAuthenticationFilter`, then the service's `AuthorizationRules` |
-| `X-Service-Key` | request | `OutboundHeaders` (value of `aisafe.security.service-key`) on every inter-service and peer call | `ServiceKeyFilter`: **mandatory only when `X-Peer-Hops` is present**; if sent on any request it must match, otherwise 401 |
+| `X-Service-Key` | request | `OutboundHeaders` (value of `aisafe.security.service-key`) on every inter-service and peer call | `ServiceKeyFilter`: **mandatory on peer calls** (`X-Peer-Hops` present) **and on the service-only paths** of the provider (`aisafe.security.service-only-paths`, section 2.8); if sent on any other request it must match, otherwise 401 |
 | `X-Peer-Hops` | request | `PeerClient` only (replica → replica of the same service), value `1` | `ServiceKeyFilter` (must be 1..`MAX_PEER_HOPS`=1, otherwise 400); `PeerClient.isPeerRequest()` makes the receiver answer with local data only |
 | `X-Correlation-Id` | request and response | `CorrelationIdFilter` (reuses the incoming id if it matches `[A-Za-z0-9._-]{1,64}`, otherwise a new UUID), echoed in the response and propagated by `OutboundHeaders` | Written to every log line (MDC) and to the audit log |
 | `X-Caller-Instance` | request | `OutboundHeaders` (`aisafe.instance-id`) | Informational only |
@@ -523,7 +568,7 @@ Source: `FR/exceptions/GlobalExceptionHandler.java`, `code/aircraftmanagement/sr
 **Authentication between services:**
 1. The caller's **JWT is propagated**, so the provider authorises the **end user's roles**, not the calling service. When you implement a provider endpoint, allow the roles of the users whose use cases trigger the call (listed in each bridge).
 2. All services share `jwt.secret`. The roles go in the `roles` claim as `ROLE_<NAME>`. The roles that exist are `ADMIN`, `BACKOFFICE_OPERATOR`, `ATCC`, `MAINTENANCE_TECHNICIAN` and `MAINTENANCE_SUPERVISOR`.
-3. `X-Service-Key` is sent on every inter-service call but is **enforced only on peer calls**. A service-to-service call without it is accepted if the JWT is valid (open decision Q11).
+3. `X-Service-Key` is **sent automatically on every inter-service and peer call** (the `common` `RestClient` adds it; service code never sets it). It is **required** on peer calls and on the endpoints a provider declares as service-only (section 2.8); on other endpoints a call without it is accepted if the JWT is valid (Q11, decided).
 
 Source: `COMMON/http/AisafeHeaders.java`, `COMMON/http/OutboundHeaders.java`, `COMMON/http/InterServiceHeadersInterceptor.java`, `COMMON/security/ServiceKeyFilter.java`, `COMMON/observability/CorrelationIdFilter.java`, `COMMON/peers/PeerClient.java`, `COMMON/security/JwtTokenProvider.java`, `COMMON/security/JwtAuthenticationFilter.java`, `COMMON/security/DevTokenController.java`
 
@@ -531,19 +576,21 @@ Source: `COMMON/http/AisafeHeaders.java`, `COMMON/http/OutboundHeaders.java`, `C
 <a id="sec-2-6-pagination"></a>
 
 ##### 2.6 Pagination
-Two existing endpoints paginate. Both paginate **in memory, after merging every replica's data**, using `page` (0-based), `size` and `sort`.
+Every paginated endpoint paginates **in memory, after merging every replica's data**, with `page` (0-based) and `size`. There are three page formats (Q8):
 
-| Endpoint | Format |
-|---|---|
-| `GET /api/scheduled-flights?aircraft=…` (US213) | HAL `PagedModel` (Spring HATEOAS): `_embedded` (key derived from the DTO class name; no `@Relation` declared), `_links`, `page {size, totalElements, totalPages, number}` |
-| `GET /api/scheduled-flights/operational-hours` (US206) | Spring Data `Page` serialised **directly** (`spring.data.web.pageable.serialization-mode` default `direct` in Spring Boot 4.0.6): `content`, `totalElements`, `totalPages`, `size`, `number`, `numberOfElements`, `first`, `last`, `empty`, `sort`, `pageable` |
+| Service | Endpoints | Format | Limits |
+|---|---|---|---|
+| Flight Routes | `GET /api/scheduled-flights?aircraft=…` (US213) | HAL `PagedModel` (Spring HATEOAS): `_embedded` (key derived from the DTO class name; no `@Relation` declared), `_links`, `page {size, totalElements, totalPages, number}` | Spring defaults: size 20, maximum 2000 |
+| Flight Routes | `GET /api/scheduled-flights/operational-hours` (B4a, US206) | Spring Data `Page` serialised **directly** (`spring.data.web.pageable.serialization-mode` default `direct` in Spring Boot 4.0.6): `content`, `totalElements`, `totalPages`, `size`, `number`, `numberOfElements`, `first`, `last`, `empty`, `sort`, `pageable` | Spring defaults: size 20, maximum 2000 |
+| Aircraft Management | `GET /api/aircrafts` (US104), `GET /api/aircrafts/operational-hours` (US206) | `PageDTO`: `{ "content": [...], "page", "size", "totalElements", "totalPages" }` | size 1–100 (default 20), otherwise 400 |
+| Maintenance | `GET /api/maintenance-records` (US218), `GET /api/maintenance-records/aircraft/{registration}` (US116), `GET /api/maintenance-records/ongoing` (US219) | `PageDTO`, same fields as Aircraft Management | size 1–100 (default 20), otherwise 400 |
 
 Things to know:
-- Without `page`/`size`, Spring applies its defaults (page 0, **size 20**; maximum page size 2000).
-- `sort` is **ignored** by `Pages.of`. Operational hours are always sorted by `registrationNumber`.
+- In Flight Routes, `sort` is **ignored** by `Pages.of`. Operational hours are always sorted by `registrationNumber`.
+- A **peer** request to `GET /api/aircrafts` gets the plain local list (no page), which the receiving replica merges and pages. Maintenance uses separate non-paginated endpoints for peers (`GET /api/maintenance-records/search`).
 - No other endpoint paginates; collections are plain JSON arrays or objects.
 
-Source: `FR/flightroutes/controllers/ScheduledFlightController.java`, `FR/flightroutes/services/Pages.java`, `FR/flightroutes/services/CalculateOperationalHoursService.java`, `code/flightroutes/src/test/java/isep/psoft/aisafe/distributed/ReplicaCollaborationTest.java` (reads `content[0]`), `spring-boot-data-commons-4.0.6.jar` configuration metadata (default `direct`)
+Source: `FR/flightroutes/controllers/ScheduledFlightController.java`, `FR/flightroutes/services/Pages.java`, `FR/flightroutes/services/CalculateOperationalHoursService.java`, `code/aircraftmanagement/.../controllers/AircraftController.java`, `AircraftStatisticsController.java`, `dto/PageDTO.java`, `code/maintenance/.../controllers/MaintenanceRecordController.java`, `dto/PageDTO.java`, `spring-boot-data-commons-4.0.6.jar` configuration metadata (default `direct`)
 
 
 <a id="sec-2-7-configuration-properties"></a>
@@ -555,6 +602,7 @@ Source: `FR/flightroutes/controllers/ScheduledFlightController.java`, `FR/flight
 | `aisafe.peers.urls` | Base URLs of the **other** replicas of the same service (excluding itself). One per instance profile | — |
 | `aisafe.instance-id` | Replica name in logs and audit | `unknown` → `spring.application.name:server.port` |
 | `aisafe.security.service-key` | Shared inter-service secret (`AISAFE_SERVICE_KEY`) | empty |
+| `aisafe.security.service-only-paths` | Paths (Ant patterns) that only other AISafe services may call: without a valid `X-Service-Key` → 401 (section 2.8). Set only by Flight Routes | empty |
 | `jwt.secret` | Shared JWT signing key (`JWT_SECRET`) | — |
 | `aisafe.http.connect-timeout` | Connect timeout of every inter-service call | `1s` |
 | `aisafe.http.read-timeout` | Read timeout of every inter-service call | `3s` |
@@ -568,6 +616,32 @@ Source: `FR/flightroutes/controllers/ScheduledFlightController.java`, `FR/flight
 
 Source: `COMMON/config/AisafeProperties.java`, `COMMON/resilience/ResilientExecutor.java`, `COMMON/resilience/CircuitBreaker.java`, `COMMON/remote/ReplicatedServiceClient.java`, `FR/flightroutes/clients/RestClientConfig.java`, `code/*/src/main/resources/application.properties`
 
+
+<a id="sec-2-8-service-only-endpoints"></a>
+
+##### 2.8 Service-only endpoints
+Some provider endpoints return raw data that only another service uses (counts, minutes, compatible routes). They are listed in the provider's `aisafe.security.service-only-paths`, and `ServiceKeyFilter` rejects any request to them that has **no** `X-Service-Key`, **even with a valid JWT**:
+
+```json
+{"error":"This endpoint is only available to AISafe services."}
+```
+
+A wrong key gets `401 {"error":"Invalid service key."}`. With a valid key the request continues to the JWT and role checks as usual (the key does not replace the JWT). Paths are matched after removing the context path and decoding the segments, so an encoded variant (`/api/routes/%63ompatible`) is also rejected.
+
+Configured in Flight Routes (`code/flightroutes/src/main/resources/application.properties`); no other service declares service-only paths:
+
+| Path | Bridge | Called by |
+|---|---|---|
+| `/api/routes/statistics/count-by-airport` | B5 | Airports |
+| `/api/routes/compatible` | B6 | Aircraft Management |
+| `/api/scheduled-flights/statistics/minutes-by-aircraft` | B4b | Aircraft Management |
+| `/api/scheduled-flights/operational-hours` | B4a | no consumer (Flight Routes replicas only) |
+| `/api/scheduled-flights/statistics/usage-by-route` | — | Flight Routes replicas (US214 aggregation) |
+
+Consumers need no code for this: the key is added by `common` to every outgoing call.
+
+Source: `COMMON/security/ServiceKeyFilter.java`, `COMMON/config/AisafeProperties.java` (`Security.serviceOnlyPaths`), `COMMON/security/JwtSecurityAutoConfiguration.java`, `code/flightroutes/src/test/java/isep/psoft/aisafe/distributed/ServiceOnlyEndpointsSecurityTest.java`, `code/common/src/test/java/isep/sidis/common/security/ServiceKeyFilterTest.java`
+
 ---
 
 
@@ -577,17 +651,17 @@ Source: `COMMON/config/AisafeProperties.java`, `COMMON/resilience/ResilientExecu
 
 | ID | Consumer → Provider | Purpose (US) | Endpoint | Status |
 |---|---|---|---|---|
-| B1a | Flight Routes → Aircraft Management | Aircraft status, capacity and model (US212, US213) | `GET /api/aircrafts/{registrationNumber}` | `CONSUMER-ONLY` |
-| B1b | Flight Routes → Aircraft Management | Maximum range of the aircraft model (US212) | `GET /api/aircraft-models/{modelName}` | `CONSUMER-ONLY` |
+| B1a | Flight Routes → Aircraft Management | Aircraft status, capacity and model (US212, US213) | `GET /api/aircrafts/{registrationNumber}` | `IMPLEMENTED` |
+| B1b | Flight Routes → Aircraft Management | Maximum range of the aircraft model (US212) | `GET /api/aircraft-models/{modelName}` | `IMPLEMENTED` |
 | B2 | Flight Routes → Airports | Coordinates, existence, operational status (US110, US209, US212, US216) | `GET /api/airports/{iataCode}` | `IMPLEMENTED` |
 | B3a | Maintenance → Aircraft Management | Aircraft exists and its model, for template applicability (US115, US116) | reuse B1a (`GET /api/aircrafts/{registrationNumber}`) | `IMPLEMENTED` |
 | B3b | Maintenance → Aircraft Management | Set the status to `UNDER_MAINTENANCE` / back to `AVAILABLE` (US115, US119) | `PATCH /api/aircrafts/{registrationNumber}/status` (US105) | `IMPLEMENTED` |
 | B3c | Maintenance → Aircraft Management | Applicable models of a template exist (US115 templates) | reuse B1b (`GET /api/aircraft-models/{modelName}`) | `IMPLEMENTED` |
 | B3d | Maintenance → Aircraft Management | Fleet and flight hours per aircraft (US222) | `GET /api/aircrafts?page=&size=` (US104), `GET /api/aircrafts/operational-hours?page=&size=` (US206) | `IMPLEMENTED` |
-| B4a | Aircraft Management → Flight Routes | Total operational hours per aircraft (US206) | `GET /api/scheduled-flights/operational-hours` | `IMPLEMENTED (provider only)` |
-| B4b | Aircraft Management → Flight Routes | Flight minutes per aircraft, to rank models (US204) | `GET /api/scheduled-flights/statistics/minutes-by-aircraft` | `IMPLEMENTED (provider only)`, if "utilisation" means flight time (Q5) |
-| B5 | Airports → Flight Routes | Number of routes per airport (US210) | `GET /api/routes/statistics/count-by-airport` | `IMPLEMENTED` |
-| B6 | Aircraft Management → Flight Routes | Active routes compatible with an aircraft (US203) | `GET /api/routes/compatible?range=&capacity=` | `IMPLEMENTED (provider only)` |
+| B4a | (none) → Flight Routes | Paged operational hours per aircraft | `GET /api/scheduled-flights/operational-hours` (service-only) | `IMPLEMENTED (provider only)`: no service calls it; Aircraft Management computes US206 from B4b |
+| B4b | Aircraft Management → Flight Routes | Flight minutes per aircraft: US204 (top models) and US206 (operational hours) | `GET /api/scheduled-flights/statistics/minutes-by-aircraft` (service-only) | `IMPLEMENTED` |
+| B5 | Airports → Flight Routes | Number of routes per airport (US210) | `GET /api/routes/statistics/count-by-airport` (service-only) | `IMPLEMENTED` |
+| B6 | Aircraft Management → Flight Routes | Active routes compatible with an aircraft (US203) | `GET /api/routes/compatible?range=&capacity=` (service-only) | `IMPLEMENTED` |
 
 **Design rule:** Aircraft Management's aircraft `status` is the **single source of truth for availability**. Maintenance changes it through B3b. **Flight Routes never calls Maintenance**; it only reads the status through B1a.
 
@@ -599,11 +673,11 @@ Source: `COMMON/config/AisafeProperties.java`, `COMMON/resilience/ResilientExecu
 #### 4. Bridges
 
 
-<a id="sec-b1-flight-routes-aircraft-management-consumer-only"></a>
+<a id="sec-b1-flight-routes-aircraft-management-implemented"></a>
 
-##### B1: Flight Routes → Aircraft Management (`CONSUMER-ONLY`)
+##### B1: Flight Routes → Aircraft Management (`IMPLEMENTED`)
 
-**Consumer:** `AircraftClient` (Flight Routes). **Provider:** Aircraft Management, which must implement both endpoints exactly as below.
+**Consumer:** `AircraftClient` (Flight Routes). **Provider:** Aircraft Management — `AircraftController.getByRegistration` (B1a) and `AircraftModelController.getByName` (B1b), which look the entity up in any replica (`AircraftReplicaQueries`). The provider returns more fields than listed below (e.g. `manufacturingDate`, `manufacturer`); Flight Routes ignores them.
 
 **Use cases that trigger the calls:**
 
@@ -665,11 +739,11 @@ US212 then applies its own rules to the data:
 - range or capacity too low → **422**
 - aircraft not `AVAILABLE` → **409** `"Aircraft <reg> is not available (status: <status>)."`
 
-**Required role on the provider:** the JWT forwarded is the end user's. Flight Routes' rules require **`ATCC`** for `POST /api/scheduled-flights` (US212) and `GET /api/scheduled-flights/**` (US213), so Aircraft Management must allow **`ATCC`** on both GETs (plus its own roles).
+**Required role on the provider:** the JWT forwarded is the end user's. Flight Routes' rules require **`ATCC`** for `POST /api/scheduled-flights` (US212) and `GET /api/scheduled-flights/**` (US213). Aircraft Management allows `ATCC`, `BACKOFFICE_OPERATOR`, `MAINTENANCE_TECHNICIAN` and `MAINTENANCE_SUPERVISOR` on `GET /api/aircrafts/**` and `GET /api/aircraft-models/**`.
 
 **Replica behaviour:**
 - **Consumer:** load balancing across all replicas listed in `services.aircraft.urls`, with failover (`ReplicatedServiceClient`).
-- **Provider:** the replica that receives the GET must **find the aircraft in any replica**: local first, then `PeerClient.findFirst` (section 5). Otherwise an aircraft stored in another replica would come back as a false 404.
+- **Provider:** the replica that receives the GET finds the aircraft (or model) in any replica: local first, then `PeerClient.findFirst` (section 5).
 
 **Source:** `FR/flightroutes/clients/AircraftClient.java`, `FR/flightroutes/clients/AircraftSnapshot.java`, `FR/flightroutes/clients/RestClientConfig.java`, `FR/flightroutes/services/CreateScheduledFlightService.java`, `FR/flightroutes/services/ViewScheduledFlightsByAircraftService.java`, `FR/flightroutes/domain/RouteRequirements.java`, `FR/exceptions/GlobalExceptionHandler.java`, `FR/infrastructure/security/FlightRoutesAuthorizationRules.java`, `COMMON/remote/ReplicatedServiceClient.java`, `COMMON/resilience/ResilientExecutor.java`; example values from the stub in `code/flightroutes/src/test/java/isep/psoft/aisafe/distributed/ReplicaCollaborationTest.java`
 
@@ -709,7 +783,7 @@ US212 then applies its own rules to the data:
 { "iataCode": "OPO", "latitude": 41.2481, "longitude": -8.6814, "status": "OPERATIONAL" }
 ```
 
-**Certifications (US106a):** Flight Routes does **not** read any aircraft-model certification of the airport. No field is consumed and no check exists in US212. Whether it should is open decision Q3. Until then the provider may include certifications in the response, but nothing depends on them.
+**Certifications (US106a):** Flight Routes does **not** read any aircraft-model certification of the airport. No field is consumed and no check exists in US212. Airports returns `certifiedModels` in the response, but nothing depends on it (Q3; known limitation, section 8).
 
 
 <a id="sec-status-codes-and-how-flight-routes-handles-them"></a>
@@ -751,7 +825,7 @@ US212 then answers **409** `"Origin airport <IATA> is not operational."` (or Des
 | US115 create template | `CreateMaintenanceTemplateService` | B3c per applicable model | existence (404 → template rejected with 400) |
 | US115 create record | `CreateMaintenanceRecordService` | B3a, then B3b `UNDER_MAINTENANCE` | `modelName` (template applicability, model snapshot), `status` (previous status, for compensation) |
 | US116 records of an aircraft | `ViewMaintenanceRecordsService` | B3a (only on the replica that received the client request) | existence (404 → 404, not an empty history) |
-| US119 complete record | `CompleteMaintenanceRecordService` → `AircraftAvailabilityService` | B3b `AVAILABLE` (only if no other record of the aircraft is ongoing in any replica) | — |
+| US119 complete record | `CompleteMaintenanceRecordService` → `AircraftAvailabilityService` (replica that received the client request) | B3b `AVAILABLE` (only if no other record of the aircraft is ongoing in any replica and every replica answered) | — (failure keeps the aircraft `UNDER_MAINTENANCE`; header `X-Aircraft-Released: false`) |
 | US222 alerts | `MaintenanceAlertService` | B3d (all pages) | fleet (`registrationNumber`, `modelName`, `manufacturingDate`, `status`) and `totalHours` per aircraft |
 
 
@@ -779,7 +853,7 @@ US212 then answers **409** `"Origin airport <IATA> is not operational."` (or Des
 - **Usage:**
   - US115 (record starts): `{"status": "UNDER_MAINTENANCE"}`. If the aircraft is already `UNDER_MAINTENANCE` (another record in progress) the provider accepts it as a no-op.
   - US119 (last ongoing record completed): `{"status": "AVAILABLE"}`. **Not `"ACTIVE"`**: Flight Routes only schedules aircraft whose status is exactly `AVAILABLE` (Q1, decided).
-  - Compensation: the previous status (US115) or `UNDER_MAINTENANCE` (US119), when the local transaction rolls back after B3b succeeded.
+  - Compensation (US115): the previous status, when the local transaction rolls back after B3b succeeded.
 - **Response 200:** the updated aircraft, with the same schema as B1a.
 - **Status codes and how Maintenance handles them:**
 
@@ -792,7 +866,7 @@ US212 then answers **409** `"Origin airport <IATA> is not operational."` (or Des
 | 409 | aircraft `IN_FLIGHT` cannot go `UNDER_MAINTENANCE` (Q7, decided by Aircraft Management) or `@Version` clash | `ResponseStatusException(409)`, rollback | 409 |
 | 5xx, timeout, connection refused, circuit open | retry, then failover to the next replica | `RemoteServiceUnavailableException`, rollback | **503** `{"error": "Aircraft Management service is unavailable."}` |
 
-- **Ordering (decided, Q7):** Maintenance writes and **flushes** its record first (local validation, constraints and `@Version` already checked), then calls B3b, then commits. B3b failing → the local transaction rolls back (nothing changed anywhere). Commit failing after B3b → a `TransactionSynchronization` sends the **compensating PATCH**. The server-side `@Version` of the aircraft is enough; no `If-Match` is sent.
+- **Ordering (decided, Q7):** US115 — Maintenance writes and **flushes** its record first (local validation, constraints and `@Version` already checked), then calls B3b, then commits. B3b failing → the local transaction rolls back (nothing changed anywhere). Commit failing after B3b → a `TransactionSynchronization` sends the **compensating PATCH**. US119 — the record is completed first; the release is a separate step whose failure leaves the aircraft `UNDER_MAINTENANCE` (safe side) without failing the completion. The server-side `@Version` of the aircraft is enough; no `If-Match` is sent.
 - **Retries:** setting a status to a fixed value is idempotent, so the retries of `ReplicatedServiceClient` are safe.
 - **Replica behaviour (provider):** the write runs on the replica that owns the aircraft (`UpdateAircraftStatusService` → `PeerClient.forwardToOwner`).
 
@@ -811,6 +885,7 @@ US212 then answers **409** `"Origin airport <IATA> is not operational."` (or Des
 - `GET /api/aircrafts/operational-hours?page=n&size=100` (US206) — fields used: `registrationNumber`, `totalHours`. Aircraft without flights have `0`.
 - Page format (both): `{ "content": [...], "page": 0, "size": 100, "totalElements": 6, "totalPages": 1 }` (`PageDTO` of Aircraft Management).
 - `X-Partial-Response: true` on either response → Maintenance flags its own response as partial.
+- `operational-hours` depends on Flight Routes (B4). If it fails (`503`, or any error other than a 404 of the fleet), Maintenance still returns the calendar-day alerts, flagged `X-Partial-Response: true`.
 - Role: **`ATCC`** (the US222 actor; `operational-hours` is `ATCC`-only).
 
 **Source:** `code/maintenance/.../maintenance/clients/AircraftClient.java`, `code/aircraftmanagement/.../controllers/AircraftController.java`, `AircraftStatisticsController.java`, `AircraftModelController.java`, `UpdateAircraftStatusService.java`, `domain/Aircraft.java` (`changeStatus`), `dto/PageDTO.java`, `infrastructure/security/AircraftManagementAuthorizationRules.java`, `FR/flightroutes/clients/AircraftSnapshot.java` (`isAvailable` checks `"AVAILABLE"`), `COMMON/remote/ReplicatedServiceClient.java`
@@ -822,18 +897,19 @@ US212 then answers **409** `"Origin airport <IATA> is not operational."` (or Des
 
 ##### B4: Aircraft Management → Flight Routes (usage statistics)
 
-**Consumer:** Aircraft Management (to be written). **Provider:** Flight Routes, already implemented.
+**Consumer:** Aircraft Management — `FlightRoutesClient.minutesByAircraft` (B4b only). **Provider:** Flight Routes.
 
 **Use cases:**
-- US206: total operational hours per aircraft.
-- US204: top 5 most utilised aircraft models *(from the assignment, not in code)*.
+- US206: total operational hours per aircraft — `GET /api/aircrafts/operational-hours` (Aircraft Management, `CalculateOperationalHoursService`).
+- US204: top most utilised aircraft models — `GET /api/aircraft-models/top-utilized?limit=` (default 5, 1–20; Aircraft Management, `TopUtilizedModelsService`).
 
-Flight Routes only knows **registrations**, not models. Aircraft Management therefore maps registration → model itself and adds up the minutes per model.
+Flight Routes only knows **registrations**, not models. Aircraft Management therefore maps registration → model itself, using its own fleet from all its replicas.
 
 
-<a id="sec-b4a-get-api-scheduled-flights-operational-hours-us206-implem"></a>
+<a id="sec-b4a-get-api-scheduled-flights-operational-hours-implemented"></a>
 
-###### B4a: `GET /api/scheduled-flights/operational-hours` (US206), `IMPLEMENTED (provider only)`
+###### B4a: `GET /api/scheduled-flights/operational-hours`, `IMPLEMENTED (provider only)`
+No service calls this endpoint: Aircraft Management computes US206 from B4b and its own fleet. It is service-only (section 2.8), so a user calling it directly gets 401.
 - **Request:** optional `page` (0-based) and `size` (default 20, maximum 2000). `sort` is ignored.
 - **Response 200:** Spring Data `Page` (format in section 2.6). Each element of `content`:
 
@@ -849,13 +925,13 @@ Flight Routes only knows **registrations**, not models. Aircraft Management ther
   "numberOfElements": 1, "empty": false, "sort": { "...": "..." }, "pageable": { "...": "..." } }
 ```
 
-- Only aircraft **with at least one flight** appear. Aircraft Management assumes **0** for the others.
+- Only aircraft **with at least one flight** appear.
 - Content is sorted by `registrationNumber`.
 
 
 <a id="sec-b4b-get-api-scheduled-flights-statistics-minutes-by-aircraft"></a>
 
-###### B4b: `GET /api/scheduled-flights/statistics/minutes-by-aircraft` (US204), `IMPLEMENTED (provider only)`
+###### B4b: `GET /api/scheduled-flights/statistics/minutes-by-aircraft` (US204, US206), `IMPLEMENTED`
 - **Request:** no parameters.
 - **Response 200:** a JSON object whose keys are registrations and whose values are minutes (`Map<String, Long>`). The minutes are the same as `totalMinutes` in B4a, but the whole result comes at once without pagination, which is simpler for a top-5 ranking.
 
@@ -863,8 +939,9 @@ Flight Routes only knows **registrations**, not models. Aircraft Management ther
 { "CS-TUA": 55, "CS-TUB": 140 }
 ```
 
-- **US204 recipe (consumer):** call B4b, map each registration to its `modelName` locally, sum the minutes per model, sort in descending order and take 5.
-- This assumes "most utilised" means **flight time**. If the group defines it as **number of flights**, Flight Routes must add `GET /api/scheduled-flights/statistics/flights-by-aircraft` (same format: registration → count), which is `PROPOSED`. See Q5.
+- **US204 recipe (consumer, as implemented):** call B4b, map each registration of the fleet to its `modelName`, sum the minutes per model, drop models with 0 minutes, sort by minutes descending (ties by model name) and take `limit`. Each row: `modelName`, `totalMinutes`, `totalHours`, `aircraftCount`.
+- **US206 recipe (consumer, as implemented):** every aircraft of the fleet (sorted by registration) with the minutes from B4b, **0** when absent; paginated with Aircraft Management's `PageDTO`. Each row: `registrationNumber`, `modelName`, `totalMinutes`, `totalHours`.
+- "Most utilised" means **flight time** (Q5).
 
 
 <a id="sec-status-codes-role-and-replicas-b4a-and-b4b"></a>
@@ -874,14 +951,14 @@ Flight Routes only knows **registrations**, not models. Aircraft Management ther
 | Status | When |
 |---|---|
 | 200 | always, when authorised. The result may be incomplete (see below) |
-| 401 | missing or invalid JWT |
-| 403 | the user's role is not `ATCC` |
+| 401 | missing or invalid JWT, or **no `X-Service-Key`** (service-only, section 2.8) |
+| 403 | the user's role is not allowed (below) |
 
-- **Required role (existing rule):** `GET /api/scheduled-flights/**` → **`ATCC` only**. If US204/US206 are performed by another role (e.g. `BACKOFFICE_OPERATOR`), the forwarded JWT will get **403** until Flight Routes widens that rule. See Q4.
-- **Partial results:** the receiving Flight Routes replica adds its own figures to the figures of every peer (`PeerClient.collect`). If a peer doesn't answer within `aggregation-timeout`, the result is still 200 but **incomplete**, with `X-Partial-Response: true` and `X-Unavailable-Peers: <n>`. To detect this, the consumer must read the headers (e.g. `.retrieve().toEntity(...)` inside `ReplicatedServiceClient.call`).
-- **Consumer failure handling:** the same as B1 (retry, then failover, then 503).
+- **Roles (Q4):** B4b (`minutes-by-aircraft`) allows **`ATCC` and `BACKOFFICE_OPERATOR`**, so US204 works for both roles that Aircraft Management allows on `top-utilized`. B4a and the rest of `GET /api/scheduled-flights/**` are `ATCC` only, which matches US206 (`GET /api/aircrafts/operational-hours` is `ATCC` only in Aircraft Management).
+- **Partial results:** the receiving Flight Routes replica adds its own figures to the figures of every peer (`PeerClient.collect`). If a peer doesn't answer within `aggregation-timeout`, the result is still 200 but **incomplete**, with `X-Partial-Response: true` and `X-Unavailable-Peers: <n>`. Aircraft Management reads the header (`.retrieve().toEntity(...)`) and sets `X-Partial-Response: true` on its own US204/US206 response.
+- **Consumer failure handling:** the same as B1 (retry, then failover, then 503). A 401/403 from Flight Routes becomes the same status with `{"error": "Flight Routes rejected the request."}`.
 
-**Source:** `FR/flightroutes/controllers/ScheduledFlightController.java`, `FR/flightroutes/services/CalculateOperationalHoursService.java`, `FR/flightroutes/services/ScheduledFlightStatisticsService.java`, `FR/flightroutes/repositories/ScheduledFlightRepository.java` (`sumMinutesByAircraft`), `FR/flightroutes/dto/AircraftOperationalHoursDTO.java`, `FR/flightroutes/services/Pages.java`, `FR/infrastructure/security/FlightRoutesAuthorizationRules.java`, `COMMON/peers/PeerClient.java`, `ReplicaCollaborationTest.java` (operational hours aggregated across replicas)
+**Source:** `code/aircraftmanagement/.../clients/FlightRoutesClient.java`, `services/CalculateOperationalHoursService.java`, `services/TopUtilizedModelsService.java`, `FR/flightroutes/controllers/ScheduledFlightController.java`, `FR/flightroutes/services/CalculateOperationalHoursService.java`, `FR/flightroutes/services/ScheduledFlightStatisticsService.java`, `FR/flightroutes/repositories/ScheduledFlightRepository.java` (`sumMinutesByAircraft`), `FR/flightroutes/dto/AircraftOperationalHoursDTO.java`, `FR/flightroutes/services/Pages.java`, `FR/infrastructure/security/FlightRoutesAuthorizationRules.java`, `COMMON/peers/PeerClient.java`, `ReplicaCollaborationTest.java` (operational hours aggregated across replicas)
 
 ---
 
@@ -920,11 +997,12 @@ Flight Routes only knows **registrations**, not models. Aircraft Management ther
 | Status | When |
 |---|---|
 | 200 | authorised (possibly partial: `X-Partial-Response: true`) |
-| 401 | missing or invalid JWT |
+| 401 | missing or invalid JWT, or **no `X-Service-Key`** (service-only, section 2.8) |
 | 403 | the role is not `BACKOFFICE_OPERATOR` |
 
-- **Required role:** **`BACKOFFICE_OPERATOR`** (explicit rule). The US210 user must therefore be a backoffice operator.
-- **Replica behaviour:** aggregated (`PeerClient.collect`), as in B4.
+- **Required role:** **`BACKOFFICE_OPERATOR`** (explicit rule), the same role Airports requires on `GET /api/airports/statistics/**`.
+- **Replica behaviour:** aggregated (`PeerClient.collect`), as in B4. Airports' `FlightRoutesClient` reads only the body, so a partial count from Flight Routes is **not** flagged in the US210 response (known limitation, section 8).
+- **Consumer failure handling:** retry, failover, then 503; a 401/403 from Flight Routes becomes the same status with `{"error": "Flight Routes rejected the request."}`.
 
 **Source:** `FR/flightroutes/controllers/FlightRouteController.java`, `FR/flightroutes/services/CountRoutesByAirportService.java`, `FR/flightroutes/repositories/FlightRouteRepository.java`, `FR/infrastructure/security/FlightRoutesAuthorizationRules.java` (rule plus the `US210 — GET /api/airports/statistics/busiest (Airports)` comment)
 
@@ -933,11 +1011,11 @@ Flight Routes only knows **registrations**, not models. Aircraft Management ther
 
 <a id="sec-b6-aircraft-management-flight-routes-compatible-routes-imple"></a>
 
-##### B6: Aircraft Management → Flight Routes (compatible routes), `IMPLEMENTED (provider only)`
+##### B6: Aircraft Management → Flight Routes (compatible routes), `IMPLEMENTED`
 
 This bridge was not in the work order; it is included because it exists in code and in [Containers.md](#src-2-containers-containers).
 
-**Consumer:** Aircraft Management (to be written). **Provider:** Flight Routes. **Use case:** US203, routes an aircraft can operate.
+**Consumer:** Aircraft Management — `FindCompatibleRoutesService` behind `GET /api/aircrafts/{registrationNumber}/compatible-routes` (`ATCC` only). It finds the aircraft and its model in any of its replicas (404 if either is missing), calls B6 with the model's `maximumRange` and the aircraft's `seatingCapacity`, and passes `X-Partial-Response` on. **Provider:** Flight Routes. **Use case:** US203, routes an aircraft can operate.
 
 
 <a id="sec-get-api-routes-compatible-range-double-capacity-integer"></a>
@@ -957,7 +1035,8 @@ This bridge was not in the work order; it is included because it exists in code 
 | `status` | string | `ACTIVE` |
 | `usageCount` | integer or null | null here (only filled in by US214) |
 
-- **Roles:** `ATCC`, `MAINTENANCE_SUPERVISOR` or `MAINTENANCE_TECHNICIAN`.
+- **Roles:** `ATCC`, `MAINTENANCE_SUPERVISOR` or `MAINTENANCE_TECHNICIAN` on the provider; in practice only `ATCC`, because the consumer endpoint is `ATCC` only.
+- **Service-only:** without `X-Service-Key` → 401 (section 2.8).
 - **Replica behaviour:** aggregated, possibly partial.
 
 **Source:** `FR/flightroutes/controllers/FlightRouteController.java`, `FR/flightroutes/services/SearchFlightRoutesService.java`, `FR/flightroutes/repositories/FlightRouteRepository.java` (`findCompatibleRoutes`), `FR/flightroutes/dto/FlightRouteDTO.java`, `FR/infrastructure/security/FlightRoutesAuthorizationRules.java`
@@ -1007,27 +1086,50 @@ Every service runs 3 replicas, and **each replica has its own database**. Data i
 - [ ] **Roles:** your `<Service>AuthorizationRules` allows the roles of the **end users** of the consumer's use cases (the JWT is forwarded).
 - [ ] **Peer behaviour:** a GET by ID finds entities stored in any replica (`findFirst`), collections are aggregated (`collectList`), and writes go to the owner (`forwardToOwner`).
 - [ ] **Configuration:** `aisafe.peers.urls` per instance; the same `jwt.secret` and `aisafe.security.service-key` as every other service.
+- [ ] **Service-only endpoints:** if an endpoint is only for other services, add it to `aisafe.security.service-only-paths` (section 2.8); in Postman, call it with `X-Service-Key: {{serviceKey}}` and add a request without the key that expects 401.
+- [ ] **`AuthorizationRules`:** list only your own endpoints and never call `anyRequest()` (the `common` chain adds `anyRequest().authenticated()`; a service that calls it does not start).
 - [ ] **Postman:** one request per provided endpoint in your service's collection (`docs/5-scenarios/<service>/postman/`), including a 404 case and a request to a replica that does not own the entity.
 - [ ] **Contract test:** call the consumer against your real service (or update the consumer's stub, e.g. the stub in `ReplicaCollaborationTest`) with the example JSON from this document.
 
 ---
 
 
-<a id="sec-7-open-decisions-need-group-agreement"></a>
+<a id="sec-7-decisions-closed"></a>
 
-#### 7. Open decisions (need group agreement)
+#### 7. Decisions (closed)
 
-- **Q1.** ~~After maintenance (US119), should the aircraft go back to `AVAILABLE` or to `ACTIVE`?~~ **Decided (Maintenance):** `AVAILABLE`, the value Flight Routes requires to schedule flights; it is set only when the aircraft has no other ongoing maintenance record.
-- **Q2.** ~~What are the airport status values besides `OPERATIONAL`?~~ **Decided (Airports):** `OPERATIONAL`, `CLOSED`, `UNDER_MAINTENANCE` (US109). Flight Routes treats any value other than `OPERATIONAL` as "not operational".
-- **Q3.** US106a: should US212 check that the destination/origin airport is **certified for the aircraft model**? If so, B2 needs a certifications field (proposed: `certifiedModels: string[]`) and Flight Routes needs a code change.
-- **Q4.** *(Maintenance part decided: US115/US119/US217 `MAINTENANCE_TECHNICIAN`; US116/US218 technician and supervisor; US219/US221 `MAINTENANCE_SUPERVISOR`; US117/US220/US222 `ATCC` — see [Maintenance L3 §3](#sec-3-provided-interfaces-rest-api-4).)* Which **roles** perform US204, US206 (Aircraft Management), US115/US119 (Maintenance) and US210 (Airports)? Flight Routes currently allows only `ATCC` on `/api/scheduled-flights/**` (B4) and only `BACKOFFICE_OPERATOR` on count-by-airport (B5). Providers must allow `ATCC` on B1/B2.
-- **Q5.** US204: is "most utilised" measured by **flight time** (B4b, implemented) or by **number of flights** (needs `flights-by-aircraft`, proposed)?
-- **Q6.** US210: should route counts include **`INACTIVE` routes** (they do today)?
-- **Q7.** ~~B3b: valid transitions, `If-Match`, compensation?~~ **Decided:** `IN_FLIGHT` → `UNDER_MAINTENANCE`/`INACTIVE` is rejected with 409 (Aircraft Management); the server-side `@Version` check is enough (no `If-Match`); Maintenance flushes its record, then calls B3b, then commits, and sends a compensating PATCH if the commit fails after B3b (section B3b).
-- **Q8.** Should `operational-hours` keep the unstable `direct` Page JSON, or switch to a stable format (`spring.data.web.pageable.serialization-mode=via_dto`, or a HAL `PagedModel` like US213)? Both consumer and provider would have to change together.
-- **Q9.** What is the unit of `maximumRange` / `minRange`? The code compares them directly, and route distances are in km.
-- **Q10.** Is there a **registration format** (regex) to validate, and should the value be normalised (upper case) like IATA codes?
-- **Q11.** Should `X-Service-Key` become **mandatory for every service-to-service call**, not only for peer calls?
+Every question that was open is now closed. Each entry records the outcome **as implemented in the code**.
+
+- **Q1. Status after maintenance (US119).** `AVAILABLE` (not `ACTIVE`), the only value Flight Routes accepts for scheduling. Maintenance sets it only when the aircraft has no other ongoing record in any replica **and** every replica answered; otherwise the aircraft stays `UNDER_MAINTENANCE` (`AircraftAvailabilityService.releaseIfNoOtherOngoing`).
+- **Q2. Airport status values.** `OPERATIONAL`, `CLOSED`, `UNDER_MAINTENANCE` (Airports, US109). Flight Routes treats any value other than `OPERATIONAL` as "not operational" (`AirportSnapshot.isOperational`).
+- **Q3. Airport certifications in US212.** **Not checked.** Airports stores and returns `certifiedModels` (US106a), but Flight Routes does not read the field and US212 does not check it. See the known limitations (section 8).
+- **Q4. Roles.** The JWT of the end user is forwarded, so each provider allows the roles of the consumer's use case. As implemented:
+  - **Aircraft Management:** `POST /api/aircraft-models` (US101) `BACKOFFICE_OPERATOR`; `POST /api/aircrafts` (US102) `ATCC`; `PATCH /api/aircrafts/*/status` (US105, B3b) `ATCC`, `MAINTENANCE_TECHNICIAN`, `MAINTENANCE_SUPERVISOR`; `GET /api/aircrafts/operational-hours` (US206) and `GET /api/aircrafts/*/compatible-routes` (US203) `ATCC`; `GET /api/aircraft-models/top-utilized` (US204) `BACKOFFICE_OPERATOR`, `ATCC`; other `GET /api/aircrafts/**` and `GET /api/aircraft-models/**` (US103, US104, B1, B3a, B3c, B3d) `ATCC`, `BACKOFFICE_OPERATOR`, `MAINTENANCE_TECHNICIAN`, `MAINTENANCE_SUPERVISOR`.
+  - **Airports:** `POST /api/airports`, `PATCH /api/airports/*`, `PATCH /api/airports/*/status` and `GET /api/airports/statistics/**` (US210) `BACKOFFICE_OPERATOR`; `GET /api/airports` (US108) and `GET /api/airports/grouped` (US211) `ATCC`; `GET /api/airports/*` (US107, B2) `BACKOFFICE_OPERATOR`, `ATCC`; `POST /api/airports/*/certifications` (US106a) `BACKOFFICE_OPERATOR`, `ATCC`; anything else under `/api/airports` is denied.
+  - **Flight Routes:** `POST /api/routes`, `GET /api/routes/**`, `POST /api/scheduled-flights` and `GET /api/scheduled-flights/**` `ATCC`; `PATCH /api/routes/*` `ATCC`, `BACKOFFICE_OPERATOR`; `GET /api/routes/statistics/count-by-airport` (B5) `BACKOFFICE_OPERATOR`; `GET /api/routes/compatible` (B6) `ATCC`, `MAINTENANCE_SUPERVISOR`, `MAINTENANCE_TECHNICIAN`; **`GET /api/scheduled-flights/statistics/minutes-by-aircraft` (B4b) `ATCC`, `BACKOFFICE_OPERATOR`**, so US204 also works for the Backoffice Operator.
+  - **Maintenance** *(decided by Maintenance)*: US115/US119/US217 `MAINTENANCE_TECHNICIAN`; US116/US218 technician and supervisor; US219/US221 `MAINTENANCE_SUPERVISOR`; US117/US220/US222 `ATCC` — see [Maintenance L3 §3](#sec-3-provided-interfaces-rest-api-4).
+- **Q5. "Most utilised" (US204).** Flight time: the minutes from B4b summed per model. No flights-by-aircraft endpoint exists.
+- **Q6. INACTIVE routes in US210.** Counted. `count-by-airport` has no status filter (`FlightRouteRepository.countByOrigin`/`countByDestination`).
+- **Q7. B3b transitions and ordering.** `IN_FLIGHT` → `UNDER_MAINTENANCE`/`INACTIVE` is rejected with 409 (`Aircraft.changeStatus`); the server-side `@Version` check is enough (no `If-Match`). US115: Maintenance flushes its record, then calls B3b, then commits, and sends a compensating PATCH if the transaction rolls back after B3b. US119: the record is completed first and the release is a separate step (section B3b).
+- **Q8. Page formats.** Each service keeps its own format (section 2.6): Aircraft Management and Maintenance return `PageDTO` (`content`, `page`, `size`, `totalElements`, `totalPages`); Flight Routes returns a HAL `PagedModel` for US213 and the Spring Data `Page` JSON (`direct` mode) for B4a. Because B4a has no consumer, no service depends on the `direct` format; the only cross-service page consumer (Maintenance, B3d) reads Aircraft Management's `PageDTO`.
+- **Q9. Units of range.** Kilometres. Route distances are Haversine distances with an Earth radius of 6371 km (`DistanceCalculatorService`), and `minRange`/`maximumRange` are compared directly in the same unit.
+- **Q10. Registration format.** Aircraft Management validates `^[A-Z0-9]{1,2}-[A-Z0-9]{2,5}$` on `POST /api/aircrafts` (US102), so stored registrations are upper case (e.g. `CS-TUA`). Maintenance trims and upper-cases the registration before calling B3a; Flight Routes sends it as typed (see section 8).
+- **Q11. Inter-service authentication.** `X-Service-Key` is sent on every inter-service call. It is required on **peer calls** and on the **service-only endpoints** declared in `aisafe.security.service-only-paths` (Flight Routes: B4a, B4b, B5, B6 and `usage-by-route`, section 2.8). Endpoints that also serve end users (B1, B2, B3) accept a valid JWT without the key.
+
+
+<a id="sec-8-known-limitations"></a>
+
+#### 8. Known limitations
+
+What the contracts or the decisions above promise, but the code does not do (or does only partly):
+
+- **Certifications not checked in US212 (Q3).** A flight can be scheduled to or from an airport that is not certified for the aircraft model.
+- **No stale-version detection in the API.** Entities have `@Version` and a write clash returns 409, but no update endpoint accepts a version: `PATCH /api/routes/{id}` (Flight Routes), `PATCH /api/aircrafts/{reg}/status` (Aircraft Management), `PATCH /api/airports/{iata}` (Airports) and the Maintenance record commands take no `version`, `ETag` or `If-Match`, and only Maintenance returns `version` in its DTO. A client that updates from stale data is not told (last writer wins). A 409 only happens when two updates overlap on the owner replica (demonstrated by folder 8 of the Flight Routes Postman collection).
+- **Registrations are not normalised by Flight Routes.** Aircraft Management looks registrations up exactly (case-sensitive), so a lower-case registration typed in US212/US213 gives 404, while Maintenance normalises it.
+- **Partial counts in US210 are not flagged.** Airports reads only the body of B5, so `X-Partial-Response` from Flight Routes is lost.
+- **B4a has no consumer** and still uses the Spring Data `direct` page JSON, which Spring does not guarantee to keep stable.
+- **Cross-replica uniqueness is best-effort** (AP, see [Containers §3.3](#sec-3-3-consistency-model-cap)): during a partition two replicas can accept the same route, airport or aircraft.
+- **Development defaults.** `POST /auth/dev-token` is enabled by default (`AISAFE_DEV_TOKEN`, default `true`) and `application.properties` contains default values for `jwt.secret` and `aisafe.security.service-key`; they must be overridden by environment variables outside development.
 
 <div style="page-break-before: always;"></div>
 
@@ -1062,15 +1164,15 @@ Every service runs 3 replicas, and **each replica has its own database**. Data i
 |---|---|---|---|
 | **CorrelationIdFilter** | `observability.CorrelationIdFilter` | Assigns/propagates `X-Correlation-Id`; puts it and the instance id in the log MDC | automatic |
 | **AuditLogFilter** | `observability.AuditLogFilter` | One `AUDIT` log line per request (user, roles, method, path, status, source, duration) | automatic |
-| **ServiceKeyFilter** | `security.ServiceKeyFilter` | Inter-service authentication with `X-Service-Key`; rejects peer requests without key and `X-Peer-Hops > 1` | set `aisafe.security.service-key` |
-| **JWT security** | `security.JwtAuthenticationFilter`, `JwtTokenProvider`, `JwtSecurityAutoConfiguration`, `AuthorizationRules` | Stateless JWT authentication; security filter chain; per-service access rules | implement a `<Service>AuthorizationRules` bean |
+| **ServiceKeyFilter** | `security.ServiceKeyFilter` | Inter-service authentication with `X-Service-Key`: `401` for a peer request (`X-Peer-Hops`) without key, for a request to a **service-only path** without key (`{"error":"This endpoint is only available to AISafe services."}`) and for any wrong key; `400` for `X-Peer-Hops > 1`. With a valid key the request continues to the JWT and role checks | set `aisafe.security.service-key` (same in every service); list the endpoints that only other services may call in `aisafe.security.service-only-paths` (Ant patterns, default empty) |
+| **JWT security** | `security.JwtAuthenticationFilter`, `JwtTokenProvider`, `JwtSecurityAutoConfiguration`, `AuthorizationRules` | Stateless JWT authentication; security filter chain (public `/actuator/health`, Swagger, `/h2-console`, `/auth/dev-token`); per-service access rules, then `anyRequest().authenticated()` | implement a `<Service>AuthorizationRules` bean that lists **only its own endpoints** and **never calls `anyRequest()`** (`common` adds it; if a rule calls it, the service does not start and the message names the class) |
 | **DevTokenController** | `security.DevTokenController` | `POST /auth/dev-token` for tests (dev only) | `aisafe.security.dev-token.enabled=true` |
 | **PeerClient** | `peers.PeerClient`, `PeerResult` | `findFirst`, `collect`/`collectList`, `forwardToOwner` on the replicas of the same service | inject `PeerClient`; set `aisafe.peers.urls` |
 | **ReplicatedServiceClient** | `remote.ReplicatedServiceClient(Factory)`, `RemoteServiceUnavailableException` | Round-robin + failover over the replicas of another service; `503` if none answers | `factory.create("Airports", urls)` |
 | **ResilientExecutor** | `resilience.ResilientExecutor`, `CircuitBreaker`, `CircuitBreakerRegistry` | Retry with exponential backoff; circuit breaker per target | used by the two clients above |
-| **Inter-service RestClient** | `http.HttpClientFactory`, `InterServiceHeadersInterceptor`, `OutboundHeaders`, `AisafeHeaders` | Timeouts, TLS truststore, propagation of JWT / correlation id / service key | bean `interServiceRestClient` |
+| **Inter-service RestClient** | `http.HttpClientFactory`, `InterServiceHeadersInterceptor`, `OutboundHeaders`, `AisafeHeaders` | Timeouts, TLS truststore, propagation of JWT / correlation id; adds `X-Service-Key` to **every** inter-service and peer call | bean `interServiceRestClient` (used by `PeerClient` and every `ReplicatedServiceClient`) |
 | **PeersHealthIndicator** | `peers.PeersHealthIndicator` | `peers` component of `/actuator/health` with the circuit state of each target | automatic |
-| **Configuration** | `config.AisafeProperties` | All `aisafe.*` properties (peers, timeouts, retry, circuit breaker, security, TLS) | `application*.properties` |
+| **Configuration** | `config.AisafeProperties` | All `aisafe.*` properties (peers, timeouts, retry, circuit breaker, security — `service-key`, `service-only-paths`, `dev-token.enabled` —, TLS) | `application*.properties` |
 
 
 <a id="sec-request-pipeline-order-of-the-filters"></a>
@@ -1084,7 +1186,18 @@ Every service runs 3 replicas, and **each replica has its own database**. Data i
 
 #### Usage examples
 
-See the root [README](../README.md#4-using-the-common-library-in-your-service) for code snippets (calling another service, answering with the data of all replicas, forwarding commands to the owner).
+How to call another service, answer with the data of all replicas and forward commands to the owner (which `common` API to use in each situation, with the reference implementation in Flight Routes): [Integration-Contracts §5](#sec-5-intra-service-peer-protocol-replicas-of-the-same-service). Checklist for a service that provides an endpoint (including service-only paths and the `AuthorizationRules` rule): [Integration-Contracts §6](#sec-6-checklist-for-a-provider-implementing-a-contract).
+
+Example of the per-service configuration (Flight Routes, `application.properties`):
+
+```properties
+aisafe.security.service-key=${AISAFE_SERVICE_KEY:dev-only-service-key-aisafe-2026}
+aisafe.security.service-only-paths=/api/routes/statistics/count-by-airport,\
+  /api/routes/compatible,\
+  /api/scheduled-flights/statistics/minutes-by-aircraft,\
+  /api/scheduled-flights/operational-hours,\
+  /api/scheduled-flights/statistics/usage-by-route
+```
 
 <a id="sec-c4-level-4-code"></a>
 
@@ -1114,9 +1227,10 @@ See the root [README](../README.md#4-using-the-common-library-in-your-service) f
 | [`ResilientExecutor`](../code/common/src/main/java/isep/sidis/common/resilience/ResilientExecutor.java) | `execute(target, call)`: fails fast with `CircuitOpenException` when the circuit is open; retries transient failures (`ResourceAccessException`, `HttpServerErrorException`) with exponential backoff; a 4xx counts as success for the breaker and is not retried. |
 | [`CircuitBreaker`](../code/common/src/main/java/isep/sidis/common/resilience/CircuitBreaker.java) | CLOSED → OPEN after `failureThreshold` consecutive failures; OPEN → HALF_OPEN after `openDuration`; HALF_OPEN → CLOSED on success, → OPEN on failure. Thread-safe, clock injected for tests. |
 | [`ReplicatedServiceClient`](../code/common/src/main/java/isep/sidis/common/remote/ReplicatedServiceClient.java) | `call((restClient, baseUrl) -> ...)`: round-robin start replica, failover to the next on transient failure, `RemoteServiceUnavailableException` when all fail. |
-| [`ServiceKeyFilter`](../code/common/src/main/java/isep/sidis/common/security/ServiceKeyFilter.java) | Peer requests must carry a valid key (`401`); hop count must be 1 (`400`); constant-time comparison. |
+| [`ServiceKeyFilter`](../code/common/src/main/java/isep/sidis/common/security/ServiceKeyFilter.java) | Peer requests must carry a valid key (`401`); hop count must be 1 (`400`); requests to the **service-only paths** (`aisafe.security.service-only-paths`, parsed once with `PathPatternParser`; an invalid pattern fails at start-up) must carry the key (`401`). Paths are matched without the context path and with decoded segments, so encoded variants are also caught. Any key sent must match (constant-time comparison). |
 | [`OutboundHeaders`](../code/common/src/main/java/isep/sidis/common/http/OutboundHeaders.java) | Captures `Authorization`, correlation id, service key and caller instance from the current request. |
-| [`JwtSecurityAutoConfiguration`](../code/common/src/main/java/isep/sidis/common/security/JwtSecurityAutoConfiguration.java) | Security filter chain; public `/actuator/health`, `/swagger-ui/**`, `/auth/dev-token`; applies every `AuthorizationRules` bean. |
+| [`JwtSecurityAutoConfiguration`](../code/common/src/main/java/isep/sidis/common/security/JwtSecurityAutoConfiguration.java) | Security filter chain; public `/actuator/health`, `/swagger-ui/**`, `/h2-console/**`, `/auth/dev-token`; applies every `AuthorizationRules` bean and then `anyRequest().authenticated()`. After each bean it checks (with a matcher that never matches) that the bean did not call `anyRequest()`; if it did, start-up fails with `<class> must not call anyRequest(): ...`. |
+| [`AuthorizationRules`](../code/common/src/main/java/isep/sidis/common/security/AuthorizationRules.java) | Interface implemented once per service (`<Service>AuthorizationRules`). Its Javadoc states the rule: list only the service's own endpoints, never call `anyRequest()`. |
 | [`DistributedInfrastructureAutoConfiguration`](../code/common/src/main/java/isep/sidis/common/DistributedInfrastructureAutoConfiguration.java) | Creates the beans: registry, executor, RestClient, `PeerClient`, factory, correlation filter, health indicator. |
 | [`AisafeProperties`](../code/common/src/main/java/isep/sidis/common/config/AisafeProperties.java) | All `aisafe.*` settings with defaults. |
 
@@ -1132,7 +1246,7 @@ Circuit Breaker, Retry with Exponential Backoff, Timeout, Scatter-Gather (aggreg
 
 #### Tests
 
-`CircuitBreakerTest`, `ResilientExecutorTest` and `PeerClientTest` (against fake HTTP replicas) — see [Flight Routes scenarios §5](#sec-5-tests-3).
+`CircuitBreakerTest`, `ResilientExecutorTest`, `PeerClientTest` (against fake HTTP replicas), `ServiceKeyFilterTest` (peer and service-only requests, wrong key, encoded paths, context path) and `AuthorizationRulesGuardTest` (a rules bean that calls `anyRequest()` stops the start-up with its class name) — 29 tests, see [Flight Routes scenarios §5](#sec-5-tests-3).
 
 <div style="page-break-before: always;"></div>
 
@@ -1280,7 +1394,7 @@ The system-wide decisions (consistency model, fault tolerance, security) are in 
 
 #### 6. Observations
 
-- **O1 — US204 for Backoffice Operators.** The US says the *Backoffice Operator* sees the Top 5, and `AircraftManagementAuthorizationRules` allows `BACKOFFICE_OPERATOR` and `ATCC`. But the JWT is forwarded to Flight Routes, whose rule for `/api/scheduled-flights/**` accepts only `ATCC` ([Integration-Contracts Q4](#sec-7-open-decisions-need-group-agreement)). A Backoffice token is therefore expected to end in `403` ("Flight Routes rejected the request.") until that rule is widened. The Postman collection has a request that documents this.
+- **O1 — US204 for Backoffice Operators.** The US says the *Backoffice Operator* sees the Top 5, and `AircraftManagementAuthorizationRules` allows `BACKOFFICE_OPERATOR` and `ATCC`. But the JWT is forwarded to Flight Routes, whose rule for `/api/scheduled-flights/**` accepts only `ATCC` ([Integration-Contracts Q4](#src-2-containers-integration-contracts)). A Backoffice token is therefore expected to end in `403` ("Flight Routes rejected the request.") until that rule is widened. The Postman collection has a request that documents this.
 - **O2 — HATEOAS.** The PSOFT non-functional requirements ask for links in the representations. The starter is a dependency, but `AircraftAssembler` returns plain DTOs (no `_links`) and `springdoc.enable-hateoas=false`. To be added (the contract allows extra fields such as `_links`).
 - **O3 — Implementation status.** US101–US105, US203, US204, US206 are implemented. US201, US202, US205 and the bonus US223/US224 are planned only.
 
@@ -2024,6 +2138,8 @@ H2 console: `http://localhost:8083/h2-console` (JDBC URL `jdbc:h2:mem:airportsdb
 | Database | H2 in-memory per replica: `flightRoutesdb-1/2/3` |
 | Source code | [code/flightroutes](../code/flightroutes) |
 | API | `http://localhost:8084/swagger-ui.html` (any replica) |
+| Supplies to other containers | Aircraft Management: B4b minutes per aircraft (US204, US206), B6 compatible routes (US203); Airports: B5 route counts per airport (US210) — all **service-only** ([Integration-Contracts §2.8](#sec-2-8-service-only-endpoints)) |
+| Consumes from other containers | Airports: B2 airport by IATA; Aircraft Management: B1 aircraft and aircraft model |
 
 
 <a id="sec-2-components-3"></a>
@@ -2032,7 +2148,7 @@ H2 console: `http://localhost:8083/h2-console` (JDBC URL `jdbc:h2:mem:airportsdb
 
 | Component | Technology / classes | Responsibility |
 |---|---|---|
-| **Security & Observability filters** | `common` filters + [`FlightRoutesAuthorizationRules`](../code/flightroutes/src/main/java/isep/psoft/aisafe/infrastructure/security/FlightRoutesAuthorizationRules.java) | Correlation id, audit log, `X-Service-Key` check, JWT authentication, role rules per endpoint |
+| **Security & Observability filters** | `common` filters + [`FlightRoutesAuthorizationRules`](../code/flightroutes/src/main/java/isep/psoft/aisafe/infrastructure/security/FlightRoutesAuthorizationRules.java) | Correlation id, audit log, `X-Service-Key` check (required on peer calls and on the service-only paths listed in `aisafe.security.service-only-paths`), JWT authentication, role rules per endpoint |
 | **Flight Route Controller** | [`FlightRouteController`](../code/flightroutes/src/main/java/isep/psoft/aisafe/flightroutes/controllers/FlightRouteController.java) (Spring REST) | `/api/routes` — US110–US114, US203, US209, US210, US214–US216 |
 | **Scheduled Flight Controller** | [`ScheduledFlightController`](../code/flightroutes/src/main/java/isep/psoft/aisafe/flightroutes/controllers/ScheduledFlightController.java) (Spring REST) | `/api/scheduled-flights` — US212, US213, US206 and statistics used for aggregation |
 | **Route application services** | `CreateFlightRouteService`, `UpdateFlightRouteService`, `SearchFlightRoutesService`, `GetRouteHistoryService`, `ViewRoutesByAirportService`, `CountRoutesByAirportService`, `ListActiveRoutesService`, `CalculateNetworkDistanceService`, `SearchAlternativeRoutesService` | One service per use case; transactions; orchestration |
@@ -2056,6 +2172,8 @@ The `common` components are described in [common — Components](#src-3-componen
 
 Every endpoint is served by every replica; **every GET returns the data of all replicas**.
 
+Endpoints marked **service-only** are listed in `aisafe.security.service-only-paths` (`application.properties`): they are called by other AISafe services (or by the Flight Routes replicas), which send `X-Service-Key` automatically. A request without the key gets `401 {"error":"This endpoint is only available to AISafe services."}` even with a valid JWT; with the key, the role rule below still applies.
+
 **Flight routes — `/api/routes`**
 
 | Method | Endpoint | US | Input | Output | Roles |
@@ -2069,8 +2187,8 @@ Every endpoint is served by every replica; **every GET returns the data of all r
 | GET | `/api/routes/active?sortBy=` | US214 | `popularity` (default) / `distance` | `200` `List<FlightRouteDTO>` with `usageCount` | ATCC |
 | GET | `/api/routes/network/total-distance` | US215 | — | `200` `NetworkDistanceDTO` | ATCC |
 | GET | `/api/routes/alternatives?origin=&dest=` | US216 | IATA codes | `200` `List<ItineraryDTO>` | ATCC |
-| GET | `/api/routes/compatible?range=&capacity=` | US203 | aircraft range and capacity | `200` `List<FlightRouteDTO>` | ATCC, MAINTENANCE_SUPERVISOR, MAINTENANCE_TECHNICIAN |
-| GET | `/api/routes/statistics/count-by-airport` | US210 | — | `200` `Map<IATA, Long>` | BACKOFFICE_OPERATOR |
+| GET | `/api/routes/compatible?range=&capacity=` | US203 (B6, Aircraft Management) — **service-only** | aircraft range and capacity | `200` `List<FlightRouteDTO>` | ATCC, MAINTENANCE_SUPERVISOR, MAINTENANCE_TECHNICIAN |
+| GET | `/api/routes/statistics/count-by-airport` | US210 (B5, Airports) — **service-only** | — | `200` `Map<IATA, Long>` | BACKOFFICE_OPERATOR |
 
 **Scheduled flights — `/api/scheduled-flights`**
 
@@ -2080,9 +2198,9 @@ Every endpoint is served by every replica; **every GET returns the data of all r
 | GET | `/api/scheduled-flights/{id}` | — | flight ID | `200` `ScheduledFlightDTO` | ATCC |
 | GET | `/api/scheduled-flights?aircraft=&page=&size=` | US213 | registration + pagination | `200` `PagedModel<ScheduledFlightDTO>` | ATCC |
 | GET | `/api/scheduled-flights/search?aircraft=&date=&time=` | US213/US212 | registration, optional date/time | `200` `List<ScheduledFlightDTO>` | ATCC |
-| GET | `/api/scheduled-flights/operational-hours` | US206 | pagination | `200` `Page<AircraftOperationalHoursDTO>` | ATCC |
-| GET | `/api/scheduled-flights/statistics/usage-by-route` | US214 | — | `200` `Map<routeId, Long>` | ATCC |
-| GET | `/api/scheduled-flights/statistics/minutes-by-aircraft` | US206 | — | `200` `Map<registration, Long>` | ATCC |
+| GET | `/api/scheduled-flights/operational-hours` | B4a (no consumer: Aircraft Management computes US206 from B4b) — **service-only** | pagination | `200` `Page<AircraftOperationalHoursDTO>` | ATCC |
+| GET | `/api/scheduled-flights/statistics/usage-by-route` | US214 (peer aggregation) — **service-only** | — | `200` `Map<routeId, Long>` | ATCC |
+| GET | `/api/scheduled-flights/statistics/minutes-by-aircraft` | US204, US206 (B4b, Aircraft Management) — **service-only** | — | `200` `Map<registration, Long>` | ATCC, BACKOFFICE_OPERATOR |
 
 Infrastructure endpoints (from `common`): `GET /actuator/health`, `POST /auth/dev-token` (development only), `/swagger-ui.html`.
 
@@ -2092,7 +2210,8 @@ Infrastructure endpoints (from `common`): `GET /actuator/health`, `POST /auth/de
 |---|---|
 | `IllegalArgumentException`, `MethodArgumentNotValidException` | 400 |
 | `EntityNotFoundException` | 404 |
-| `IllegalStateException`, `ObjectOptimisticLockingFailureException` | 409 |
+| `IllegalStateException`, `ObjectOptimisticLockingFailureException` (overlapping updates, see §5) | 409 |
+| missing `X-Service-Key` on a service-only endpoint, missing/invalid JWT (empty body) | 401 |
 | `RouteRequirementsNotMetException` | 422 |
 | `RemoteServiceUnavailableException` (no replica of a remote service answered) | 503 |
 | `ResponseStatusException` (remote 401/403, business error of the owner replica) | same status |
@@ -2120,8 +2239,9 @@ Infrastructure endpoints (from `common`): `GET /actuator/health`, `POST /auth/de
 | Aggregated statistics (US206, US210, US214) | `ScheduledFlightStatisticsService`, `CountRoutesByAirportService` → `PeerClient.collect`, summed |
 | Whole-network queries (US214, US215, US216) | `RouteReplicaQueries.activeNetwork` → strategies |
 | Single owner per route (US112) | `UpdateFlightRouteService` → `PeerClient.forwardToOwner` |
+| Concurrent updates of a route (US112) | `FlightRoute` `@Version` on the owner replica: two **overlapping** PATCHes give one `200` and one `409` (`GlobalExceptionHandler`). **Known limitation:** the version is not returned by GET nor accepted by PATCH (no `ETag`/`If-Match`), so an update from stale data is not detected and sequential updates are last-writer-wins ([Integration-Contracts §8](#sec-8-known-limitations)) |
 | Calls to other services with failover | ACL → `ReplicatedServiceClient` → `ResilientExecutor` |
-| Security and audit | filter chain of `common` + `FlightRoutesAuthorizationRules` |
+| Security and audit | filter chain of `common` + `FlightRoutesAuthorizationRules`; service-only endpoints via `aisafe.security.service-only-paths` |
 
 The system-wide decisions (consistency model, fault tolerance, security) are in [L2 §3](#sec-3-distribution-design-decisions).
 
@@ -2155,7 +2275,7 @@ The system-wide decisions (consistency model, fault tolerance, security) are in 
 | Scheduled Flight | [`ScheduledFlight`](../code/flightroutes/src/main/java/isep/psoft/aisafe/flightroutes/domain/ScheduledFlight.java) | [`RouteReference`](../code/flightroutes/src/main/java/isep/psoft/aisafe/flightroutes/domain/RouteReference.java), `FlightSchedule`, `FlightStatus` | Required aircraft, route, date and time; created as `SCHEDULED` |
 
 - `FlightRoute` has no setters: its state only changes through `updateDetails` and `changeStatus`, which guarantees a complete history (US111). Value Objects are immutable and self-validating; on update they are **replaced**.
-- Both roots have `@Version` (optimistic locking): concurrent updates of a route, or concurrent bookings in the same replica, fail with `409`.
+- Both roots have `@Version` (optimistic locking). For `FlightRoute`, two **overlapping** updates on the owner replica give one success and one `409` (`ObjectOptimisticLockingFailureException` in `GlobalExceptionHandler`). The version is not part of `FlightRouteDTO` or `UpdateRouteDTO` (no `ETag`/`If-Match`), so a PATCH built from stale data is not detected: sequential updates are last-writer-wins (known limitation). A `ScheduledFlight` is never updated after it is created, so its `@Version` is not exercised; the "one flight per aircraft and slot" rule is a check before the insert (`search` on every replica that answers), not a database constraint, so two truly simultaneous bookings of the same slot are not excluded.
 - **`ScheduledFlight` → `FlightRoute` by identity.** The route may be stored in another replica, so a JPA association (foreign key/JOIN) is impossible. `RouteReference` keeps the `routeId` and a snapshot of the data the flight needs (origin, destination, flight time); the snapshot also preserves the flight as scheduled if the route changes later.
 - **Read models** (not persisted, no identity): [`RouteSummary`](../code/flightroutes/src/main/java/isep/psoft/aisafe/flightroutes/domain/RouteSummary.java) — a replica-independent view of a route, created from local routes (`FlightRoute.toSummary()`) and from routes received from peers (`FlightRouteDTO`); `Itinerary` (US216); `RouteUsage` (US214).
 - Other aggregates are referenced by identity only: `FlightRoute` → Airport (IATA code), `ScheduledFlight` → Aircraft (registration).
@@ -2200,7 +2320,7 @@ The system-wide decisions (consistency model, fault tolerance, security) are in 
 | ...sending the command to the replica that stores the route? | `PeerClient.forwardToOwner` | **Indirection** — a route has a single owner |
 | ...applying the partial update, recording only changed values? | `FlightRoute.updateDetails` | **Information Expert / Aggregate Root** |
 | ...validating the status transition? | `FlightRoute.changeStatus` | **Information Expert** |
-| ...detecting concurrent updates? | `@Version` | **Optimistic Locking** |
+| ...detecting concurrent updates? | `@Version` (overlapping updates only; the version is not exposed in the API) | **Optimistic Locking** |
 
 **Create scheduled flight (US212)**
 
@@ -2260,7 +2380,7 @@ The system-wide decisions (consistency model, fault tolerance, security) are in 
 
 | File | Content |
 |---|---|
-| [`application.properties`](../code/flightroutes/src/main/resources/application.properties) | Defaults (= replica 1), remote URLs, resilience, security, logging, actuator |
+| [`application.properties`](../code/flightroutes/src/main/resources/application.properties) | Defaults (= replica 1), remote URLs, resilience, security (including `aisafe.security.service-only-paths`), logging, actuator |
 | `application-instance1/2/3.properties` | Port, instance id, database, peers and demo data of each replica |
 | `application-demo.properties` / `application-tls.properties` | Demo data / HTTPS |
 
@@ -2303,7 +2423,7 @@ The system-wide decisions (consistency model, fault tolerance, security) are in 
 | 3B | US215 | Calculate the total distance of the network | ATCC |
 | 3B | US216 | Search for alternative routes between two airports | ATCC |
 
-Supplied to other containers: **US203** compatible routes and **US206** operational hours (Aircraft Management), **US210** routes per airport (Airports).
+Supplied to other containers (service-only endpoints, `X-Service-Key` required): **US203** compatible routes (B6) and the flight minutes per aircraft used by **US204** and **US206** (B4b) to Aircraft Management; **US210** routes per airport (B5) to Airports.
 
 
 <a id="sec-clarifications"></a>
@@ -2319,13 +2439,13 @@ Supplied to other containers: **US203** compatible routes and **US206** operatio
 
 #### 2. Acceptance criteria
 
-**Flight routes:** AC1 airports must exist (else `400`); AC2 one route per origin/destination in every replica that answers (else `400`); AC3 distance by Haversine, never changes; AC4 `minRange`, `minCapacity`, `estimatedFlightTime` positive; AC5 created `ACTIVE`, changing to the current state → `409`; AC6 history records only the changed attributes; AC7 concurrent updates → `409`.
+**Flight routes:** AC1 airports must exist (else `400`); AC2 one route per origin/destination in every replica that answers (else `400`); AC3 distance by Haversine, never changes; AC4 `minRange`, `minCapacity`, `estimatedFlightTime` positive; AC5 created `ACTIVE`, changing to the current state → `409`; AC6 history records only the changed attributes; AC7 two **overlapping** updates of a route → one `200` and one `409` (`@Version`). The version is not exposed, so an update from stale data is accepted (last writer wins, known limitation).
 
 **Scheduled flights:** AC8 aircraft and route (any replica) must exist (else `404`); AC9 range/capacity must meet the requirements (else `422`); AC10 route `ACTIVE`, aircraft `AVAILABLE`, airports `OPERATIONAL`, no other flight of the aircraft at that date/time in any replica that answers (else `409`); AC11 `201` + `Location` + HATEOAS links; AC12 per-aircraft list paginated after merging the replicas.
 
 **Network:** AC13 US214–US216 use only `ACTIVE` routes of every replica; AC14 sorting and search are strategies; unknown `sortBy` → `400`.
 
-**Distribution:** AC15 any replica answers with the data of all replicas, `404` if no replica has it; AC16 a failed peer gives a `200` with `X-Partial-Response: true`; AC17 a route is only modified by its owner replica; AC18 peer requests without valid `X-Service-Key` → `401`, `X-Peer-Hops > 1` → `400`; AC19 JWT + roles on every endpoint, every request audited; AC20 `503` when no replica of a remote service answers.
+**Distribution:** AC15 any replica answers with the data of all replicas, `404` if no replica has it; AC16 a failed peer gives a `200` with `X-Partial-Response: true`; AC17 a route is only modified by its owner replica; AC18 peer requests without valid `X-Service-Key` → `401`, `X-Peer-Hops > 1` → `400`; requests to the service-only endpoints (`count-by-airport`, `compatible`, `minutes-by-aircraft`, `operational-hours`, `usage-by-route`) without `X-Service-Key` → `401` even with a valid JWT, with the key the role rules still apply (`minutes-by-aircraft`: ATCC or Backoffice Operator); AC19 JWT + roles on every endpoint, every request audited; AC20 `503` when no replica of a remote service answers.
 
 
 <a id="sec-3-system-sequence-diagram-3"></a>
@@ -2384,7 +2504,7 @@ Supplied to other containers: **US203** compatible routes and **US206** operatio
 
 #### 5. Tests
 
-From `code/`: `./mvnw test` — 43 tests, all passing.
+From `code/`: `./mvnw test` — `flightroutes` 34 tests and `common` 29 tests, all passing.
 
 | Test class | Type | What is verified |
 |---|---|---|
@@ -2393,6 +2513,8 @@ From `code/`: `./mvnw test` — 43 tests, all passing.
 | `RouteStrategiesTest` | Unit | BFS with fewest stops (no cycles, unreachable), popularity/distance sorting |
 | `PeerClientTest` (common) | Integration with fake HTTP replicas | first answer, nobody has it, headers sent, aggregation with a dead peer, slow peer timeout, no re-forwarding, command forwarding and `409` propagation |
 | `CircuitBreakerTest`, `ResilientExecutorTest` (common) | Unit | open/half-open/close; retry, give-up, no retry on 4xx, fail fast |
+| `ServiceKeyFilterTest`, `AuthorizationRulesGuardTest` (common) | Unit / context | peer and service-only requests without or with a wrong key → `401`, valid key passes, encoded paths caught; a service whose rules call `anyRequest()` fails to start with the class name |
+| **`ServiceOnlyEndpointsSecurityTest`** | Integration — one real replica | each of the 5 service-only endpoints → `401` without the key even with a valid JWT; wrong key → `401`; valid key + wrong role → `403`; `minutes-by-aircraft` allowed for ATCC and Backoffice Operator; user endpoints need no key |
 | **`ReplicaCollaborationTest`** | **Distributed** — two real replicas + stubs of Airports and Aircraft Management | scenarios below |
 
 `ReplicaCollaborationTest` (week 4 scenarios 1–3 and the replica-failure test):
@@ -2409,7 +2531,7 @@ From `code/`: `./mvnw test` — 43 tests, all passing.
 10. No token → `401`; wrong role → `403`; health `UP` with `peers`.
 11. Replica B stopped: A answers `200` with `X-Partial-Response: true`; local route `200`; route only in B → `404` (S2).
 
-**Postman:** [postman/FlightRoutes.postman_collection.json](5-scenarios/flightroutes/postman/FlightRoutes.postman_collection.json) + [environment](5-scenarios/flightroutes/postman/FlightRoutes.postman_environment.json), against the three replicas with the `demo` profile — folders: setup, local access, forwarding, aggregation, command forwarding, security, replica failure (stop replica 2 before the last folder). Verified with Newman: 30 requests, 60 assertions, 0 failures.
+**Postman:** [postman/FlightRoutes.postman_collection.json](5-scenarios/flightroutes/postman/FlightRoutes.postman_collection.json) + [environment](5-scenarios/flightroutes/postman/FlightRoutes.postman_environment.json), against the three replicas with the `demo` profile — folders: 0 setup, 1 local access, 2 forwarding, 3 aggregation (the service-only statistics are called with `X-Service-Key`, as Airports and Aircraft Management do), 4 command forwarding, 5 security (including the service-only endpoints without `X-Service-Key` → `401`), 6 replica failure (stop replica 2 before this folder), 7 cross-service (Airports and Aircraft Management must also be running: routes, scheduled flights, `400`/`404`/`409` from the remote data), 8 concurrency (last-writer-wins without a version in the API; parallel updates answered with `200` or `409`). 52 requests. Verified with Newman, all folders except 6: 55 requests (including 7 sent from test scripts), 99 assertions, 0 failures.
 
 
 <a id="sec-6-demo-3"></a>
@@ -2425,7 +2547,7 @@ From `code/`:
 5. Run the Postman collection, or by hand:
    - `GET :8084/api/routes/search` and `:8184/...` → the same 6 routes.
    - `GET :8084/api/routes/{id of CDG-LHR}` → `200`; log of replica 1: `Not found locally: forwarding GET ...`; replica 3: `AUDIT ... source=peer:flightroutes-1` with the same correlation id.
-   - `GET :8184/api/scheduled-flights/operational-hours` → CS-TUA = 240 min (flights in 3 replicas).
+   - `GET :8184/api/scheduled-flights/operational-hours` with header `X-Service-Key: dev-only-service-key-aisafe-2026` → CS-TUA = 240 min (flights in 3 replicas); without the header → `401` (service-only endpoint).
    - `PATCH :8084/api/routes/{id of MAD-CDG}` `{"minCapacity":160}` → executed by replica 2.
    - Stop replica 2 → search returns 4 routes with `X-Partial-Response: true`; `/actuator/health` shows `8184` `OPEN`.
    - HTTPS: add the `tls` profile (`demo,tls`) and use `https://`.
@@ -2437,7 +2559,10 @@ H2 console: `http://localhost:8084/h2-console` (JDBC URL `jdbc:h2:mem:flightRout
 
 #### 7. Observations
 
-- Cross-replica uniqueness is best-effort (AP, see [L2 §3.3](#sec-3-3-consistency-model-cap)); deterministic ownership (hash → replica) is a possible improvement.
+- Cross-replica uniqueness is best-effort (AP, see [L2 §3.3](#sec-3-3-consistency-model-cap)); deterministic ownership (hash → replica) is a possible improvement. The "one flight per aircraft and slot" rule is also a check before the insert, so two truly simultaneous bookings are not excluded.
+- Optimistic locking only catches **overlapping** updates of a route. The version is not returned by GET nor accepted by PATCH, so a client updating from stale data is not detected; folder 8 of the Postman collection shows both behaviours. Exposing the version (`ETag`/`If-Match` or a `version` field) is the fix.
+- US212 does not check the airport certifications of the aircraft model (Airports stores them, Flight Routes does not read them).
+- The folders 7 (cross-service) and 8 (concurrency) of the Postman collection also need Aircraft Management and Airports: `./scripts/start-all.sh 1 demo` plus the flightroutes replicas 2 and 3, or `./scripts/start-all.sh 3 demo` (`.\scripts\start-all.ps1 -Profiles demo`).
 - Shared secrets have development defaults; outside development use `JWT_SECRET`, `AISAFE_SERVICE_KEY`, `AISAFE_TLS_PASSWORD`, `AISAFE_DEV_TOKEN=false`.
 - No events/message queues (Assignment 1 allows HTTP/REST commands only): popularity and operational hours are computed on demand from all replicas.
 
@@ -2492,8 +2617,8 @@ H2 console: `http://localhost:8084/h2-console` (JDBC URL `jdbc:h2:mem:flightRout
 | **Alert controller** | [`MaintenanceAlertController`](../code/maintenance/src/main/java/isep/psoft/aisafe/maintenance/controllers/MaintenanceAlertController.java) (Spring REST) | `/api/maintenance-alerts` — US222 (check triggered manually by the user, conversation 016) |
 | **Template application services** | `CreateMaintenanceTemplateService`, `ViewMaintenanceTemplatesService` | Create a template (models validated in Aircraft Management, unique name in every replica that answers), get/list templates of all replicas |
 | **Record application services** | `CreateMaintenanceRecordService`, `CompleteMaintenanceRecordService`, `CategorizeMaintenanceRecordService`, `ViewMaintenanceRecordsService` | One service per use case: transactions, orchestration, forwarding of commands to the owner replica |
-| **Aircraft availability coordinator** | [`AircraftAvailabilityService`](../code/maintenance/src/main/java/isep/psoft/aisafe/maintenance/services/AircraftAvailabilityService.java) | Puts the aircraft `UNDER_MAINTENANCE` (US115) and releases it to `AVAILABLE` (US119) through B3b, **only after the local write was flushed** and with a **compensating PATCH** if the local transaction rolls back afterwards |
-| **Statistics and alerts services** | `MaintenanceStatisticsService`, `MaintenanceAlertService` | Partial results per replica (sums and counts) combined into a fleet-wide result; due-maintenance check (US222) |
+| **Aircraft availability coordinator** | [`AircraftAvailabilityService`](../code/maintenance/src/main/java/isep/psoft/aisafe/maintenance/services/AircraftAvailabilityService.java) | US115: puts the aircraft `UNDER_MAINTENANCE` through B3b **after the record was flushed and before the commit** (B3b fails → nothing saved; commit fails afterwards → **compensating PATCH**). US119: releases it to `AVAILABLE` only when **no other record of the aircraft is ongoing in any replica** and every replica answered; otherwise the aircraft stays `UNDER_MAINTENANCE` (safe side) |
+| **Statistics and alerts services** | `MaintenanceStatisticsService`, `MaintenanceAlertService` | Partial results per replica (sums and counts) combined into a fleet-wide result; due-maintenance check (US222), which still answers with calendar-day alerts (flagged partial) when flight hours are unavailable |
 | **Replica queries** | [`MaintenanceReplicaQueries`](../code/maintenance/src/main/java/isep/psoft/aisafe/maintenance/services/MaintenanceReplicaQueries.java), `Pages` | Combine local data with the peer replicas: find a record/template in any replica, merge collections **by id**, paginate **after** merging, encode peer URIs |
 | **Domain model** | `domain` + `factories` packages | Aggregates `MaintenanceTemplate` and `MaintenanceRecord`, Value Objects, read models, the due-maintenance policy (`MaintenanceDuePolicy` + `DueCriterion` strategies) — see [L4](#src-4-code-maintenance-maintenance-code) |
 | **Repositories** | `MaintenanceTemplateRepository`, `MaintenanceRecordRepository` (Spring Data JPA) | Access to the data of **this** replica only; local grouping queries for statistics |
@@ -2533,7 +2658,7 @@ Every endpoint is served by every replica; **every GET returns the data of all r
 | GET | `/api/maintenance-records?aircraft=&component=&status=&from=&to=&page=&size=` | US218 | optional filters (AND); `from`/`to` = range of the start date | `200` `PageDTO<MaintenanceRecordDTO>` | MAINTENANCE_TECHNICIAN, MAINTENANCE_SUPERVISOR |
 | GET | `/api/maintenance-records/ongoing?page=&size=` | US219 | pagination | `200` `PageDTO<MaintenanceRecordDTO>` | MAINTENANCE_SUPERVISOR |
 | GET | `/api/maintenance-records/search?aircraft=&component=&status=&from=&to=` | — (replica query) | same filters, **not paginated** | `200` `List<MaintenanceRecordDTO>` | MAINTENANCE_TECHNICIAN, MAINTENANCE_SUPERVISOR, ATCC |
-| PATCH | `/api/maintenance-records/{id}/complete` | US119 | `CompleteMaintenanceRecordDTO` (notes, cost, actualDurationMinutes, completionDate?, aircraftFlightHours?) | `200` `MaintenanceRecordDTO` | MAINTENANCE_TECHNICIAN |
+| PATCH | `/api/maintenance-records/{id}/complete` | US119 | `CompleteMaintenanceRecordDTO` (notes, cost, actualDurationMinutes, completionDate?, aircraftFlightHours?) | `200` `MaintenanceRecordDTO` + header `X-Aircraft-Released: true\|false` | MAINTENANCE_TECHNICIAN |
 | PATCH | `/api/maintenance-records/{id}/component` | US217 | `CategorizeRecordDTO` (component: ENGINE, AIRFRAME, AVIONICS, INTERIOR, EXTERIOR) | `200` `MaintenanceRecordDTO` | MAINTENANCE_TECHNICIAN |
 
 **Statistics and reports — `/api/maintenance-records/statistics`, `/api/maintenance-records/reports`**
@@ -2592,7 +2717,7 @@ Exact schemas, status codes and roles: [Integration-Contracts §4 — B3](#sec-b
 | Aggregated statistics (US117, US220, US221) | `MaintenanceStatisticsService` → `PeerClient.collect`: every replica returns **sums and counts** of its own records, the entry replica adds them (averages are computed only after adding, never averaged twice) |
 | Fleet-wide check (US222) | `MaintenanceAlertService` → templates and last completions of every replica + fleet and flight hours from Aircraft Management → `MaintenanceDuePolicy` |
 | Single owner per record (US119, US217) | `CompleteMaintenanceRecordService`, `CategorizeMaintenanceRecordService` → `PeerClient.forwardToOwner` |
-| Cross-service consistency of the aircraft status (US115, US119) | `AircraftAvailabilityService` → `AircraftClient` (B3b) inside the local transaction, compensation on rollback |
+| Cross-service consistency of the aircraft status (US115, US119) | `AircraftAvailabilityService` → `AircraftClient` (B3b): US115 inside the local transaction with compensation on rollback; US119 by the replica that received the client request, after the owner completed the record |
 | Calls to Aircraft Management with failover | `AircraftClient` → `ReplicatedServiceClient` → `ResilientExecutor` |
 | Security and audit | filter chain of `common` + `MaintenanceAuthorizationRules` |
 
@@ -2731,11 +2856,15 @@ The system-wide decisions (consistency model, fault tolerance, security) are in 
 #### 5. Implementation notes
 
 - **Ownership.** A replica owns a record/template iff it is in its local database. `GET` by id: local, else `PeerClient.findFirst`. `PATCH`: local, else `PeerClient.forwardToOwner` (a `404` from a peer means "not mine"; a business `4xx` from the owner is propagated with its status).
-- **Ordering with Aircraft Management (B3b).** Inside the local transaction the record is first written and **flushed** (all local validation, constraints and the `@Version` check have passed), then B3b is called, then the transaction commits:
+- **Taking the aircraft out of service (US115, B3b).** Inside the local transaction the record is first written and **flushed** (all local validation, constraints and the `@Version` check have passed), then B3b is called, then the transaction commits:
   - B3b fails (`404`/`409`/`503`) → the exception rolls the transaction back → no record and no status change; the client gets the remote status.
-  - B3b succeeds but the commit fails afterwards → a `TransactionSynchronization` (`afterCompletion`, rolled back) sends a **compensating PATCH** with the status the aircraft had before (US115) or `UNDER_MAINTENANCE` again (US119).
+  - B3b succeeds but the commit fails afterwards → a `TransactionSynchronization` (`afterCompletion`, rolled back) sends a **compensating PATCH** with the status the aircraft had before.
   - Setting a status to a fixed value is idempotent, so retries of B3b by `ReplicatedServiceClient` are safe.
-- **Release only when nothing else is ongoing (US119).** An aircraft may have several records in progress at the same time (e.g. engine and avionics). `AircraftAvailabilityService` asks every replica for other `IN_PROGRESS` records of the aircraft; it sets `AVAILABLE` only if there are none **and every peer answered**. With a peer down it keeps the aircraft `UNDER_MAINTENANCE` (safe side) and logs a warning; the ATCC can change the status with US105.
+- **Returning the aircraft to service (US119).** The completion is the fact that matters, so it is committed first by the owner replica; releasing the aircraft is a separate, safe step:
+  - An aircraft may have several records in progress at the same time (e.g. engine and avionics). `AircraftAvailabilityService` asks every replica for other `IN_PROGRESS` records of the aircraft and sets `AVAILABLE` only if there are none **and every replica answered**.
+  - The release is done by the replica that **received the client request**: when the command was forwarded, the owner answers a peer request (`X-Peer-Hops: 1`) and cannot query the other replicas, so it only completes the record.
+  - If another record is ongoing, a replica did not answer or Aircraft Management fails, the aircraft stays `UNDER_MAINTENANCE` (the safe side: no flight can be scheduled), the completion still succeeds and the response says so with `X-Aircraft-Released: false`. The ATCC can change the status with US105.
+- **Graceful degradation of US222.** Flight hours come from Flight Routes through Aircraft Management (US206). If they are unavailable, the calendar-day alerts are still computed and the response is flagged `X-Partial-Response: true` instead of failing.
 - **Reference templates (WP#0A).** `ReferenceTemplatesBootstrap` creates the standard templates in **every** replica with ids derived from the name (`UUID.nameUUIDFromBytes`), so the three copies are the same template: merging by id removes the duplicates and any replica can serve it locally. Templates have no update use case, so the copies never diverge.
 - **Peer statistics without double counting.** `/statistics/hours`, `/reports/costs` and `/reports/turnaround` return, for a peer request, the local partial result; the entry replica adds the partial results of all replicas (`totalMinutes`, `totalCost`, `completedRecords`) and only then computes hours and averages.
 - **Tolerant reader.** DTOs exchanged between replicas use `@JsonIgnoreProperties(ignoreUnknown = true)`; HATEOAS links of records received from peers are rebuilt to point to the entry replica (`MaintenanceRecordAssembler.withLinks`).
@@ -2815,9 +2944,9 @@ The use cases are the WP#4 user stories of the PSOFT assignment (the monolith th
 
 **Records:** AC6 the aircraft exists (else `404`) and the template exists in some replica (else `404`); AC7 the template applies to the aircraft's model (else `400`); AC8 start date not in the future, expected duration > 0, component one of the five values (else `400`); AC9 created `IN_PROGRESS` with the template's checklist, `201` + `Location` + links; AC10 the aircraft becomes `UNDER_MAINTENANCE`; an aircraft in flight cannot (`409`); if Aircraft Management is unavailable nothing is created (`503`).
 
-**Completion and categorisation:** AC11 only `IN_PROGRESS` records can be completed or categorised (else `409`); AC12 notes required, cost ≥ 0, actual duration > 0, completion date between the start date and today (else `400`); AC13 the aircraft returns to `AVAILABLE` only if no other record of it is ongoing in any replica; AC14 concurrent updates → `409`.
+**Completion and categorisation:** AC11 only `IN_PROGRESS` records can be completed or categorised (else `409`); AC12 notes required, cost ≥ 0, actual duration > 0, completion date between the start date and today (else `400`); AC13 the aircraft returns to `AVAILABLE` only if no other record of it is ongoing in any replica (and every replica answered); otherwise it stays `UNDER_MAINTENANCE` and the response carries `X-Aircraft-Released: false`; AC14 concurrent updates → `409`.
 
-**Queries and reports:** AC15 US116 for an unknown aircraft → `404` (not an empty history); AC16 lists sorted by start date (most recent first) and paginated (`size` 1–100) after merging; AC17 US218 filters combine with AND, `from` ≤ `to`; AC18 US117 counts actual hours of completed records and expected hours of ongoing ones; AC19 US220 only completed records, `groupBy` `AIRCRAFT` or `MODEL` (else `400`); AC20 US221 average = total actual minutes / number of completed records per model, computed after adding the replicas; AC21 US222 lists every aircraft (not `INACTIVE`) × applicable periodic template whose flight-hours or calendar-days limit is reached, without an ongoing record of that template.
+**Queries and reports:** AC15 US116 for an unknown aircraft → `404` (not an empty history); AC16 lists sorted by start date (most recent first) and paginated (`size` 1–100) after merging; AC17 US218 filters combine with AND, `from` ≤ `to`; AC18 US117 counts actual hours of completed records and expected hours of ongoing ones; AC19 US220 only completed records, `groupBy` `AIRCRAFT` or `MODEL` (else `400`); AC20 US221 average = total actual minutes / number of completed records per model, computed after adding the replicas; AC21 US222 lists every aircraft (not `INACTIVE`) × applicable periodic template whose flight-hours or calendar-days limit is reached, without an ongoing record of that template; without flight hours (Flight Routes down) the calendar-day alerts are still returned, flagged partial.
 
 **Distribution:** AC22 any replica answers with the data of all replicas, `404` only if no replica has it; AC23 a failed peer gives a `200` with `X-Partial-Response: true`; AC24 a record is only modified by its owner replica; AC25 peer requests without a valid `X-Service-Key` → `401`, `X-Peer-Hops > 1` → `400`; AC26 JWT + roles on every endpoint (`401` / `403`), every request audited; AC27 `503` when no replica of Aircraft Management answers.
 
@@ -2874,30 +3003,34 @@ The use cases are the WP#4 user stories of the PSOFT assignment (the monolith th
 
 #### 5. Tests
 
-From `code/`: `./mvnw -pl maintenance -am test`.
+From `code/`: `./mvnw -pl maintenance -am test` — 45 tests in the maintenance module (plus the 20 of `common`), all passing.
 
 | Test class | Type | What is verified |
 |---|---|---|
-| `MaintenanceTemplateTest` | Unit (domain) | required data, interval rules, `appliesTo`, `isPeriodic`, deterministic reference ids |
-| `MaintenanceRecordTest` | Unit (domain) | created `IN_PROGRESS` with checklist and template snapshot, start date rules, completion rules (once, dates, cost, duration), categorisation, `maintenanceMinutes` |
+| `MaintenanceTemplateTest` | Unit (domain) | required data and normalisation, interval rules, `appliesTo`, `isPeriodic`, same id for reference templates, enum parsing with `400` |
+| `MaintenanceRecordTest` | Unit (domain) | created `IN_PROGRESS` with checklist and template snapshot, start date rules, completion rules (once, dates, cost, duration), categorisation only while in progress, `maintenanceMinutes` |
 | `MaintenanceDuePolicyTest` | Unit (domain) | flight-hours and calendar-days criteria, never performed, hours not recorded at completion, non-periodic templates |
-| `CreateMaintenanceRecordServiceTest`, `CompleteMaintenanceRecordServiceTest` | Unit (mocks) | order B3a → template → save/flush → B3b; nothing saved on `404`/`409`/`503`; forwarding to the owner; release only without other ongoing records and with every peer answering |
-| `MaintenanceStatisticsServiceTest` | Unit (mocks) | partial results added correctly (sums/counts, average after the sum), peer requests answered locally |
-| **`MaintenanceReplicaCollaborationTest`** | **Distributed** — two real replicas + a stub of Aircraft Management | scenarios below |
+| `CreateMaintenanceRecordServiceTest` | Unit (mocks) | order B3a → template → save/flush → B3b; nothing saved for unknown aircraft/template, template not applicable, invalid component; B3b failure propagates (rollback) |
+| `CompleteMaintenanceRecordServiceTest` | Unit (mocks) | local completion + release, forwarding to the owner, owner does not touch the aircraft on a peer request, `404` / `409` |
+| `AircraftAvailabilityServiceTest` | Unit (mocks) | release only without other ongoing records and with every replica answering; failed release does not fail the completion |
+| `MaintenanceStatisticsServiceTest` | Unit (mocks) | partial results added correctly: turnaround average after the sum (400, not 375), costs per model, hours, latest completion + ongoing flag |
+| `MaintenanceAlertServiceTest` | Unit (mocks) | applicable templates only, `INACTIVE` and ongoing skipped, calendar-only alerts flagged partial without flight hours |
+| `MaintenanceApplicationTests` | Context | the service starts with the real security configuration of `common` |
+| **`MaintenanceReplicaCollaborationTest`** | **Distributed** — two real replicas + a stateful stub of Aircraft Management | scenarios below |
 
 `MaintenanceReplicaCollaborationTest`:
 
-1. Each replica stores the records it receives; the aircraft is set `UNDER_MAINTENANCE` in the stub.
-2. GET on A of a record stored on B → forwarded, `200` (S1); unknown id → `404`.
-3. US116/US218/US219 on A and on B → same merged list, same page (S2).
-4. Record on A created with a template that only exists on B → `201`.
-5. PATCH complete on A of a record of B → executed by B; completing again → owner's `409` propagated (S3); the aircraft is released only when its last ongoing record is completed.
-6. US117/US220/US221 on A count the records of B (S4).
-7. US222 with the stub's fleet and flight hours → expected alerts.
-8. Peer headers without/wrong service key → `401`; hops 2 → `400`; no token → `401`; wrong role → `403`.
-9. Replica B stopped: A answers `200` with `X-Partial-Response: true`; record only in B → `404`; completion on A of a record of A keeps the aircraft `UNDER_MAINTENANCE` (peer B could not confirm).
+1. Templates: reference templates listed once; template created on B found from A (S1); duplicate name and unknown model → `400`.
+2. Records stored where created, the aircraft goes `UNDER_MAINTENANCE` in the stub; aircraft in flight → `409` (nothing stored); unknown aircraft → `404`; template not applicable / future start date → `400`.
+3. GET on A of a record of B → forwarded, links rebuilt for A; US219 from A and B → same list; US116 paginated after merging, unknown aircraft → `404`; US218 filters (S2).
+4. US217 and US119 on A for a record of B → executed by B; completing again → owner's `409` propagated (S3).
+5. The aircraft is released only when its last ongoing record is completed (`X-Aircraft-Released`).
+6. US117/US220/US221 add the records of both replicas (S4).
+7. US222 with the stub's fleet and flight hours → expected alerts; `INACTIVE` aircraft ignored (S6).
+8. Peer headers without/wrong service key → `401`; hops 2 → `400`; valid peer request → local data only; no token → `401`; wrong role → `403`.
+9. Replica B stopped: A answers `200` with `X-Partial-Response: true`; record only in B → `404`; a completion on A keeps the aircraft `UNDER_MAINTENANCE` (B could not confirm).
 
-**Postman:** [postman/Maintenance.postman_collection.json](5-scenarios/maintenance/postman/Maintenance.postman_collection.json) + environment, against the three replicas with the `demo` profile and Aircraft Management running — folders: setup (tokens), templates, records, local access, forwarding, aggregation, command forwarding, reports and alerts, security, replica failure (stop replica 2 before the last folder).
+**Postman:** [postman/Maintenance.postman_collection.json](5-scenarios/maintenance/postman/Maintenance.postman_collection.json) + [environment](5-scenarios/maintenance/postman/Maintenance.postman_environment.json), against the three Maintenance replicas with the `demo` profile and the real Aircraft Management (and Flight Routes for flight hours). Folders: 0 setup (tokens), 1 templates, 2 records, 3 local access, 4 forwarding, 5 aggregation, 6 command forwarding, 7 statistics/reports/alerts, 8 security, 9 replica failure (stop replica 2 before folder 9). Verified with Newman: folders 0–8 — 48 requests, 74 assertions, 0 failures; folder 9 — 4 requests, 6 assertions, 0 failures. The collection can be run again without restarting (template names are unique per run and every record created is completed).
 
 
 <a id="sec-6-demo-4"></a>
@@ -2907,13 +3040,13 @@ From `code/`: `./mvnw -pl maintenance -am test`.
 From `code/`:
 
 1. `./mvnw clean install`
-2. Start Aircraft Management (its demo data is loaded by the instance profiles): `./scripts/start-replicas.sh aircraftmanagement` — aircraft CS-TUA (A320), CS-TUB (B737), CS-TUC/CS-TUD (A330), CS-TUE/CS-TUF (E190).
+2. Start Aircraft Management (its demo data is loaded by the instance profiles): `./scripts/start-replicas.sh aircraftmanagement` — aircraft CS-TUA (A320), CS-TUB (B737, `UNDER_MAINTENANCE`), CS-TUC/CS-TUD (A330), CS-TUE/CS-TUF (E190). Optionally `./scripts/start-replicas.sh flightroutes demo` (flight hours used by US222).
 3. `./scripts/start-replicas.sh maintenance demo` (Windows: `.\scripts\start-replicas.ps1 -Service maintenance -Profiles demo`). Every replica has the reference templates; each replica loads **different** records.
 4. Tokens: `POST http://localhost:8082/auth/dev-token` with `{"username":"tech1","roles":["MAINTENANCE_TECHNICIAN"]}`, `{"username":"sup1","roles":["MAINTENANCE_SUPERVISOR"]}`, `{"username":"atcc1","roles":["ATCC"]}`.
 5. Run the Postman collection, or by hand:
    - `GET :8082/api/maintenance-records/ongoing` and `:8182/...` → the same list (supervisor).
    - `GET :8082/api/maintenance-records/{id of a record of replica 3}` → `200`; log of replica 1: `Not found locally: forwarding GET ...`; replica 3: `AUDIT ... source=peer:maintenance-1` with the same correlation id.
-   - `POST :8182/api/maintenance-records` for CS-TUA → `GET :8081/api/aircrafts/CS-TUA` shows `UNDER_MAINTENANCE`; `PATCH :8082/api/maintenance-records/{id}/complete` → executed by replica 2, CS-TUA back to `AVAILABLE`.
+   - `POST :8182/api/maintenance-records` for CS-TUA → `GET :8081/api/aircrafts/CS-TUA` shows `UNDER_MAINTENANCE`; `PATCH :8082/api/maintenance-records/{id}/complete` → executed by replica 2 (log of replica 1: `forwarding PATCH ... to the owner replica`), response `X-Aircraft-Released: true`, CS-TUA back to `AVAILABLE`.
    - `GET :8282/api/maintenance-records/reports/turnaround` (supervisor) and `/reports/costs?groupBy=MODEL` (ATCC) → figures of the three replicas.
    - `GET :8082/api/maintenance-alerts` (ATCC) → aircraft due for maintenance.
    - Stop replica 2 → `ongoing` returns the records of replicas 1 and 3 with `X-Partial-Response: true`; `/actuator/health` shows `8182` `OPEN`.
@@ -2929,6 +3062,8 @@ H2 console: `http://localhost:8082/h2-console` (JDBC URL `jdbc:h2:mem:maintenanc
 - Cross-replica uniqueness of template names is best-effort (AP, see [L2 §3.3](#sec-3-3-consistency-model-cap)).
 - Two records of the same aircraft completed at the same instant on two replicas may each see the other as ongoing, so neither releases the aircraft: it stays `UNDER_MAINTENANCE` (the safe side) until the ATCC changes it (US105).
 - US222 alerts are computed on demand (manual trigger) and not stored; a scheduled check and notification channel are future work.
+- Without Flight Routes, Aircraft Management cannot give flight hours (US206): US222 then returns only calendar-day alerts, flagged partial.
+- Demo records are inserted directly in each replica (without calling Aircraft Management); their aircraft statuses match the Aircraft Management demo data (CS-TUB `UNDER_MAINTENANCE` with an ongoing C-Check).
 - Flight hours come from scheduled flights (Flight Routes, through Aircraft Management US206), not from actual flown hours; "flight hours at completion" are entered by the technician.
 
 <div style="page-break-before: always;"></div>
@@ -3073,48 +3208,119 @@ H2 console: `http://localhost:8082/h2-console` (JDBC URL `jdbc:h2:mem:maintenanc
 
 | Folder | Request | Method | URL |
 |---|---|---|---|
-| 0. Setup — health e tokens | Health fr1 | GET | `{{fr1}}/actuator/health` |
-| 0. Setup — health e tokens | Health fr2 | GET | `{{fr2}}/actuator/health` |
-| 0. Setup — health e tokens | Health fr3 | GET | `{{fr3}}/actuator/health` |
-| 0. Setup — health e tokens | Token ATCC (dev only) | POST | `{{fr1}}/auth/dev-token` |
-| 0. Setup — health e tokens | Token Backoffice Operator (dev only) | POST | `{{fr1}}/auth/dev-token` |
-| 1. Acesso local | Réplica 3: rotas locais com origem CDG | GET | `{{fr3}}/api/routes/search?origin=CDG` |
-| 2. Forwarding peer-to-peer (GET por id) | Réplica 1: rota guardada na réplica 3 | GET | `{{fr1}}/api/routes/{{cdgLhrId}}` |
-| 2. Forwarding peer-to-peer (GET por id) | Réplica 2: histórico da rota da réplica 3 | GET | `{{fr2}}/api/routes/{{cdgLhrId}}/history` |
-| 2. Forwarding peer-to-peer (GET por id) | Id inexistente → 404 | GET | `{{fr1}}/api/routes/does-not-exist` |
-| 3. Agregação de respostas | Todas as rotas a partir de fr1 | GET | `{{fr1}}/api/routes/search` |
-| 3. Agregação de respostas | Todas as rotas a partir de fr2 | GET | `{{fr2}}/api/routes/search` |
-| 3. Agregação de respostas | Todas as rotas a partir de fr3 | GET | `{{fr3}}/api/routes/search` |
-| 3. Agregação de respostas | US214 rotas ativas por popularidade (voos de todas as réplicas) | GET | `{{fr2}}/api/routes/active?sortBy=popularity` |
-| 3. Agregação de respostas | US206 horas operacionais (soma das 3 réplicas) | GET | `{{fr3}}/api/scheduled-flights/operational-hours` |
-| 3. Agregação de respostas | US215 distância total da rede | GET | `{{fr1}}/api/routes/network/total-distance` |
-| 3. Agregação de respostas | US213 voos de CS-TUA (paginado, 3 réplicas) | GET | `{{fr1}}/api/scheduled-flights/search?aircraft=CS-TUA` |
-| 3. Agregação de respostas | US210 rotas por aeroporto (Backoffice) | GET | `{{fr2}}/api/routes/statistics/count-by-airport` |
-| 4. Comando encaminhado para a réplica dona | Réplica 2: obter id de MAD-CDG | GET | `{{fr2}}/api/routes/search?origin=MAD&dest=CDG` |
-| 4. Comando encaminhado para a réplica dona | Réplica 1: PATCH da rota da réplica 2 | PATCH | `{{fr1}}/api/routes/{{madCdgId}}` |
-| 4. Comando encaminhado para a réplica dona | Réplica 2 (dona) vê a alteração | GET | `{{fr2}}/api/routes/{{madCdgId}}` |
-| 4. Comando encaminhado para a réplica dona | Erro de negócio do dono propagado (já ACTIVE → 409) | PATCH | `{{fr3}}/api/routes/{{madCdgId}}` |
-| 5. Segurança | Sem token → 401 | GET | `{{fr1}}/api/routes/search` |
-| 5. Segurança | Role errado → 403 | GET | `{{fr1}}/api/routes/search` |
-| 5. Segurança | Pedido "de peer" sem X-Service-Key → 401 | GET | `{{fr1}}/api/routes/search` |
-| 5. Segurança | X-Peer-Hops acima do máximo → 400 | GET | `{{fr1}}/api/routes/search` |
-| 5. Segurança | Pedido de peer válido → só dados locais (sem reencaminhar) | GET | `{{fr1}}/api/routes/search` |
-| 6. Falha de uma réplica (PARAR a réplica 2 antes) | Réplica 1 continua a responder com resposta parcial | GET | `{{fr1}}/api/routes/search` |
-| 6. Falha de uma réplica (PARAR a réplica 2 antes) | Dados locais continuam acessíveis (réplica 3) | GET | `{{fr1}}/api/routes/{{cdgLhrId}}` |
-| 6. Falha de uma réplica (PARAR a réplica 2 antes) | Dados só na réplica 2 → 404 | GET | `{{fr1}}/api/routes/{{madCdgId}}` |
-| 6. Falha de uma réplica (PARAR a réplica 2 antes) | Health mostra o circuito da réplica 2 | GET | `{{fr1}}/actuator/health` |
+| 0. Setup — health and tokens | Health fr1 | GET | `{{fr1}}/actuator/health` |
+| 0. Setup — health and tokens | Health fr2 | GET | `{{fr2}}/actuator/health` |
+| 0. Setup — health and tokens | Health fr3 | GET | `{{fr3}}/actuator/health` |
+| 0. Setup — health and tokens | Token ATCC (dev only) | POST | `{{fr1}}/auth/dev-token` |
+| 0. Setup — health and tokens | Token Backoffice Operator (dev only) | POST | `{{fr1}}/auth/dev-token` |
+| 1. Local access | Replica 3: local routes with origin CDG | GET | `{{fr3}}/api/routes/search?origin=CDG` |
+| 2. Peer-to-peer forwarding (GET by id) | Replica 1: route stored in replica 3 | GET | `{{fr1}}/api/routes/{{cdgLhrId}}` |
+| 2. Peer-to-peer forwarding (GET by id) | Replica 2: history of the route stored in replica 3 | GET | `{{fr2}}/api/routes/{{cdgLhrId}}/history` |
+| 2. Peer-to-peer forwarding (GET by id) | Unknown id → 404 | GET | `{{fr1}}/api/routes/does-not-exist` |
+| 3. Response aggregation | All routes from fr1 | GET | `{{fr1}}/api/routes/search` |
+| 3. Response aggregation | All routes from fr2 | GET | `{{fr2}}/api/routes/search` |
+| 3. Response aggregation | All routes from fr3 | GET | `{{fr3}}/api/routes/search` |
+| 3. Response aggregation | US214 active routes by popularity (flights from all replicas) | GET | `{{fr2}}/api/routes/active?sortBy=popularity` |
+| 3. Response aggregation | US206 operational hours (sum of the 3 replicas; service call with X-Service-Key) | GET | `{{fr3}}/api/scheduled-flights/operational-hours` |
+| 3. Response aggregation | US215 total network distance | GET | `{{fr1}}/api/routes/network/total-distance` |
+| 3. Response aggregation | US213 flights of CS-TUA (paginated, 3 replicas) | GET | `{{fr1}}/api/scheduled-flights/search?aircraft=CS-TUA` |
+| 3. Response aggregation | US210 routes per airport (Backoffice; service call with X-Service-Key) | GET | `{{fr2}}/api/routes/statistics/count-by-airport` |
+| 4. Command forwarded to the owner replica | Replica 2: get the id of MAD-CDG | GET | `{{fr2}}/api/routes/search?origin=MAD&dest=CDG` |
+| 4. Command forwarded to the owner replica | Replica 1: PATCH of the route stored in replica 2 | PATCH | `{{fr1}}/api/routes/{{madCdgId}}` |
+| 4. Command forwarded to the owner replica | Replica 2 (owner) sees the change | GET | `{{fr2}}/api/routes/{{madCdgId}}` |
+| 4. Command forwarded to the owner replica | Owner's business error propagated (already ACTIVE → 409) | PATCH | `{{fr3}}/api/routes/{{madCdgId}}` |
+| 5. Security | No token → 401 | GET | `{{fr1}}/api/routes/search` |
+| 5. Security | Wrong role → 403 | GET | `{{fr1}}/api/routes/search` |
+| 5. Security | "Peer" request without X-Service-Key → 401 | GET | `{{fr1}}/api/routes/search` |
+| 5. Security | X-Peer-Hops above the maximum → 400 | GET | `{{fr1}}/api/routes/search` |
+| 5. Security | Valid peer request → local data only (not forwarded) | GET | `{{fr1}}/api/routes/search` |
+| 5. Security | Service-only endpoint without X-Service-Key → 401 (US210 route counts) | GET | `{{fr2}}/api/routes/statistics/count-by-airport` |
+| 5. Security | Service-only endpoint without X-Service-Key → 401 (US206 operational hours) | GET | `{{fr3}}/api/scheduled-flights/operational-hours` |
+| 6. Replica failure (STOP replica 2 first) | Replica 1 keeps answering with a partial response | GET | `{{fr1}}/api/routes/search` |
+| 6. Replica failure (STOP replica 2 first) | Local data still reachable (replica 3) | GET | `{{fr1}}/api/routes/{{cdgLhrId}}` |
+| 6. Replica failure (STOP replica 2 first) | Data only in replica 2 → 404 | GET | `{{fr1}}/api/routes/{{madCdgId}}` |
+| 6. Replica failure (STOP replica 2 first) | Health shows the circuit of replica 2 | GET | `{{fr1}}/actuator/health` |
+| 7. Cross-service (needs Aircraft Management and Airports running) | Setup: random identifiers + Airports health | GET | `{{ap1}}/actuator/health` |
+| 7. Cross-service (needs Aircraft Management and Airports running) | Setup: Aircraft Management health | GET | `{{am1}}/actuator/health` |
+| 7. Cross-service (needs Aircraft Management and Airports running) | Setup: register the origin airport (Airports, Backoffice) → 201 | POST | `{{ap1}}/api/airports` |
+| 7. Cross-service (needs Aircraft Management and Airports running) | Setup: register the destination airport (Airports, Backoffice) → 201 | POST | `{{ap1}}/api/airports` |
+| 7. Cross-service (needs Aircraft Management and Airports running) | Setup: register an aircraft model (Aircraft Management, Backoffice) → 201 | POST | `{{am1}}/api/aircraft-models` |
+| 7. Cross-service (needs Aircraft Management and Airports running) | Setup: register an AVAILABLE aircraft (Aircraft Management, ATCC) → 201 | POST | `{{am1}}/api/aircrafts` |
+| 7. Cross-service (needs Aircraft Management and Airports running) | US110 create a route between the two airports → 201 (Flight Routes → Airports) | POST | `{{fr1}}/api/routes` |
+| 7. Cross-service (needs Aircraft Management and Airports running) | US110 route to an unknown airport → 400 | POST | `{{fr2}}/api/routes` |
+| 7. Cross-service (needs Aircraft Management and Airports running) | US212 schedule a flight → 201 (Flight Routes → Aircraft Management + Airports) | POST | `{{fr3}}/api/scheduled-flights` |
+| 7. Cross-service (needs Aircraft Management and Airports running) | US212 unknown aircraft → 404 | POST | `{{fr1}}/api/scheduled-flights` |
+| 7. Cross-service (needs Aircraft Management and Airports running) | Aircraft set to UNDER_MAINTENANCE (Aircraft Management status endpoint) → 200 | PATCH | `{{am1}}/api/aircrafts/{{xsReg}}/status` |
+| 7. Cross-service (needs Aircraft Management and Airports running) | US212 aircraft under maintenance → 409 | POST | `{{fr2}}/api/scheduled-flights` |
+| 7. Cross-service (needs Aircraft Management and Airports running) | Aircraft set back to AVAILABLE → 200 | PATCH | `{{am1}}/api/aircrafts/{{xsReg}}/status` |
+| 7. Cross-service (needs Aircraft Management and Airports running) | US212 schedule again after maintenance → 201 | POST | `{{fr1}}/api/scheduled-flights` |
+| 8. Concurrency (run after folder 7) | Setup: route for the concurrency test (reverse of the folder 7 route) → 201 | POST | `{{fr1}}/api/routes` |
+| 8. Concurrency (run after folder 7) | Client A updates minCapacity to 110 → 200 | PATCH | `{{fr2}}/api/routes/{{ccRouteId}}` |
+| 8. Concurrency (run after folder 7) | Client B, still holding the old state, updates minCapacity to 120 → 200 (last writer wins: the version is not exposed) | PATCH | `{{fr3}}/api/routes/{{ccRouteId}}` |
+| 8. Concurrency (run after folder 7) | 6 parallel PATCHes through the 3 replicas → each 200 or 409, final state consistent | GET | `{{fr1}}/api/routes/{{ccRouteId}}` |
+| 8. Concurrency (run after folder 7) / 8.1 Concurrent update (run with iterations) | Concurrent update of minCapacity (random value) → 200 or 409 | PATCH | `{{fr2}}/api/routes/{{ccRouteId}}` |
+| 8. Concurrency (run after folder 7) | Final state is consistent (read through another replica) | GET | `{{fr3}}/api/routes/{{ccRouteId}}` |
 
-<a id="sec-maintenance-service"></a>
+<a id="sec-aisafe-maintenance-service-wp-4"></a>
 
-## Maintenance Service
+## AISafe - Maintenance Service (WP#4)
 
 *Source: [docs/5-scenarios/maintenance/postman/Maintenance.postman_collection.json](5-scenarios/maintenance/postman/Maintenance.postman_collection.json)*
 
 | Folder | Request | Method | URL |
 |---|---|---|---|
-| — | Agendar Manutenção | POST | `{{baseUrl}}/api/maintenance` |
-| — | Concluir Intervenção | PATCH | `{{baseUrl}}/api/maintenance/{{maintenance_id}}/complete` |
-| — | Consultar Histórico | GET | `{{baseUrl}}/api/maintenance/aircraft/CS-TST` |
+| 0 - Setup (tokens) | Today's date | GET | `{{m1}}/actuator/health` |
+| 0 - Setup (tokens) | Token MAINTENANCE_TECHNICIAN | POST | `{{m1}}/auth/dev-token` |
+| 0 - Setup (tokens) | Token MAINTENANCE_SUPERVISOR | POST | `{{m1}}/auth/dev-token` |
+| 0 - Setup (tokens) | Token ATCC | POST | `{{m1}}/auth/dev-token` |
+| 0 - Setup (tokens) | Token BACKOFFICE_OPERATOR | POST | `{{m1}}/auth/dev-token` |
+| 1 - Templates (US115) | List templates (reference templates in every replica, no duplicates) | GET | `{{m1}}/api/maintenance-templates` |
+| 1 - Templates (US115) | Create template on replica 2 | POST | `{{m2}}/api/maintenance-templates` |
+| 1 - Templates (US115) | Duplicate name on replica 1 -> 400 | POST | `{{m1}}/api/maintenance-templates` |
+| 1 - Templates (US115) | Unknown aircraft model -> 400 (B3c) | POST | `{{m1}}/api/maintenance-templates` |
+| 1 - Templates (US115) | Invalid type -> 400 | POST | `{{m1}}/api/maintenance-templates` |
+| 2 - Records (US115) | Create record on replica 2 (CS-TUA, A-Check) | POST | `{{m2}}/api/maintenance-records` |
+| 2 - Records (US115) | Aircraft is now UNDER_MAINTENANCE (Aircraft Management) | GET | `{{am1}}/api/aircrafts/CS-TUA` |
+| 2 - Records (US115) | Create record on replica 1 with the template stored in replica 2 | POST | `{{m1}}/api/maintenance-records` |
+| 2 - Records (US115) | Template not applicable to the model (E190) -> 400 | POST | `{{m1}}/api/maintenance-records` |
+| 2 - Records (US115) | Unknown aircraft -> 404 | POST | `{{m1}}/api/maintenance-records` |
+| 2 - Records (US115) | Unknown template -> 404 | POST | `{{m1}}/api/maintenance-records` |
+| 2 - Records (US115) | Start date in the future -> 400 | POST | `{{m1}}/api/maintenance-records` |
+| 3 - Local access | GET record on its owner replica (2) | GET | `{{m2}}/api/maintenance-records/{{recordOnM2}}` |
+| 4 - Peer forwarding (GET by id) | GET record of replica 2 through replica 3 | GET | `{{m3}}/api/maintenance-records/{{recordOnM2}}` |
+| 4 - Peer forwarding (GET by id) | GET template of replica 2 through replica 1 | GET | `{{m1}}/api/maintenance-templates/{{templateId}}` |
+| 4 - Peer forwarding (GET by id) | Unknown record -> 404 | GET | `{{m1}}/api/maintenance-records/does-not-exist` |
+| 5 - Aggregation (US116, US218, US219) | US219 ongoing from replica 1 | GET | `{{m1}}/api/maintenance-records/ongoing` |
+| 5 - Aggregation (US116, US218, US219) | US219 ongoing from replica 3 (same result) | GET | `{{m3}}/api/maintenance-records/ongoing` |
+| 5 - Aggregation (US116, US218, US219) | US116 records of CS-TUA (paginated after merging) | GET | `{{m3}}/api/maintenance-records/aircraft/CS-TUA?page=0&size=2` |
+| 5 - Aggregation (US116, US218, US219) | US116 unknown aircraft -> 404 | GET | `{{m1}}/api/maintenance-records/aircraft/CS-XXX` |
+| 5 - Aggregation (US116, US218, US219) | US218 search by component | GET | `{{m1}}/api/maintenance-records?component=AIRFRAME&status=IN_PROGRESS` |
+| 5 - Aggregation (US116, US218, US219) | US218 search by date range | GET | `{{m2}}/api/maintenance-records?aircraft=CS-TUA&from=2026-01-01&to={{today}}` |
+| 5 - Aggregation (US116, US218, US219) | US218 invalid range -> 400 | GET | `{{m2}}/api/maintenance-records?from=2026-12-01&to=2026-01-01` |
+| 6 - Command forwarding (US217, US119) | US217 categorise record of replica 1 through replica 3 | PATCH | `{{m3}}/api/maintenance-records/{{recordOnM1}}/component` |
+| 6 - Command forwarding (US217, US119) | US119 complete record of replica 2 through replica 3 (another record still ongoing) | PATCH | `{{m3}}/api/maintenance-records/{{recordOnM2}}/complete` |
+| 6 - Command forwarding (US217, US119) | Complete again -> 409 (propagated from the owner) | PATCH | `{{m1}}/api/maintenance-records/{{recordOnM2}}/complete` |
+| 6 - Command forwarding (US217, US119) | Invalid completion data -> 400 | PATCH | `{{m1}}/api/maintenance-records/{{recordOnM1}}/complete` |
+| 6 - Command forwarding (US217, US119) | US119 complete the last ongoing record of CS-TUA through replica 2 | PATCH | `{{m2}}/api/maintenance-records/{{recordOnM1}}/complete` |
+| 6 - Command forwarding (US217, US119) | Aircraft is AVAILABLE again (Aircraft Management) | GET | `{{am2}}/api/aircrafts/CS-TUA` |
+| 7 - Statistics, reports and alerts (US117, US220, US221, US222) | US117 maintenance hours of the fleet | GET | `{{m2}}/api/maintenance-records/statistics/hours` |
+| 7 - Statistics, reports and alerts (US117, US220, US221, US222) | US220 costs per aircraft model | GET | `{{m3}}/api/maintenance-records/reports/costs?groupBy=MODEL` |
+| 7 - Statistics, reports and alerts (US117, US220, US221, US222) | US220 costs per aircraft | GET | `{{m1}}/api/maintenance-records/reports/costs?groupBy=AIRCRAFT` |
+| 7 - Statistics, reports and alerts (US117, US220, US221, US222) | US220 invalid grouping -> 400 | GET | `{{m1}}/api/maintenance-records/reports/costs?groupBy=COLOR` |
+| 7 - Statistics, reports and alerts (US117, US220, US221, US222) | US221 average turnaround per model | GET | `{{m1}}/api/maintenance-records/reports/turnaround` |
+| 7 - Statistics, reports and alerts (US117, US220, US221, US222) | US222 maintenance alerts | GET | `{{m2}}/api/maintenance-alerts` |
+| 8 - Security (JWT, roles, inter-service key) | No token -> 401 | GET | `{{m1}}/api/maintenance-records/ongoing` |
+| 8 - Security (JWT, roles, inter-service key) | ATCC cannot create records -> 403 | POST | `{{m1}}/api/maintenance-records` |
+| 8 - Security (JWT, roles, inter-service key) | Technician cannot see US219 -> 403 | GET | `{{m1}}/api/maintenance-records/ongoing` |
+| 8 - Security (JWT, roles, inter-service key) | Backoffice cannot see alerts -> 403 | GET | `{{m1}}/api/maintenance-alerts` |
+| 8 - Security (JWT, roles, inter-service key) | Peer request without X-Service-Key -> 401 | GET | `{{m1}}/api/maintenance-records/search` |
+| 8 - Security (JWT, roles, inter-service key) | Peer request with X-Peer-Hops 2 -> 400 | GET | `{{m1}}/api/maintenance-records/search` |
+| 8 - Security (JWT, roles, inter-service key) | Valid peer request is answered with local data only | GET | `{{m1}}/api/maintenance-records/search?aircraft=CS-TUA` |
+| 8 - Security (JWT, roles, inter-service key) | Health with peers | GET | `{{m1}}/actuator/health` |
+| 9 - Replica failure (stop replica 2 first) | Ongoing from replica 1 -> 200 partial | GET | `{{m1}}/api/maintenance-records/aircraft/CS-TUA` |
+| 9 - Replica failure (stop replica 2 first) | Record stored only in replica 2 -> 404 | GET | `{{m1}}/api/maintenance-records/{{recordOnM2}}` |
+| 9 - Replica failure (stop replica 2 first) | Record stored in replica 1 -> 200 | GET | `{{m1}}/api/maintenance-records/{{recordOnM1}}` |
+| 9 - Replica failure (stop replica 2 first) | Statistics still answer (partial) | GET | `{{m3}}/api/maintenance-records/reports/turnaround` |
 
 <div style="page-break-before: always;"></div>
 

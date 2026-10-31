@@ -14,9 +14,9 @@ It was originally a monolith (PSOFT). In SIDIS it is redesigned as a distributed
 
 | Person | What they do with AISafe |
 |---|---|
-| **Administrator** | Manages users and their roles. |
-| **Backoffice Operator** | Registers airports, aircraft models and aircraft; updates and deactivates routes; consults statistics such as the busiest airports. |
-| **Air Traffic Control Coordinator (ATCC)** | Defines flight routes, assigns aircraft to routes at a date/time, and queries the route network (popular routes, network distance, alternative itineraries); follows maintenance hours and costs of the fleet and checks which aircraft are due for maintenance. |
+| **Administrator** | Would manage users and their roles. The role exists, but user management is not part of Assignment 1: no AISafe function uses it yet. |
+| **Backoffice Operator** | Registers and updates airports (including their status and certified aircraft models) and aircraft models; updates and deactivates routes; consults statistics such as the busiest airports and the most utilised aircraft models. |
+| **Air Traffic Control Coordinator (ATCC)** | Registers aircraft and changes their status; looks up and searches airports; defines flight routes, assigns aircraft to routes at a date/time, and queries the route network (popular routes, network distance, alternative itineraries, routes compatible with an aircraft, operational hours); follows maintenance hours and costs of the fleet and checks which aircraft are due for maintenance. |
 | **Maintenance Technician / Supervisor** | Defines maintenance templates, records and completes the maintenance of the aircraft (taking them out of service while it lasts), and follows ongoing maintenance and turnaround times. |
 
 Every person authenticates and is given a **role**; each role can only use the functions meant for it.
@@ -29,9 +29,8 @@ AISafe does not depend on external software systems in this assignment. Users ar
 
 | From | To | Purpose |
 |---|---|---|
-| Administrator | AISafe | Manage users and access |
-| Backoffice Operator | AISafe | Register airports and fleet, manage routes, read statistics |
-| ATCC | AISafe | Create routes, schedule flights, query the network |
+| Backoffice Operator | AISafe | Register airports and aircraft models, manage routes, read statistics |
+| ATCC | AISafe | Register aircraft, create routes, schedule flights, query airports and the network |
 | Maintenance Technician / Supervisor | AISafe | Record maintenance, check aircraft status |
 
 ## Quality goals (from the assignment)

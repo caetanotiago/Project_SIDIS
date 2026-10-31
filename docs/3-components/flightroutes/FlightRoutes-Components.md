@@ -14,12 +14,14 @@
 | Database | H2 in-memory per replica: `flightRoutesdb-1/2/3` |
 | Source code | [code/flightroutes](../../../code/flightroutes) |
 | API | `http://localhost:8084/swagger-ui.html` (any replica) |
+| Supplies to other containers | Aircraft Management: B4b minutes per aircraft (US204, US206), B6 compatible routes (US203); Airports: B5 route counts per airport (US210) — all **service-only** ([Integration-Contracts §2.8](../../2-containers/Integration-Contracts.md#28-service-only-endpoints)) |
+| Consumes from other containers | Airports: B2 airport by IATA; Aircraft Management: B1 aircraft and aircraft model |
 
 ## 2. Components
 
 | Component | Technology / classes | Responsibility |
 |---|---|---|
-| **Security & Observability filters** | `common` filters + [`FlightRoutesAuthorizationRules`](../../../code/flightroutes/src/main/java/isep/psoft/aisafe/infrastructure/security/FlightRoutesAuthorizationRules.java) | Correlation id, audit log, `X-Service-Key` check, JWT authentication, role rules per endpoint |
+| **Security & Observability filters** | `common` filters + [`FlightRoutesAuthorizationRules`](../../../code/flightroutes/src/main/java/isep/psoft/aisafe/infrastructure/security/FlightRoutesAuthorizationRules.java) | Correlation id, audit log, `X-Service-Key` check (required on peer calls and on the service-only paths listed in `aisafe.security.service-only-paths`), JWT authentication, role rules per endpoint |
 | **Flight Route Controller** | [`FlightRouteController`](../../../code/flightroutes/src/main/java/isep/psoft/aisafe/flightroutes/controllers/FlightRouteController.java) (Spring REST) | `/api/routes` — US110–US114, US203, US209, US210, US214–US216 |
 | **Scheduled Flight Controller** | [`ScheduledFlightController`](../../../code/flightroutes/src/main/java/isep/psoft/aisafe/flightroutes/controllers/ScheduledFlightController.java) (Spring REST) | `/api/scheduled-flights` — US212, US213, US206 and statistics used for aggregation |
 | **Route application services** | `CreateFlightRouteService`, `UpdateFlightRouteService`, `SearchFlightRoutesService`, `GetRouteHistoryService`, `ViewRoutesByAirportService`, `CountRoutesByAirportService`, `ListActiveRoutesService`, `CalculateNetworkDistanceService`, `SearchAlternativeRoutesService` | One service per use case; transactions; orchestration |
@@ -40,6 +42,8 @@ The `common` components are described in [common — Components](../common/Commo
 
 Every endpoint is served by every replica; **every GET returns the data of all replicas**.
 
+Endpoints marked **service-only** are listed in `aisafe.security.service-only-paths` (`application.properties`): they are called by other AISafe services (or by the Flight Routes replicas), which send `X-Service-Key` automatically. A request without the key gets `401 {"error":"This endpoint is only available to AISafe services."}` even with a valid JWT; with the key, the role rule below still applies.
+
 **Flight routes — `/api/routes`**
 
 | Method | Endpoint | US | Input | Output | Roles |
@@ -53,8 +57,8 @@ Every endpoint is served by every replica; **every GET returns the data of all r
 | GET | `/api/routes/active?sortBy=` | US214 | `popularity` (default) / `distance` | `200` `List<FlightRouteDTO>` with `usageCount` | ATCC |
 | GET | `/api/routes/network/total-distance` | US215 | — | `200` `NetworkDistanceDTO` | ATCC |
 | GET | `/api/routes/alternatives?origin=&dest=` | US216 | IATA codes | `200` `List<ItineraryDTO>` | ATCC |
-| GET | `/api/routes/compatible?range=&capacity=` | US203 | aircraft range and capacity | `200` `List<FlightRouteDTO>` | ATCC, MAINTENANCE_SUPERVISOR, MAINTENANCE_TECHNICIAN |
-| GET | `/api/routes/statistics/count-by-airport` | US210 | — | `200` `Map<IATA, Long>` | BACKOFFICE_OPERATOR |
+| GET | `/api/routes/compatible?range=&capacity=` | US203 (B6, Aircraft Management) — **service-only** | aircraft range and capacity | `200` `List<FlightRouteDTO>` | ATCC, MAINTENANCE_SUPERVISOR, MAINTENANCE_TECHNICIAN |
+| GET | `/api/routes/statistics/count-by-airport` | US210 (B5, Airports) — **service-only** | — | `200` `Map<IATA, Long>` | BACKOFFICE_OPERATOR |
 
 **Scheduled flights — `/api/scheduled-flights`**
 
@@ -64,9 +68,9 @@ Every endpoint is served by every replica; **every GET returns the data of all r
 | GET | `/api/scheduled-flights/{id}` | — | flight ID | `200` `ScheduledFlightDTO` | ATCC |
 | GET | `/api/scheduled-flights?aircraft=&page=&size=` | US213 | registration + pagination | `200` `PagedModel<ScheduledFlightDTO>` | ATCC |
 | GET | `/api/scheduled-flights/search?aircraft=&date=&time=` | US213/US212 | registration, optional date/time | `200` `List<ScheduledFlightDTO>` | ATCC |
-| GET | `/api/scheduled-flights/operational-hours` | US206 | pagination | `200` `Page<AircraftOperationalHoursDTO>` | ATCC |
-| GET | `/api/scheduled-flights/statistics/usage-by-route` | US214 | — | `200` `Map<routeId, Long>` | ATCC |
-| GET | `/api/scheduled-flights/statistics/minutes-by-aircraft` | US206 | — | `200` `Map<registration, Long>` | ATCC |
+| GET | `/api/scheduled-flights/operational-hours` | B4a (no consumer: Aircraft Management computes US206 from B4b) — **service-only** | pagination | `200` `Page<AircraftOperationalHoursDTO>` | ATCC |
+| GET | `/api/scheduled-flights/statistics/usage-by-route` | US214 (peer aggregation) — **service-only** | — | `200` `Map<routeId, Long>` | ATCC |
+| GET | `/api/scheduled-flights/statistics/minutes-by-aircraft` | US204, US206 (B4b, Aircraft Management) — **service-only** | — | `200` `Map<registration, Long>` | ATCC, BACKOFFICE_OPERATOR |
 
 Infrastructure endpoints (from `common`): `GET /actuator/health`, `POST /auth/dev-token` (development only), `/swagger-ui.html`.
 
@@ -76,7 +80,8 @@ Infrastructure endpoints (from `common`): `GET /actuator/health`, `POST /auth/de
 |---|---|
 | `IllegalArgumentException`, `MethodArgumentNotValidException` | 400 |
 | `EntityNotFoundException` | 404 |
-| `IllegalStateException`, `ObjectOptimisticLockingFailureException` | 409 |
+| `IllegalStateException`, `ObjectOptimisticLockingFailureException` (overlapping updates, see §5) | 409 |
+| missing `X-Service-Key` on a service-only endpoint, missing/invalid JWT (empty body) | 401 |
 | `RouteRequirementsNotMetException` | 422 |
 | `RemoteServiceUnavailableException` (no replica of a remote service answered) | 503 |
 | `ResponseStatusException` (remote 401/403, business error of the owner replica) | same status |
@@ -98,7 +103,8 @@ Infrastructure endpoints (from `common`): `GET /actuator/health`, `POST /auth/de
 | Aggregated statistics (US206, US210, US214) | `ScheduledFlightStatisticsService`, `CountRoutesByAirportService` → `PeerClient.collect`, summed |
 | Whole-network queries (US214, US215, US216) | `RouteReplicaQueries.activeNetwork` → strategies |
 | Single owner per route (US112) | `UpdateFlightRouteService` → `PeerClient.forwardToOwner` |
+| Concurrent updates of a route (US112) | `FlightRoute` `@Version` on the owner replica: two **overlapping** PATCHes give one `200` and one `409` (`GlobalExceptionHandler`). **Known limitation:** the version is not returned by GET nor accepted by PATCH (no `ETag`/`If-Match`), so an update from stale data is not detected and sequential updates are last-writer-wins ([Integration-Contracts §8](../../2-containers/Integration-Contracts.md#8-known-limitations)) |
 | Calls to other services with failover | ACL → `ReplicatedServiceClient` → `ResilientExecutor` |
-| Security and audit | filter chain of `common` + `FlightRoutesAuthorizationRules` |
+| Security and audit | filter chain of `common` + `FlightRoutesAuthorizationRules`; service-only endpoints via `aisafe.security.service-only-paths` |
 
 The system-wide decisions (consistency model, fault tolerance, security) are in [L2 §3](../../2-containers/Containers.md#3-distribution-design-decisions).

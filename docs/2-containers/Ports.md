@@ -18,7 +18,7 @@ Each module has, in `src/main/resources/`:
 | `application.properties` | Shared configuration; defaults = replica 1 |
 | `application-instance1/2/3.properties` | `server.port`, `aisafe.instance-id`, `spring.datasource.url` and `aisafe.peers.urls` (the **other** two replicas) of each replica |
 | `application-tls.properties` | HTTPS (`aisafe.scheme=https`, server keystore, client truststore) |
-| `application-demo.properties` | Optional demo data (see `flightroutes`) |
+| `application-demo.properties` | Optional demo data, different in each replica (`airports`, `flightroutes`, `maintenance`). Aircraft Management has no `demo` profile: it always loads its demo models and aircraft (`aisafe.bootstrap.enabled=true`); Maintenance always loads its reference templates |
 
 ```properties
 # application-instance2.properties of airports
@@ -34,5 +34,5 @@ Calls to **other** services list all their replicas (round-robin + failover):
 services.airports.urls=${aisafe.scheme}://localhost:8083,${aisafe.scheme}://localhost:8183,${aisafe.scheme}://localhost:8283
 ```
 
-Start a replica with `--spring.profiles.active=instanceN` (or `scripts/run-instance.*`). Without a profile a service starts as replica 1.
+Start a replica with `--spring.profiles.active=instanceN` (or `scripts/run-instance.*`); start everything with `scripts/start-all.*` and stop it with `scripts/stop-all.*` ([Containers §4](Containers.md#4-deployment)). Without a profile a service starts as replica 1.
 Spring Boot defaults to port 8080: without these properties only the first service to start would boot (`Port 8080 was already in use`).

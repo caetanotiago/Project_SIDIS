@@ -10,7 +10,7 @@ Container(am, "Aircraft Management Service", "Spring Boot, 3 replicas")
 ContainerDb(db, "flightRoutesdb-N", "H2 in-memory", "Database of THIS replica")
 
 Container_Boundary(fr, "Flight Routes Service (one replica)") {
-    Component(sec, "Security & Observability filters", "common: Servlet filters", "Correlation id, audit log, X-Service-Key check, JWT authentication, role rules (FlightRoutesAuthorizationRules)")
+    Component(sec, "Security & Observability filters", "common: Servlet filters", "Correlation id, audit log, X-Service-Key check (peer calls and service-only paths), JWT authentication, role rules (FlightRoutesAuthorizationRules)")
     Component(routeCtrl, "Flight Route Controller", "Spring REST Controller", "/api/routes — US110-US114, US203, US209, US210, US214-US216")
     Component(sfCtrl, "Scheduled Flight Controller", "Spring REST Controller", "/api/scheduled-flights — US212, US213, US206 + statistics")
     Component(routeSvc, "Route application services", "Spring Services", "Create/Update route, search, history, by airport, active routes, network distance, alternatives")
@@ -26,6 +26,8 @@ Container_Boundary(fr, "Flight Routes Service (one replica)") {
 }
 
 Rel(atcc, sec, "HTTPS + JWT")
+Rel(am, sec, "B4b minutes-by-aircraft, B6 compatible (service-only)", "JSON/HTTPS + JWT + X-Service-Key")
+Rel(ap, sec, "B5 count-by-airport (service-only)", "JSON/HTTPS + JWT + X-Service-Key")
 Rel(sec, routeCtrl, "authorised requests")
 Rel(sec, sfCtrl, "authorised requests")
 Rel(routeCtrl, routeSvc, "uses")

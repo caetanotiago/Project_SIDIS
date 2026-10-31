@@ -78,17 +78,17 @@ deactivate SYS
 
 == Queries requested by other components ==
 
-AM -> SYS : GET /api/routes/compatible?range=&capacity= (US203)
+AM -> SYS : GET /api/routes/compatible?range=&capacity= (US203, B6)
 activate SYS
 SYS --> AM : 200 OK (List<FlightRouteDTO>)
 deactivate SYS
 
-AM -> SYS : GET /api/scheduled-flights/operational-hours (US206)
+AM -> SYS : GET /api/scheduled-flights/statistics/minutes-by-aircraft (US204, US206, B4b)
 activate SYS
-SYS --> AM : 200 OK (Page<AircraftOperationalHoursDTO>)
+SYS --> AM : 200 OK (Map<registration, minutes>)
 deactivate SYS
 
-AP -> SYS : GET /api/routes/statistics/count-by-airport (US210)
+AP -> SYS : GET /api/routes/statistics/count-by-airport (US210, B5)
 activate SYS
 SYS --> AP : 200 OK (Map<IATA, count>)
 deactivate SYS
@@ -96,6 +96,7 @@ deactivate SYS
 note over BO, SYS
   Every request carries "Authorization: Bearer <JWT>".
   Requests from other components forward the end user's JWT (+ X-Service-Key).
+  The three queries above are service-only: without X-Service-Key they get 401.
   "System" = any of the 3 replicas: every GET answers with the data of all replicas
   (X-Partial-Response: true when a replica did not answer).
 end note

@@ -45,7 +45,7 @@ alt route stored in this replica
         deactivate Route
     end
     Service -> RouteRepo : save(route)
-    note right of RouteRepo : @Version check\n(concurrent update -> 409)
+    note right of RouteRepo : @Version check\n(overlapping update -> 409;\nthe client sends no version)
     Service -> Assembler : toDTO(savedRoute)
     Assembler --> Service : FlightRouteDTO
 else route not stored here

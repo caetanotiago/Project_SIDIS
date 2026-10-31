@@ -9,7 +9,7 @@ Person(maint, "Maintenance Technician / Supervisor")
 
 System_Boundary(aisafe, "AISafe Flight Management System") {
     Container(am, "Aircraft Management Service", "Java 21, Spring Boot — 3 replicas :8081/:8181/:8281", "Aircraft models and aircraft, operational status (WP#1).")
-    Container(mt, "Maintenance Service", "Java 21, Spring Boot — 3 replicas :8082/:8182/:8282", "Maintenance templates and records (WP#4).")
+    Container(mt, "Maintenance Service", "Java 21, Spring Boot — 3 replicas :8082/:8182/:8282", "Maintenance templates, records, reports and alerts (WP#4).")
     Container(ap, "Airports Service", "Java 21, Spring Boot — 3 replicas :8083/:8183/:8283", "Airports, runways and certification data (WP#2).")
     Container(fr, "Flight Routes Service", "Java 21, Spring Boot — 3 replicas :8084/:8184/:8284", "Flight routes, route history, scheduled flights and network queries (WP#3).")
 
@@ -19,20 +19,25 @@ System_Boundary(aisafe, "AISafe Flight Management System") {
     ContainerDb(frdb, "flightRoutesdb-1..3", "H2 in-memory", "One database per replica")
 }
 
-Rel(backoffice, am, "Manages fleet", "JSON/HTTPS + JWT")
-Rel(backoffice, ap, "Manages airports", "JSON/HTTPS + JWT")
-Rel(backoffice, fr, "Updates routes; US210 statistics", "JSON/HTTPS + JWT")
-Rel(atcc, fr, "Routes, scheduled flights, network", "JSON/HTTPS + JWT")
-Rel(maint, mt, "Templates, records, reports", "JSON/HTTPS + JWT")
+' Users (roles as in each service's AuthorizationRules)
+Rel(backoffice, am, "Registers aircraft models (US101); US204 top models; reads fleet", "JSON/HTTPS + JWT")
+Rel(backoffice, ap, "Registers and updates airports, status, certifications; US210 busiest airports", "JSON/HTTPS + JWT")
+Rel(backoffice, fr, "Updates / deactivates routes (US112)", "JSON/HTTPS + JWT")
+Rel(atcc, am, "Registers aircraft (US102), status (US105); US203, US204, US206", "JSON/HTTPS + JWT")
+Rel(atcc, ap, "Airport details, search, grouping (US107, US108, US211); certifications", "JSON/HTTPS + JWT")
+Rel(atcc, fr, "Routes, scheduled flights, network queries", "JSON/HTTPS + JWT")
 Rel(atcc, mt, "US117, US220, US222 alerts", "JSON/HTTPS + JWT")
-Rel(mt, am, "Aircraft lookup, status UNDER_MAINTENANCE/AVAILABLE, models, fleet + flight hours", "JSON/HTTPS, round-robin + failover")
+Rel(maint, mt, "Templates, records, categorisation, ongoing records, turnaround report", "JSON/HTTPS + JWT")
+Rel(maint, am, "Reads aircraft and models; status (US105)", "JSON/HTTPS + JWT")
 
-Rel(fr, ap, "Airport coordinates and status", "JSON/HTTPS, round-robin + failover")
-Rel(fr, am, "Aircraft status, capacity and model range", "JSON/HTTPS, round-robin + failover")
-Rel(am, fr, "US203 compatible routes, US206 operational hours", "JSON/HTTPS")
-Rel(ap, fr, "US210 routes per airport", "JSON/HTTPS")
+' Service-to-service calls (all with the user's JWT and X-Service-Key; round-robin + failover)
+Rel(fr, ap, "B2: GET /api/airports/{iata} — coordinates and status", "JSON/HTTPS")
+Rel(fr, am, "B1: GET /api/aircrafts/{reg}, GET /api/aircraft-models/{model}", "JSON/HTTPS")
+Rel(am, fr, "B4b: GET …/statistics/minutes-by-aircraft (US204, US206); B6: GET /api/routes/compatible (US203)", "JSON/HTTPS, service-only")
+Rel(ap, fr, "B5: GET /api/routes/statistics/count-by-airport (US210)", "JSON/HTTPS, service-only")
+Rel(mt, am, "B3: GET /api/aircrafts/{reg}, PATCH …/{reg}/status, GET /api/aircraft-models/{model}, GET /api/aircrafts + /operational-hours (paged)", "JSON/HTTPS")
 
-Rel(fr, fr, "Peer forwarding / aggregation between replicas", "JSON/HTTPS, X-Peer-Hops")
+Rel(fr, fr, "Peer forwarding / aggregation between replicas (the same in every service)", "JSON/HTTPS, X-Peer-Hops + X-Service-Key")
 
 Rel(am, amdb, "Reads/writes", "JPA/JDBC")
 Rel(mt, mtdb, "Reads/writes", "JPA/JDBC")
