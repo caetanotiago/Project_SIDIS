@@ -4,8 +4,11 @@
 #   aisafe-dev-keystore.p12   — chave privada + certificado (server.ssl.key-store)
 #   aisafe-dev-truststore.p12 — só o certificado (aisafe.tls.trust-store, usado pelos clientes)
 # Uso (a partir de code/):  ./scripts/generate-dev-certs.sh [password]
+# Os ficheiros e a password têm de coincidir com application-tls.properties de cada serviço
+# (alias aisafe, PKCS12, password ${AISAFE_TLS_PASSWORD:changeit} -> por omissão a mesma variável).
+# Não são versionados (.gitignore). Ficam no JAR do common: depois de os gerar é preciso recompilar.
 set -euo pipefail
-PASS="${1:-changeit}"
+PASS="${1:-${AISAFE_TLS_PASSWORD:-changeit}}"
 DIR="$(cd "$(dirname "$0")/.." && pwd)/common/src/main/resources/tls"
 mkdir -p "$DIR"
 rm -f "$DIR/aisafe-dev-keystore.p12" "$DIR/aisafe-dev-truststore.p12" "$DIR/aisafe-dev.crt"
@@ -18,3 +21,4 @@ keytool -exportcert -alias aisafe -keystore "$DIR/aisafe-dev-keystore.p12" -stor
 keytool -importcert -noprompt -alias aisafe -file "$DIR/aisafe-dev.crt" \
   -storetype PKCS12 -keystore "$DIR/aisafe-dev-truststore.p12" -storepass "$PASS"
 echo "Certificados gerados em $DIR"
+echo "Recompilar para os incluir nos JARs:  ./mvnw -q -DskipTests package"

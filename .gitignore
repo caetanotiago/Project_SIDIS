@@ -39,6 +39,9 @@ logs/
 .env
 .env.*
 *.local.properties
+# Certificado TLS de desenvolvimento (chave privada): gerado por code/scripts/generate-dev-certs.*
+code/common/src/main/resources/tls/*.p12
+code/common/src/main/resources/tls/*.crt
 
 # ---- Documentos que não pertencem ao repo (enunciados, slides, rascunhos) ----
 *.pdf
