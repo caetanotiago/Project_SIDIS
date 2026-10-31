@@ -5,10 +5,10 @@ actor "Maintenance\nTechnician" as User
 participant "maintenance-1\n: MaintenanceRecordController" as Ctrl
 participant "maintenance-1\n: CompleteMaintenanceRecordService" as S1
 participant ": PeerClient" as Peers
-participant "maintenance-2\n(owner)\n: CompleteMaintenanceRecordService" as S2
+participant "maintenance-2 (owner)\n: CompleteMaintenanceRecordService" as S2
 participant "record : MaintenanceRecord\n(H2 #2)" as Rec <<Entity>>
-participant "maintenance-2\n: AircraftAvailabilityService" as Avail
-participant "maintenance-3" as R3
+participant "maintenance-1\n: AircraftAvailabilityService" as Avail
+participant "maintenance-2 / -3" as Others
 participant "Aircraft Management" as AM
 
 activate User
@@ -31,28 +31,30 @@ end note
 Rec --> S2
 deactivate Rec
 S2 -> S2 : saveAndFlush(record)\n(@Version → 409 on a concurrent update)
-S2 -> Avail : releaseIfNoOtherOngoing(reg, id)
-activate Avail
-Avail -> Avail : local IN_PROGRESS records of reg
-Avail -> R3 : GET /api/maintenance-records/search?aircraft=reg&status=IN_PROGRESS\n(peer request from maintenance-2; also to maintenance-1)
-R3 --> Avail : []
-alt no other ongoing record and every peer answered
-    Avail -> AM : PATCH /api/aircrafts/{reg}/status {AVAILABLE} (B3b)
-    AM --> Avail : 200
-    Avail -> Avail : on rollback → PATCH UNDER_MAINTENANCE (compensation)
-else another record ongoing, or a peer did not answer
-    Avail -> Avail : keep UNDER_MAINTENANCE (safe side), log warning
-end
-Avail --> S2
-deactivate Avail
+note right of S2 : peer request: the owner only completes the record\n(it cannot query the other replicas)
 S2 --> Peers : 200 MaintenanceRecordDTO (COMPLETED)
 deactivate S2
 note right of Peers : 404 from a peer = "not mine" → next peer;\n4xx from the owner → same status to the client
 Peers --> S1 : MaintenanceRecordDTO
 deactivate Peers
-S1 --> Ctrl : MaintenanceRecordDTO
+
+S1 -> Avail : releaseIfNoOtherOngoing(reg, id)
+activate Avail
+Avail -> Avail : local IN_PROGRESS records of reg
+Avail -> Others : GET /api/maintenance-records/search?aircraft=reg&status=IN_PROGRESS\n(X-Peer-Hops: 1)
+Others --> Avail : []
+alt no other ongoing record and every replica answered
+    Avail -> AM : PATCH /api/aircrafts/{reg}/status {AVAILABLE} (B3b)
+    AM --> Avail : 200
+    Avail --> S1 : released = true
+else another record ongoing, a replica did not answer, or Aircraft Management failed
+    Avail -> Avail : keep UNDER_MAINTENANCE (safe side), log warning
+    Avail --> S1 : released = false
+end
+deactivate Avail
+S1 --> Ctrl : Result(record, released)
 deactivate S1
-Ctrl --> User : 200 OK
+Ctrl --> User : 200 OK (MaintenanceRecordDTO)\nX-Aircraft-Released: true | false
 deactivate Ctrl
 deactivate User
 

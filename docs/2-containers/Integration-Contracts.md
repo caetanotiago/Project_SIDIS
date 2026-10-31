@@ -300,7 +300,7 @@ US212 then answers **409** `"Origin airport <IATA> is not operational."` (or Des
 | US115 create template | `CreateMaintenanceTemplateService` | B3c per applicable model | existence (404 → template rejected with 400) |
 | US115 create record | `CreateMaintenanceRecordService` | B3a, then B3b `UNDER_MAINTENANCE` | `modelName` (template applicability, model snapshot), `status` (previous status, for compensation) |
 | US116 records of an aircraft | `ViewMaintenanceRecordsService` | B3a (only on the replica that received the client request) | existence (404 → 404, not an empty history) |
-| US119 complete record | `CompleteMaintenanceRecordService` → `AircraftAvailabilityService` | B3b `AVAILABLE` (only if no other record of the aircraft is ongoing in any replica) | — |
+| US119 complete record | `CompleteMaintenanceRecordService` → `AircraftAvailabilityService` (replica that received the client request) | B3b `AVAILABLE` (only if no other record of the aircraft is ongoing in any replica and every replica answered) | — (failure keeps the aircraft `UNDER_MAINTENANCE`; header `X-Aircraft-Released: false`) |
 | US222 alerts | `MaintenanceAlertService` | B3d (all pages) | fleet (`registrationNumber`, `modelName`, `manufacturingDate`, `status`) and `totalHours` per aircraft |
 
 #### B3a: `GET /api/aircrafts/{registrationNumber}` (reuses B1a)
@@ -322,7 +322,7 @@ US212 then answers **409** `"Origin airport <IATA> is not operational."` (or Des
 - **Usage:**
   - US115 (record starts): `{"status": "UNDER_MAINTENANCE"}`. If the aircraft is already `UNDER_MAINTENANCE` (another record in progress) the provider accepts it as a no-op.
   - US119 (last ongoing record completed): `{"status": "AVAILABLE"}`. **Not `"ACTIVE"`**: Flight Routes only schedules aircraft whose status is exactly `AVAILABLE` (Q1, decided).
-  - Compensation: the previous status (US115) or `UNDER_MAINTENANCE` (US119), when the local transaction rolls back after B3b succeeded.
+  - Compensation (US115): the previous status, when the local transaction rolls back after B3b succeeded.
 - **Response 200:** the updated aircraft, with the same schema as B1a.
 - **Status codes and how Maintenance handles them:**
 
@@ -335,7 +335,7 @@ US212 then answers **409** `"Origin airport <IATA> is not operational."` (or Des
 | 409 | aircraft `IN_FLIGHT` cannot go `UNDER_MAINTENANCE` (Q7, decided by Aircraft Management) or `@Version` clash | `ResponseStatusException(409)`, rollback | 409 |
 | 5xx, timeout, connection refused, circuit open | retry, then failover to the next replica | `RemoteServiceUnavailableException`, rollback | **503** `{"error": "Aircraft Management service is unavailable."}` |
 
-- **Ordering (decided, Q7):** Maintenance writes and **flushes** its record first (local validation, constraints and `@Version` already checked), then calls B3b, then commits. B3b failing → the local transaction rolls back (nothing changed anywhere). Commit failing after B3b → a `TransactionSynchronization` sends the **compensating PATCH**. The server-side `@Version` of the aircraft is enough; no `If-Match` is sent.
+- **Ordering (decided, Q7):** US115 — Maintenance writes and **flushes** its record first (local validation, constraints and `@Version` already checked), then calls B3b, then commits. B3b failing → the local transaction rolls back (nothing changed anywhere). Commit failing after B3b → a `TransactionSynchronization` sends the **compensating PATCH**. US119 — the record is completed first; the release is a separate step whose failure leaves the aircraft `UNDER_MAINTENANCE` (safe side) without failing the completion. The server-side `@Version` of the aircraft is enough; no `If-Match` is sent.
 - **Retries:** setting a status to a fixed value is idempotent, so the retries of `ReplicatedServiceClient` are safe.
 - **Replica behaviour (provider):** the write runs on the replica that owns the aircraft (`UpdateAircraftStatusService` → `PeerClient.forwardToOwner`).
 
@@ -348,6 +348,7 @@ US212 then answers **409** `"Origin airport <IATA> is not operational."` (or Des
 - `GET /api/aircrafts/operational-hours?page=n&size=100` (US206) — fields used: `registrationNumber`, `totalHours`. Aircraft without flights have `0`.
 - Page format (both): `{ "content": [...], "page": 0, "size": 100, "totalElements": 6, "totalPages": 1 }` (`PageDTO` of Aircraft Management).
 - `X-Partial-Response: true` on either response → Maintenance flags its own response as partial.
+- `operational-hours` depends on Flight Routes (B4). If it fails (`503`, or any error other than a 404 of the fleet), Maintenance still returns the calendar-day alerts, flagged `X-Partial-Response: true`.
 - Role: **`ATCC`** (the US222 actor; `operational-hours` is `ATCC`-only).
 
 **Source:** `code/maintenance/.../maintenance/clients/AircraftClient.java`, `code/aircraftmanagement/.../controllers/AircraftController.java`, `AircraftStatisticsController.java`, `AircraftModelController.java`, `UpdateAircraftStatusService.java`, `domain/Aircraft.java` (`changeStatus`), `dto/PageDTO.java`, `infrastructure/security/AircraftManagementAuthorizationRules.java`, `FR/flightroutes/clients/AircraftSnapshot.java` (`isAvailable` checks `"AVAILABLE"`), `COMMON/remote/ReplicatedServiceClient.java`

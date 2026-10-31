@@ -1,134 +1,1738 @@
 {
   "info": {
-    "_postman_id": "88ec48fc-5d5a-4573-9d4c-9c2ca7003cd2",
-    "name": "Maintenance Service",
-    "description": "Testa o agendamento, a conclusão e o histórico de manutenções. Requer um JWT válido na variável jwt_token e uma aeronave CS-TST existente no Aircraft Management. O pedido de agendamento guarda automaticamente o id para os pedidos seguintes.",
+    "_postman_id": "b539b2ea-1349-516c-afef-0fb049e8fe0d",
+    "name": "AISafe - Maintenance Service (WP#4)",
+    "description": "Maintenance service with 3 replicas (8082/8182/8282) and Aircraft Management (8081/8181/8281). Start Aircraft Management and Maintenance with the demo data (scripts/start-replicas.* <service> demo); Flight Routes is needed for the flight-hour part of US222. Run folders 0-8 in order; stop replica 2 before folder 9.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
-  },
-  "auth": {
-    "type": "bearer",
-    "bearer": [
-      {
-        "key": "token",
-        "value": "{{jwt_token}}",
-        "type": "string"
-      }
-    ]
   },
   "item": [
     {
-      "name": "Agendar Manutenção",
-      "request": {
-        "method": "POST",
-        "header": [
-          {
-            "key": "Content-Type",
-            "value": "application/json"
-          }
-        ],
-        "body": {
-          "mode": "raw",
-          "raw": "{\n  \"aircraftRegistration\": \"CS-TST\",\n  \"scheduledDate\": \"2027-01-01\",\n  \"serviceType\": \"Routine Inspection\"\n}",
-          "options": {
-            "raw": {
-              "language": "json"
+      "name": "0 - Setup (tokens)",
+      "item": [
+        {
+          "name": "Today's date",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{m1}}/actuator/health"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            },
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const d = new Date(); pm.environment.set(\"today\", d.toISOString().slice(0,10));",
+                  "const f = new Date(Date.now() + 5*86400000); pm.environment.set(\"future\", f.toISOString().slice(0,10));"
+                ]
+              }
             }
-          }
+          ]
         },
-        "url": "{{baseUrl}}/api/maintenance"
-      },
-      "event": [
         {
-          "listen": "test",
-          "script": {
-            "type": "text/javascript",
-            "exec": [
-              "pm.test(\"Maintenance was created\", function () {",
-              "    pm.response.to.have.status(201);",
-              "    const maintenance = pm.response.json();",
-              "    pm.expect(maintenance.id).to.be.ok;",
-              "    pm.expect(maintenance.status).to.eql(\"SCHEDULED\");",
-              "    pm.collectionVariables.set(\"maintenance_id\", maintenance.id);",
-              "});"
-            ]
-          }
-        }
-      ]
-    },
-    {
-      "name": "Concluir Intervenção",
-      "request": {
-        "method": "PATCH",
-        "header": [
-          {
-            "key": "Content-Type",
-            "value": "application/json"
-          }
-        ],
-        "body": {
-          "mode": "raw",
-          "raw": "{\n  \"completionDate\": \"2027-01-02\",\n  \"report\": {\n    \"text\": \"Routine inspection completed; no defects found.\"\n  }\n}",
-          "options": {
-            "raw": {
-              "language": "json"
+          "name": "Token MAINTENANCE_TECHNICIAN",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{m1}}/auth/dev-token",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"tech1\",\n  \"roles\": [\n    \"MAINTENANCE_TECHNICIAN\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             }
-          }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                  "pm.environment.set(\"techToken\", pm.response.json().token);"
+                ]
+              }
+            }
+          ]
         },
-        "url": "{{baseUrl}}/api/maintenance/{{maintenance_id}}/complete"
-      },
-      "event": [
         {
-          "listen": "test",
-          "script": {
-            "type": "text/javascript",
-            "exec": [
-              "pm.test(\"Maintenance was completed\", function () {",
-              "    pm.response.to.have.status(200);",
-              "    pm.expect(pm.response.json().status).to.eql(\"COMPLETED\");",
-              "});"
-            ]
-          }
+          "name": "Token MAINTENANCE_SUPERVISOR",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{m1}}/auth/dev-token",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"sup1\",\n  \"roles\": [\n    \"MAINTENANCE_SUPERVISOR\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                  "pm.environment.set(\"supToken\", pm.response.json().token);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Token ATCC",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{m1}}/auth/dev-token",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"atcc1\",\n  \"roles\": [\n    \"ATCC\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                  "pm.environment.set(\"atccToken\", pm.response.json().token);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Token BACKOFFICE_OPERATOR",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{m1}}/auth/dev-token",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"bo1\",\n  \"roles\": [\n    \"BACKOFFICE_OPERATOR\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                  "pm.environment.set(\"boToken\", pm.response.json().token);"
+                ]
+              }
+            }
+          ]
         }
       ]
     },
     {
-      "name": "Consultar Histórico",
-      "request": {
-        "method": "GET",
-        "header": [],
-        "url": "{{baseUrl}}/api/maintenance/aircraft/CS-TST"
-      },
-      "event": [
+      "name": "1 - Templates (US115)",
+      "item": [
         {
-          "listen": "test",
-          "script": {
-            "type": "text/javascript",
-            "exec": [
-              "pm.test(\"Maintenance history was returned\", function () {",
-              "    pm.response.to.have.status(200);",
-              "    pm.expect(pm.response.json()).to.be.an(\"array\");",
-              "});"
-            ]
-          }
+          "name": "List templates (reference templates in every replica, no duplicates)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{techToken}}"
+              }
+            ],
+            "url": "{{m1}}/api/maintenance-templates"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                  "const t = pm.response.json();",
+                  "pm.test(\"Reference templates present once\", () => { const names = t.map(x => x.name); pm.expect(names).to.include(\"A-Check Inspection\"); pm.expect(names.filter(n => n === \"A-Check Inspection\").length).to.eql(1); });",
+                  "pm.environment.set(\"aCheckId\", t.find(x => x.name === \"A-Check Inspection\").id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create template on replica 2",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{techToken}}"
+              }
+            ],
+            "url": "{{m2}}/api/maintenance-templates",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Avionics Software Update {{$timestamp}}\",\n  \"type\": \"MODIFICATION\",\n  \"applicableModels\": [\"A320\"],\n  \"checklist\": [\"Load software\", \"Run self-test\"],\n  \"calendarDaysInterval\": 30\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 201\", () => pm.response.to.have.status(201));",
+                  "pm.test(\"Location header\", () => pm.response.to.have.header(\"Location\"));",
+                  "const b = pm.response.json(); pm.test(\"Template data\", () => { pm.expect(b.type).to.eql(\"MODIFICATION\"); pm.expect(b._links).to.have.property(\"self\"); });",
+                  "pm.environment.set(\"templateId\", b.id); pm.environment.set(\"templateName\", b.name);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Duplicate name on replica 1 -> 400",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{techToken}}"
+              }
+            ],
+            "url": "{{m1}}/api/maintenance-templates",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"{{templateName}}\",\n  \"type\": \"INSPECTION\",\n  \"applicableModels\": [\"A320\"],\n  \"checklist\": [\"x\"]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 400\", () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Unknown aircraft model -> 400 (B3c)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{techToken}}"
+              }
+            ],
+            "url": "{{m1}}/api/maintenance-templates",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Unknown model {{$timestamp}}\",\n  \"type\": \"INSPECTION\",\n  \"applicableModels\": [\"X999\"],\n  \"checklist\": [\"x\"]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 400\", () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Invalid type -> 400",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{techToken}}"
+              }
+            ],
+            "url": "{{m1}}/api/maintenance-templates",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Bad type {{$timestamp}}\",\n  \"type\": \"PAINTING\",\n  \"applicableModels\": [\"A320\"],\n  \"checklist\": [\"x\"]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 400\", () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ]
         }
       ]
-    }
-  ],
-  "variable": [
-    {
-      "key": "baseUrl",
-      "value": "http://localhost:8082",
-      "type": "string"
     },
     {
-      "key": "jwt_token",
-      "value": "",
-      "type": "string"
+      "name": "2 - Records (US115)",
+      "item": [
+        {
+          "name": "Create record on replica 2 (CS-TUA, A-Check)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{techToken}}"
+              }
+            ],
+            "url": "{{m2}}/api/maintenance-records",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"aircraftRegistration\": \"CS-TUA\",\n  \"templateId\": \"{{aCheckId}}\",\n  \"description\": \"Postman maintenance record\",\n  \"startDate\": \"{{today}}\",\n  \"expectedDurationMinutes\": 240,\n  \"component\": \"AIRFRAME\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 201\", () => pm.response.to.have.status(201));",
+                  "const b = pm.response.json();",
+                  "pm.test(\"IN_PROGRESS with the template checklist and links\", () => { pm.expect(b.status).to.eql(\"IN_PROGRESS\"); pm.expect(b.checklist.length).to.eql(4); pm.expect(b._links).to.have.property(\"complete\"); });",
+                  "pm.environment.set(\"recordOnM2\", b.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Aircraft is now UNDER_MAINTENANCE (Aircraft Management)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{techToken}}"
+              }
+            ],
+            "url": "{{am1}}/api/aircrafts/CS-TUA"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"UNDER_MAINTENANCE\", () => pm.expect(pm.response.json().status).to.eql(\"UNDER_MAINTENANCE\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create record on replica 1 with the template stored in replica 2",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{techToken}}"
+              }
+            ],
+            "url": "{{m1}}/api/maintenance-records",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"aircraftRegistration\": \"cs-tua\",\n  \"templateId\": \"{{templateId}}\",\n  \"description\": \"Postman maintenance record\",\n  \"startDate\": \"{{today}}\",\n  \"expectedDurationMinutes\": 240\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 201\", () => pm.response.to.have.status(201));",
+                  "pm.environment.set(\"recordOnM1\", pm.response.json().id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Template not applicable to the model (E190) -> 400",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{techToken}}"
+              }
+            ],
+            "url": "{{m1}}/api/maintenance-records",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"aircraftRegistration\": \"CS-TUE\",\n  \"templateId\": \"{{templateId}}\",\n  \"description\": \"Postman maintenance record\",\n  \"startDate\": \"{{today}}\",\n  \"expectedDurationMinutes\": 240\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 400\", () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Unknown aircraft -> 404",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{techToken}}"
+              }
+            ],
+            "url": "{{m1}}/api/maintenance-records",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"aircraftRegistration\": \"CS-XXX\",\n  \"templateId\": \"{{aCheckId}}\",\n  \"description\": \"Postman maintenance record\",\n  \"startDate\": \"{{today}}\",\n  \"expectedDurationMinutes\": 240\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 404\", () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Unknown template -> 404",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{techToken}}"
+              }
+            ],
+            "url": "{{m1}}/api/maintenance-records",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"aircraftRegistration\": \"CS-TUA\",\n  \"templateId\": \"no-such-template\",\n  \"description\": \"Postman maintenance record\",\n  \"startDate\": \"{{today}}\",\n  \"expectedDurationMinutes\": 240\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 404\", () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Start date in the future -> 400",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{techToken}}"
+              }
+            ],
+            "url": "{{m1}}/api/maintenance-records",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"aircraftRegistration\": \"CS-TUA\",\n  \"templateId\": \"{{aCheckId}}\",\n  \"description\": \"Postman maintenance record\",\n  \"startDate\": \"{{future}}\",\n  \"expectedDurationMinutes\": 240\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 400\", () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
     },
     {
-      "key": "maintenance_id",
-      "value": "",
-      "type": "string"
+      "name": "3 - Local access",
+      "item": [
+        {
+          "name": "GET record on its owner replica (2)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{techToken}}"
+              }
+            ],
+            "url": "{{m2}}/api/maintenance-records/{{recordOnM2}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Same id\", () => pm.expect(pm.response.json().id).to.eql(pm.environment.get(\"recordOnM2\")));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "4 - Peer forwarding (GET by id)",
+      "item": [
+        {
+          "name": "GET record of replica 2 through replica 3",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{techToken}}"
+              }
+            ],
+            "url": "{{m3}}/api/maintenance-records/{{recordOnM2}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Links point to the entry replica\", () => pm.expect(pm.response.json()._links.self.href).to.include(pm.environment.get(\"m3\").split(\"//\")[1]));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET template of replica 2 through replica 1",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{supToken}}"
+              }
+            ],
+            "url": "{{m1}}/api/maintenance-templates/{{templateId}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Unknown record -> 404",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{techToken}}"
+              }
+            ],
+            "url": "{{m1}}/api/maintenance-records/does-not-exist"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 404\", () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "5 - Aggregation (US116, US218, US219)",
+      "item": [
+        {
+          "name": "US219 ongoing from replica 1",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{supToken}}"
+              }
+            ],
+            "url": "{{m1}}/api/maintenance-records/ongoing"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                  "const ids = pm.response.json().content.map(r => r.id);",
+                  "pm.test(\"Records of every replica\", () => { pm.expect(ids).to.include(pm.environment.get(\"recordOnM1\")); pm.expect(ids).to.include(pm.environment.get(\"recordOnM2\")); });",
+                  "pm.environment.set(\"ongoingCount\", pm.response.json().totalElements);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "US219 ongoing from replica 3 (same result)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{supToken}}"
+              }
+            ],
+            "url": "{{m3}}/api/maintenance-records/ongoing"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Same total in every replica\", () => pm.expect(pm.response.json().totalElements).to.eql(pm.environment.get(\"ongoingCount\")));",
+                  "pm.test(\"Not partial\", () => pm.response.to.not.have.header(\"X-Partial-Response\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "US116 records of CS-TUA (paginated after merging)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{techToken}}"
+              }
+            ],
+            "url": "{{m3}}/api/maintenance-records/aircraft/CS-TUA?page=0&size=2"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                  "const p = pm.response.json();",
+                  "pm.test(\"Merged and paginated\", () => { pm.expect(p.totalElements).to.be.at.least(4); pm.expect(p.content.length).to.eql(2); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "US116 unknown aircraft -> 404",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{techToken}}"
+              }
+            ],
+            "url": "{{m1}}/api/maintenance-records/aircraft/CS-XXX"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 404\", () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "US218 search by component",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{techToken}}"
+              }
+            ],
+            "url": "{{m1}}/api/maintenance-records?component=AIRFRAME&status=IN_PROGRESS"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Finds the record of replica 2\", () => pm.expect(pm.response.json().content.map(r => r.id)).to.include(pm.environment.get(\"recordOnM2\")));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "US218 search by date range",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{supToken}}"
+              }
+            ],
+            "url": "{{m2}}/api/maintenance-records?aircraft=CS-TUA&from=2026-01-01&to={{today}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Records in range\", () => pm.expect(pm.response.json().totalElements).to.be.at.least(4));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "US218 invalid range -> 400",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{techToken}}"
+              }
+            ],
+            "url": "{{m2}}/api/maintenance-records?from=2026-12-01&to=2026-01-01"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 400\", () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "6 - Command forwarding (US217, US119)",
+      "item": [
+        {
+          "name": "US217 categorise record of replica 1 through replica 3",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{techToken}}"
+              }
+            ],
+            "url": "{{m3}}/api/maintenance-records/{{recordOnM1}}/component",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"component\": \"engine\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"ENGINE\", () => pm.expect(pm.response.json().component).to.eql(\"ENGINE\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "US119 complete record of replica 2 through replica 3 (another record still ongoing)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{techToken}}"
+              }
+            ],
+            "url": "{{m3}}/api/maintenance-records/{{recordOnM2}}/complete",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"notes\": \"A-check completed, no findings\",\n  \"cost\": 12500.0,\n  \"actualDurationMinutes\": 600,\n  \"aircraftFlightHours\": 1500\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"COMPLETED\", () => pm.expect(pm.response.json().status).to.eql(\"COMPLETED\"));",
+                  "pm.test(\"Aircraft not released yet\", () => pm.expect(pm.response.headers.get(\"X-Aircraft-Released\")).to.eql(\"false\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Complete again -> 409 (propagated from the owner)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{techToken}}"
+              }
+            ],
+            "url": "{{m1}}/api/maintenance-records/{{recordOnM2}}/complete",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"notes\": \"again\",\n  \"cost\": 1,\n  \"actualDurationMinutes\": 1\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 409\", () => pm.response.to.have.status(409));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Invalid completion data -> 400",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{techToken}}"
+              }
+            ],
+            "url": "{{m1}}/api/maintenance-records/{{recordOnM1}}/complete",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"notes\": \"x\",\n  \"cost\": -10,\n  \"actualDurationMinutes\": 10\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 400\", () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "US119 complete the last ongoing record of CS-TUA through replica 2",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{techToken}}"
+              }
+            ],
+            "url": "{{m2}}/api/maintenance-records/{{recordOnM1}}/complete",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"notes\": \"Software updated\",\n  \"cost\": 800,\n  \"actualDurationMinutes\": 90,\n  \"aircraftFlightHours\": 1500\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Aircraft released\", () => pm.expect(pm.response.headers.get(\"X-Aircraft-Released\")).to.eql(\"true\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Aircraft is AVAILABLE again (Aircraft Management)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{techToken}}"
+              }
+            ],
+            "url": "{{am2}}/api/aircrafts/CS-TUA"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"AVAILABLE\", () => pm.expect(pm.response.json().status).to.eql(\"AVAILABLE\"));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "7 - Statistics, reports and alerts (US117, US220, US221, US222)",
+      "item": [
+        {
+          "name": "US117 maintenance hours of the fleet",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{atccToken}}"
+              }
+            ],
+            "url": "{{m2}}/api/maintenance-records/statistics/hours"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                  "const h = pm.response.json();",
+                  "pm.test(\"Every replica counted\", () => { const regs = h.aircraft.map(a => a.aircraftRegistration); pm.expect(regs).to.include.members([\"CS-TUA\",\"CS-TUB\",\"CS-TUC\",\"CS-TUD\",\"CS-TUE\"]); pm.expect(h.totalHours).to.be.above(0); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "US220 costs per aircraft model",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{atccToken}}"
+              }
+            ],
+            "url": "{{m3}}/api/maintenance-records/reports/costs?groupBy=MODEL"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Models of every replica\", () => pm.expect(pm.response.json().items.map(i => i.key)).to.include.members([\"A320\",\"A330\",\"E190\"]));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "US220 costs per aircraft",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{atccToken}}"
+              }
+            ],
+            "url": "{{m1}}/api/maintenance-records/reports/costs?groupBy=AIRCRAFT"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Grouped by registration\", () => pm.expect(pm.response.json().items.map(i => i.key)).to.include(\"CS-TUA\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "US220 invalid grouping -> 400",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{atccToken}}"
+              }
+            ],
+            "url": "{{m1}}/api/maintenance-records/reports/costs?groupBy=COLOR"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 400\", () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "US221 average turnaround per model",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{supToken}}"
+              }
+            ],
+            "url": "{{m1}}/api/maintenance-records/reports/turnaround"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                  "const a320 = pm.response.json().items.find(i => i.aircraftModel === \"A320\");",
+                  "pm.test(\"Average = total / count (after adding replicas)\", () => pm.expect(a320.averageMinutes).to.be.closeTo(a320.totalMinutes / a320.completedRecords, 0.01));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "US222 maintenance alerts",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{atccToken}}"
+              }
+            ],
+            "url": "{{m2}}/api/maintenance-alerts"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                  "const alerts = pm.response.json();",
+                  "pm.test(\"Alerts with trigger and message\", () => { pm.expect(alerts.length).to.be.above(0); pm.expect(alerts[0]).to.have.property(\"trigger\"); pm.expect(alerts[0]).to.have.property(\"message\"); });",
+                  "pm.test(\"CS-TUB has an ongoing C-Check, so no C-Check alert\", () => pm.expect(alerts.filter(a => a.aircraftRegistration === \"CS-TUB\" && a.templateName.startsWith(\"C-Check\")).length).to.eql(0));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "8 - Security (JWT, roles, inter-service key)",
+      "item": [
+        {
+          "name": "No token -> 401",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{m1}}/api/maintenance-records/ongoing"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 401\", () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "ATCC cannot create records -> 403",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{atccToken}}"
+              }
+            ],
+            "url": "{{m1}}/api/maintenance-records",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"aircraftRegistration\": \"CS-TUA\",\n  \"templateId\": \"{{aCheckId}}\",\n  \"description\": \"Postman maintenance record\",\n  \"startDate\": \"{{today}}\",\n  \"expectedDurationMinutes\": 240\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 403\", () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Technician cannot see US219 -> 403",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{techToken}}"
+              }
+            ],
+            "url": "{{m1}}/api/maintenance-records/ongoing"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 403\", () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Backoffice cannot see alerts -> 403",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{boToken}}"
+              }
+            ],
+            "url": "{{m1}}/api/maintenance-alerts"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 403\", () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Peer request without X-Service-Key -> 401",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{techToken}}"
+              },
+              {
+                "key": "X-Peer-Hops",
+                "value": "1"
+              }
+            ],
+            "url": "{{m1}}/api/maintenance-records/search"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 401\", () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Peer request with X-Peer-Hops 2 -> 400",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{techToken}}"
+              },
+              {
+                "key": "X-Peer-Hops",
+                "value": "2"
+              },
+              {
+                "key": "X-Service-Key",
+                "value": "{{serviceKey}}"
+              }
+            ],
+            "url": "{{m1}}/api/maintenance-records/search"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 400\", () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Valid peer request is answered with local data only",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{techToken}}"
+              },
+              {
+                "key": "X-Peer-Hops",
+                "value": "1"
+              },
+              {
+                "key": "X-Service-Key",
+                "value": "{{serviceKey}}"
+              }
+            ],
+            "url": "{{m1}}/api/maintenance-records/search?aircraft=CS-TUA"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                  "const ids = pm.response.json().map(r => r.id);",
+                  "pm.test(\"Only records of replica 1\", () => { pm.expect(ids).to.include(pm.environment.get(\"recordOnM1\")); pm.expect(ids).to.not.include(pm.environment.get(\"recordOnM2\")); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Health with peers",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{m1}}/actuator/health"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"UP with peers\", () => { pm.expect(pm.response.json().status).to.eql(\"UP\"); pm.expect(pm.response.json().components).to.have.property(\"peers\"); });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "9 - Replica failure (stop replica 2 first)",
+      "item": [
+        {
+          "name": "Ongoing from replica 1 -> 200 partial",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{techToken}}"
+              }
+            ],
+            "url": "{{m1}}/api/maintenance-records/aircraft/CS-TUA"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"X-Partial-Response\", () => pm.expect(pm.response.headers.get(\"X-Partial-Response\")).to.eql(\"true\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Record stored only in replica 2 -> 404",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{techToken}}"
+              }
+            ],
+            "url": "{{m1}}/api/maintenance-records/{{recordOnM2}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 404\", () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Record stored in replica 1 -> 200",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{techToken}}"
+              }
+            ],
+            "url": "{{m1}}/api/maintenance-records/{{recordOnM1}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Statistics still answer (partial)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{supToken}}"
+              }
+            ],
+            "url": "{{m3}}/api/maintenance-records/reports/turnaround"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"X-Partial-Response\", () => pm.expect(pm.response.headers.get(\"X-Partial-Response\")).to.eql(\"true\"));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
     }
   ]
 }
