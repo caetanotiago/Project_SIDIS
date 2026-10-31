@@ -1,0 +1,63 @@
+@startuml Maintenance-SD-CompleteRecord
+autonumber
+title US119 — Complete a record stored in another replica (command executed by the owner)
+actor "Maintenance\nTechnician" as User
+participant "maintenance-1\n: MaintenanceRecordController" as Ctrl
+participant "maintenance-1\n: CompleteMaintenanceRecordService" as S1
+participant ": PeerClient" as Peers
+participant "maintenance-2\n(owner)\n: CompleteMaintenanceRecordService" as S2
+participant "record : MaintenanceRecord\n(H2 #2)" as Rec <<Entity>>
+participant "maintenance-2\n: AircraftAvailabilityService" as Avail
+participant "maintenance-3" as R3
+participant "Aircraft Management" as AM
+
+activate User
+User -> Ctrl : PATCH /api/maintenance-records/{id}/complete\n(notes, cost, actualDurationMinutes, aircraftFlightHours?)
+activate Ctrl
+Ctrl -> S1 : complete(id, dto)
+activate S1
+S1 -> S1 : recordRepo.findById(id) → empty
+S1 -> Peers : forwardToOwner(PATCH, "/api/maintenance-records/{id}/complete", dto)
+activate Peers
+Peers -> S2 : PATCH (X-Peer-Hops: 1, X-Service-Key, JWT)
+activate S2
+S2 -> Rec : complete(CompletionDetails)
+activate Rec
+note right of Rec
+  IN_PROGRESS → COMPLETED (else 409)
+  completionDate (default today) >= startDate,
+  not in the future; cost >= 0; duration > 0 (else 400)
+end note
+Rec --> S2
+deactivate Rec
+S2 -> S2 : saveAndFlush(record)\n(@Version → 409 on a concurrent update)
+S2 -> Avail : releaseIfNoOtherOngoing(reg, id)
+activate Avail
+Avail -> Avail : local IN_PROGRESS records of reg
+Avail -> R3 : GET /api/maintenance-records/search?aircraft=reg&status=IN_PROGRESS\n(peer request from maintenance-2; also to maintenance-1)
+R3 --> Avail : []
+alt no other ongoing record and every peer answered
+    Avail -> AM : PATCH /api/aircrafts/{reg}/status {AVAILABLE} (B3b)
+    AM --> Avail : 200
+    Avail -> Avail : on rollback → PATCH UNDER_MAINTENANCE (compensation)
+else another record ongoing, or a peer did not answer
+    Avail -> Avail : keep UNDER_MAINTENANCE (safe side), log warning
+end
+Avail --> S2
+deactivate Avail
+S2 --> Peers : 200 MaintenanceRecordDTO (COMPLETED)
+deactivate S2
+note right of Peers : 404 from a peer = "not mine" → next peer;\n4xx from the owner → same status to the client
+Peers --> S1 : MaintenanceRecordDTO
+deactivate Peers
+S1 --> Ctrl : MaintenanceRecordDTO
+deactivate S1
+Ctrl --> User : 200 OK
+deactivate Ctrl
+deactivate User
+
+note over User, AM
+  A record is only written by its owner replica, so there is a single version of each record.
+  The same forwarding is used by US217 (PATCH /component). No owner found → 404.
+end note
+@enduml

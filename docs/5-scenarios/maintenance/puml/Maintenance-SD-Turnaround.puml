@@ -1,0 +1,47 @@
+@startuml Maintenance-SD-Turnaround
+autonumber
+title US221 — Average turnaround time per aircraft model (statistics aggregated across replicas)
+actor "Maintenance\nSupervisor" as User
+participant "maintenance-1\n: MaintenanceStatisticsController" as Ctrl
+participant ": MaintenanceStatisticsService" as Service
+participant "recordRepo (H2 #1)" as Repo
+participant ": PeerClient" as Peers
+participant "maintenance-2" as R2
+participant "maintenance-3" as R3
+
+activate User
+User -> Ctrl : GET /api/maintenance-records/reports/turnaround
+activate Ctrl
+Ctrl -> Service : turnaround()
+activate Service
+Service -> Repo : findByStatus(COMPLETED)
+Repo --> Service : local completed records
+Service -> Service : group by aircraftModel:\n{model, completedRecords, totalMinutes}
+Service -> Peers : collect("/api/maintenance-records/reports/turnaround")
+activate Peers
+par
+    Peers -> R2 : GET (X-Peer-Hops: 1)
+    R2 --> Peers : 200 {A320: 2 records, 900 min}
+else
+    Peers -> R3 : GET (X-Peer-Hops: 1)
+    R3 --> Peers : 200 {A320: 1 record, 300 min; E190: 1, 120}
+end
+Peers --> Service : partial reports
+deactivate Peers
+Service -> Service : add per model:\ncompletedRecords += , totalMinutes +=\nTHEN average = totalMinutes / completedRecords
+note right of Service
+  Averaging the averages of each replica would be wrong
+  (A320: avg(450, 300) = 375 ≠ 1200 / 3 = 400),
+  so replicas exchange sums and counts.
+end note
+Service --> Ctrl : TurnaroundReportDTO
+deactivate Service
+Ctrl --> User : 200 OK [{aircraftModel, completedRecords,\n totalMinutes, averageMinutes, averageHours}]
+deactivate Ctrl
+deactivate User
+
+note over User, R3
+  A peer request (X-Peer-Hops) is answered with the local partial report only.
+  The same pattern is used by US117 (maintenance hours) and US220 (costs per aircraft / per model).
+end note
+@enduml

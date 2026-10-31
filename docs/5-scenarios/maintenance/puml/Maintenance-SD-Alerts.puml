@@ -1,0 +1,70 @@
+@startuml Maintenance-SD-Alerts
+autonumber
+title US222 — Alerts for aircraft due for scheduled maintenance (manual trigger)
+actor "ATCC" as User
+participant "maintenance-1\n: MaintenanceAlertController" as Ctrl
+participant ": MaintenanceAlertService" as Service
+participant ": AircraftClient" as ACL <<ACL>>
+participant "Aircraft Management" as AM
+participant ": ViewMaintenanceTemplatesService" as Tpl
+participant ": MaintenanceStatisticsService" as Stats
+participant ": PeerClient" as Peers
+participant ": MaintenanceDuePolicy" as Policy <<Domain Service>>
+
+activate User
+User -> Ctrl : GET /api/maintenance-alerts
+activate Ctrl
+Ctrl -> Service : checkFleet()
+activate Service
+
+Service -> ACL : fleet()
+activate ACL
+loop until the last page
+    ACL -> AM : GET /api/aircrafts?page=n&size=100 (B3d)
+    AM --> ACL : PageDTO<AircraftDTO>
+end
+ACL --> Service : List<AircraftSnapshot> (reg, model, manufacturingDate, status)
+Service -> ACL : flightHours()
+loop until the last page
+    ACL -> AM : GET /api/aircrafts/operational-hours?page=n&size=100 (B3d)
+    AM --> ACL : PageDTO<{registrationNumber, totalHours}>\n(+ X-Partial-Response)
+end
+ACL --> Service : FlightHours (reg → hours, partial?)
+deactivate ACL
+
+Service -> Tpl : list() — periodic templates
+activate Tpl
+Tpl -> Peers : collectList("/api/maintenance-templates")
+Peers --> Tpl : templates of the other replicas
+Tpl --> Service : templates merged by id
+deactivate Tpl
+
+Service -> Stats : lastCompletions()
+activate Stats
+Stats -> Peers : collect("/api/maintenance-records/statistics/last-completions")
+Peers --> Stats : partial lists
+Stats --> Service : per (reg, templateId): latest completion,\nflight hours at completion, ongoing?
+deactivate Stats
+
+loop each aircraft not INACTIVE × periodic template applicable to its model (no ongoing record)
+    Service -> Policy : evaluate(aircraft, template, lastCompletion, flightHours)
+    activate Policy
+    note right of Policy
+      FlightHoursCriterion: hours since last completion >= interval.flightHours
+      CalendarDaysCriterion: days since last completion
+        (or manufacturing date) >= interval.calendarDays
+    end note
+    Policy --> Service : Optional<MaintenanceAlert>
+    deactivate Policy
+end
+Service --> Ctrl : alerts (+ partial flag)
+deactivate Service
+Ctrl --> User : 200 OK [MaintenanceAlertDTO]\n(+ X-Partial-Response: true if any source was incomplete)
+deactivate Ctrl
+deactivate User
+
+note over User, Policy
+  Computed on demand from every replica and not stored (conversation 016: the check is triggered
+  manually), so all replicas give the same answer and no duplicate alerts are created.
+end note
+@enduml

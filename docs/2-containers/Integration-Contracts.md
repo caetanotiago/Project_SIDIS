@@ -17,7 +17,7 @@ Every statement about existing code was taken from the code and has a **Source**
 | `CONSUMER-ONLY` | The consumer exists in code; the **provider must implement exactly this contract**. |
 | `PROPOSED` | Agreed design; nothing implemented on either side. |
 
-Requirements that originate in the work order or assignment (US105, US106a, US115, US119, US204) are identified as assignment requirements; bridge status indicates which consumer/provider sides are implemented.
+Requirements that originate in the work order or assignment (US105, US106a, US115, US119, US204, US222) are identified as assignment requirements; bridge status indicates which consumer/provider sides are implemented.
 
 ---
 
@@ -156,8 +156,10 @@ Source: `COMMON/config/AisafeProperties.java`, `COMMON/resilience/ResilientExecu
 | B1a | Flight Routes → Aircraft Management | Aircraft status, capacity and model (US212, US213) | `GET /api/aircrafts/{registrationNumber}` | `CONSUMER-ONLY` |
 | B1b | Flight Routes → Aircraft Management | Maximum range of the aircraft model (US212) | `GET /api/aircraft-models/{modelName}` | `CONSUMER-ONLY` |
 | B2 | Flight Routes → Airports | Coordinates, existence, operational status (US110, US209, US212, US216) | `GET /api/airports/{iataCode}` | `IMPLEMENTED` |
-| B3a | Maintenance → Aircraft Management | Aircraft exists and its model, for template applicability (US115) | reuse B1a (`GET /api/aircrafts/{registrationNumber}`) | `IMPLEMENTED (consumer only)`; provider = B1a |
-| B3b | Maintenance → Aircraft Management | Set the status to `UNDER_MAINTENANCE` / back to available (US115, US119) | `PATCH /api/aircrafts/{registrationNumber}/status` (US105) | `IMPLEMENTED (consumer only)`; provider = `PROPOSED` |
+| B3a | Maintenance → Aircraft Management | Aircraft exists and its model, for template applicability (US115, US116) | reuse B1a (`GET /api/aircrafts/{registrationNumber}`) | `IMPLEMENTED` |
+| B3b | Maintenance → Aircraft Management | Set the status to `UNDER_MAINTENANCE` / back to `AVAILABLE` (US115, US119) | `PATCH /api/aircrafts/{registrationNumber}/status` (US105) | `IMPLEMENTED` |
+| B3c | Maintenance → Aircraft Management | Applicable models of a template exist (US115 templates) | reuse B1b (`GET /api/aircraft-models/{modelName}`) | `IMPLEMENTED` |
+| B3d | Maintenance → Aircraft Management | Fleet and flight hours per aircraft (US222) | `GET /api/aircrafts?page=&size=` (US104), `GET /api/aircrafts/operational-hours?page=&size=` (US206) | `IMPLEMENTED` |
 | B4a | Aircraft Management → Flight Routes | Total operational hours per aircraft (US206) | `GET /api/scheduled-flights/operational-hours` | `IMPLEMENTED (provider only)` |
 | B4b | Aircraft Management → Flight Routes | Flight minutes per aircraft, to rank models (US204) | `GET /api/scheduled-flights/statistics/minutes-by-aircraft` | `IMPLEMENTED (provider only)`, if "utilisation" means flight time (Q5) |
 | B5 | Airports → Flight Routes | Number of routes per airport (US210) | `GET /api/routes/statistics/count-by-airport` | `IMPLEMENTED` |
@@ -287,54 +289,68 @@ US212 then answers **409** `"Origin airport <IATA> is not operational."` (or Des
 
 ---
 
-### B3: Maintenance → Aircraft Management (consumer implemented; B3b provider proposed)
+### B3: Maintenance → Aircraft Management (`IMPLEMENTED`)
 
-**Consumer:** Maintenance (`code/maintenance/.../maintenance/clients/AircraftClient.java`). **Provider:** Aircraft Management (B3a reuses B1a; the B3b status-update endpoint remains to be implemented).
+**Consumer:** Maintenance — `AircraftClient` (`code/maintenance/.../maintenance/clients/AircraftClient.java`), translated into `AircraftSnapshot`. **Provider:** Aircraft Management (B3a reuses B1a, B3b is US105, B3c reuses B1b, B3d reuses US104 and US206).
 
-**Use cases** *(from the assignment, not in code)*:
-- US115: start a maintenance record.
-- US119: complete a maintenance record.
-- US105: the Aircraft Management status-update endpoint that B3b reuses.
+**Use cases that trigger the calls:**
 
-#### B3a: aircraft exists and its model (US115)
-- **No new endpoint.** Reuse **B1a** `GET /api/aircrafts/{registrationNumber}` with the same response schema. Maintenance reads `registrationNumber`, `modelName` (template applicability) and, if useful, `status`.
-- 404 means the aircraft doesn't exist, so the record must not be created (Maintenance answers 404 or 400; the group decides and applies it consistently).
-- Aircraft Management must also allow the **maintenance roles** (`MAINTENANCE_TECHNICIAN`, `MAINTENANCE_SUPERVISOR`) on this GET, because the forwarded JWT is theirs.
+| Use case | Maintenance service | Call | What it does with the result |
+|---|---|---|---|
+| US115 create template | `CreateMaintenanceTemplateService` | B3c per applicable model | existence (404 → template rejected with 400) |
+| US115 create record | `CreateMaintenanceRecordService` | B3a, then B3b `UNDER_MAINTENANCE` | `modelName` (template applicability, model snapshot), `status` (previous status, for compensation) |
+| US116 records of an aircraft | `ViewMaintenanceRecordsService` | B3a (only on the replica that received the client request) | existence (404 → 404, not an empty history) |
+| US119 complete record | `CompleteMaintenanceRecordService` → `AircraftAvailabilityService` | B3b `AVAILABLE` (only if no other record of the aircraft is ongoing in any replica) | — |
+| US222 alerts | `MaintenanceAlertService` | B3d (all pages) | fleet (`registrationNumber`, `modelName`, `manufacturingDate`, `status`) and `totalHours` per aircraft |
 
-#### B3b: `PATCH /api/aircrafts/{registrationNumber}/status`
-This is the US105 status-update endpoint, which Maintenance also uses.
+#### B3a: `GET /api/aircrafts/{registrationNumber}` (reuses B1a)
+- Same request and response as **B1a**. Maintenance reads `registrationNumber`, `modelName` and `status` (and `manufacturingDate` in B3d). The registration is trimmed and upper-cased by Maintenance before the call.
+- **404** → `EntityNotFoundException("Aircraft not found: <reg>")` → Maintenance answers **404** and creates nothing (group decision: 404, consistent with Flight Routes).
+- Roles allowed by the provider (already in `AircraftManagementAuthorizationRules`): `MAINTENANCE_TECHNICIAN`, `MAINTENANCE_SUPERVISOR` (plus `ATCC`, `BACKOFFICE_OPERATOR`).
 
+#### B3b: `PATCH /api/aircrafts/{registrationNumber}/status` (US105)
 - **Request body:**
 
 | Field | Type | Required | Description |
 |---|---|---|---|
-| `status` | string | yes | New status. Values **must be the ones Flight Routes already expects**: `AVAILABLE`, `IN_FLIGHT`, `UNDER_MAINTENANCE`, `INACTIVE` |
+| `status` | string | yes | New status: `AVAILABLE`, `IN_FLIGHT`, `UNDER_MAINTENANCE`, `INACTIVE` |
 
 ```json
 { "status": "UNDER_MAINTENANCE" }
 ```
 
 - **Usage:**
-  - US115 (record starts): `{"status": "UNDER_MAINTENANCE"}`.
-  - US119 (record completed): `{"status": "AVAILABLE"}`. **Not `"ACTIVE"`**: Flight Routes only schedules aircraft whose status is exactly `AVAILABLE` (`AircraftSnapshot.isAvailable`). See Q1.
-- **Response 200:** the updated aircraft, with **the same schema as B1a**.
-- **Status codes (proposed):**
+  - US115 (record starts): `{"status": "UNDER_MAINTENANCE"}`. If the aircraft is already `UNDER_MAINTENANCE` (another record in progress) the provider accepts it as a no-op.
+  - US119 (last ongoing record completed): `{"status": "AVAILABLE"}`. **Not `"ACTIVE"`**: Flight Routes only schedules aircraft whose status is exactly `AVAILABLE` (Q1, decided).
+  - Compensation: the previous status (US115) or `UNDER_MAINTENANCE` (US119), when the local transaction rolls back after B3b succeeded.
+- **Response 200:** the updated aircraft, with the same schema as B1a.
+- **Status codes and how Maintenance handles them:**
 
-| Status | When | Maintenance should |
-|---|---|---|
-| 200 | updated | continue |
-| 400 | unknown status value / invalid body (`{"error": ...}` or validation map) | treat it as a bug and not save the record |
-| 401/403 | role not allowed (the maintenance user's JWT is forwarded) | propagate the status |
-| 404 | aircraft not found | answer 404 and not save the record |
-| 409 | **optimistic locking clash** (`@Version` on the Aircraft entity → `ObjectOptimisticLockingFailureException`, already mapped to 409 in the skeleton `GlobalExceptionHandler`) or an invalid transition (e.g. `IN_FLIGHT` → `UNDER_MAINTENANCE`, see Q7) | propagate 409; the user retries |
-| 503 (from `ReplicatedServiceClient`) | no Aircraft Management replica answered (timeouts, 5xx, circuits open) | answer 503 and **not** start/complete the record |
+| Status | When | Maintenance does | Maintenance's client gets |
+|---|---|---|---|
+| 200 | updated (or already in that status) | commits the record | 201 (US115) / 200 (US119) |
+| 400 | invalid status value | not expected (Maintenance only sends fixed values) → rollback | 400 |
+| 401/403 | role not allowed | `ResponseStatusException`, rollback | same 401/403 |
+| 404 | aircraft not found | `EntityNotFoundException`, rollback | 404 |
+| 409 | aircraft `IN_FLIGHT` cannot go `UNDER_MAINTENANCE` (Q7, decided by Aircraft Management) or `@Version` clash | `ResponseStatusException(409)`, rollback | 409 |
+| 5xx, timeout, connection refused, circuit open | retry, then failover to the next replica | `RemoteServiceUnavailableException`, rollback | **503** `{"error": "Aircraft Management service is unavailable."}` |
 
-- **Retries:** `ReplicatedServiceClient` retries this PATCH on timeouts and 5xx. Setting a status to a fixed value is **idempotent**, so retrying is safe.
-- **Required role on the provider:** allow `MAINTENANCE_TECHNICIAN` / `MAINTENANCE_SUPERVISOR` (whoever performs US115/US119, see Q4) in addition to the US105 role.
-- **Replica behaviour (provider):** the write must run on the **replica that owns the aircraft**. If the aircraft is not local, use `PeerClient.forwardToOwner(HttpMethod.PATCH, "/api/aircrafts/" + reg + "/status", body, AircraftDTO.class)`, exactly as `UpdateFlightRouteService` does (section 5).
-- **Ordering (proposed):** Maintenance calls B3b **before** committing its own record. If the local save fails afterwards, Maintenance must revert the status with a second PATCH (compensation; see Q7).
+- **Ordering (decided, Q7):** Maintenance writes and **flushes** its record first (local validation, constraints and `@Version` already checked), then calls B3b, then commits. B3b failing → the local transaction rolls back (nothing changed anywhere). Commit failing after B3b → a `TransactionSynchronization` sends the **compensating PATCH**. The server-side `@Version` of the aircraft is enough; no `If-Match` is sent.
+- **Retries:** setting a status to a fixed value is idempotent, so the retries of `ReplicatedServiceClient` are safe.
+- **Replica behaviour (provider):** the write runs on the replica that owns the aircraft (`UpdateAircraftStatusService` → `PeerClient.forwardToOwner`).
 
-**Source for the reused pieces:** `FR/flightroutes/clients/AircraftSnapshot.java` (`isAvailable` checks `"AVAILABLE"`), `FR/flightroutes/services/CreateScheduledFlightService.java` (list of aircraft statuses), `FR/flightroutes/services/UpdateFlightRouteService.java` (write forwarded to the owner), `code/aircraftmanagement/src/main/java/isep/psoft/aisafe/exceptions/GlobalExceptionHandler.java` (409 on optimistic locking), `COMMON/peers/PeerClient.java`, `COMMON/resilience/ResilientExecutor.java`
+#### B3c: `GET /api/aircraft-models/{modelName}` (reuses B1b)
+- Called once per applicable model of a new template. Only the status code matters: **200** → the model exists; **404** → template rejected with **400** `"Unknown aircraft model: <model>"`; other errors as in B3b (401/403 propagated, 503).
+- Role: `MAINTENANCE_TECHNICIAN` (allowed by `GET /api/aircraft-models/**`).
+
+#### B3d: fleet and flight hours (US222)
+- `GET /api/aircrafts?page=n&size=100` (US104, no filters) — read page by page until `page = totalPages - 1`. Fields used from each `content` element: `registrationNumber`, `modelName`, `manufacturingDate`, `status`.
+- `GET /api/aircrafts/operational-hours?page=n&size=100` (US206) — fields used: `registrationNumber`, `totalHours`. Aircraft without flights have `0`.
+- Page format (both): `{ "content": [...], "page": 0, "size": 100, "totalElements": 6, "totalPages": 1 }` (`PageDTO` of Aircraft Management).
+- `X-Partial-Response: true` on either response → Maintenance flags its own response as partial.
+- Role: **`ATCC`** (the US222 actor; `operational-hours` is `ATCC`-only).
+
+**Source:** `code/maintenance/.../maintenance/clients/AircraftClient.java`, `code/aircraftmanagement/.../controllers/AircraftController.java`, `AircraftStatisticsController.java`, `AircraftModelController.java`, `UpdateAircraftStatusService.java`, `domain/Aircraft.java` (`changeStatus`), `dto/PageDTO.java`, `infrastructure/security/AircraftManagementAuthorizationRules.java`, `FR/flightroutes/clients/AircraftSnapshot.java` (`isAvailable` checks `"AVAILABLE"`), `COMMON/remote/ReplicatedServiceClient.java`
 
 ---
 
@@ -502,13 +518,13 @@ Every service runs 3 replicas, and **each replica has its own database**. Data i
 
 ## 7. Open decisions (need group agreement)
 
-- **Q1.** After maintenance (US119), should the aircraft go back to **`AVAILABLE`** (the value Flight Routes requires to schedule flights) or to `ACTIVE`? This document assumes `AVAILABLE`. Choosing `ACTIVE` would require a code change in Flight Routes.
+- **Q1.** ~~After maintenance (US119), should the aircraft go back to `AVAILABLE` or to `ACTIVE`?~~ **Decided (Maintenance):** `AVAILABLE`, the value Flight Routes requires to schedule flights; it is set only when the aircraft has no other ongoing maintenance record.
 - **Q2.** ~~What are the airport status values besides `OPERATIONAL`?~~ **Decided (Airports):** `OPERATIONAL`, `CLOSED`, `UNDER_MAINTENANCE` (US109). Flight Routes treats any value other than `OPERATIONAL` as "not operational".
 - **Q3.** US106a: should US212 check that the destination/origin airport is **certified for the aircraft model**? If so, B2 needs a certifications field (proposed: `certifiedModels: string[]`) and Flight Routes needs a code change.
-- **Q4.** Which **roles** perform US204, US206 (Aircraft Management), US115/US119 (Maintenance) and US210 (Airports)? Flight Routes currently allows only `ATCC` on `/api/scheduled-flights/**` (B4) and only `BACKOFFICE_OPERATOR` on count-by-airport (B5). Providers must allow `ATCC` on B1/B2.
+- **Q4.** *(Maintenance part decided: US115/US119/US217 `MAINTENANCE_TECHNICIAN`; US116/US218 technician and supervisor; US219/US221 `MAINTENANCE_SUPERVISOR`; US117/US220/US222 `ATCC` — see [Maintenance L3 §3](../3-components/maintenance/Maintenance-Components.md#3-provided-interfaces-rest-api).)* Which **roles** perform US204, US206 (Aircraft Management), US115/US119 (Maintenance) and US210 (Airports)? Flight Routes currently allows only `ATCC` on `/api/scheduled-flights/**` (B4) and only `BACKOFFICE_OPERATOR` on count-by-airport (B5). Providers must allow `ATCC` on B1/B2.
 - **Q5.** US204: is "most utilised" measured by **flight time** (B4b, implemented) or by **number of flights** (needs `flights-by-aircraft`, proposed)?
 - **Q6.** US210: should route counts include **`INACTIVE` routes** (they do today)?
-- **Q7.** B3b: which status **transitions** are valid (e.g. can an aircraft that is `IN_FLIGHT` go to `UNDER_MAINTENANCE`)? Should the client send the expected `version` (`If-Match`/ETag) for optimistic locking, or is the server-side `@Version` check enough? What does Maintenance do if B3b succeeds and its own save fails (compensating PATCH)?
+- **Q7.** ~~B3b: valid transitions, `If-Match`, compensation?~~ **Decided:** `IN_FLIGHT` → `UNDER_MAINTENANCE`/`INACTIVE` is rejected with 409 (Aircraft Management); the server-side `@Version` check is enough (no `If-Match`); Maintenance flushes its record, then calls B3b, then commits, and sends a compensating PATCH if the commit fails after B3b (section B3b).
 - **Q8.** Should `operational-hours` keep the unstable `direct` Page JSON, or switch to a stable format (`spring.data.web.pageable.serialization-mode=via_dto`, or a HAL `PagedModel` like US213)? Both consumer and provider would have to change together.
 - **Q9.** What is the unit of `maximumRange` / `minRange`? The code compares them directly, and route distances are in km.
 - **Q10.** Is there a **registration format** (regex) to validate, and should the value be normalised (upper case) like IATA codes?

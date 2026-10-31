@@ -1,35 +1,123 @@
 @startuml Maintenance-DM
-title Maintenance — Domain Model (C4 Level 4)
-
+!pragma layout smetana
+skinparam packageStyle rectangle
 skinparam classAttributeIconSize 0
+hide empty members
 
-class Maintenance <<Aggregate Root>> {
-    - id: UUID
-    - aircraftRegistration: String
-    - scheduledDate: LocalDate
-    - completionDate: LocalDate
-    - serviceType: String
-    - status: MaintenanceStatus
-    - report: MaintenanceReport
-    --
-    + Maintenance(aircraftRegistration: String, scheduledDate: LocalDate, serviceType: String)
-    + complete(report: MaintenanceReport, date: LocalDate): void
+package "Maintenance Template Aggregate" {
+    class MaintenanceTemplate <<Entity>> <<Root>> {
+        - id : String (UUID)
+        - name : String {unique}
+        - applicableModels : Set<String>
+        - checklist : List<String>
+        - version : Long
+        --
+        + appliesTo(modelName) : boolean
+        + isPeriodic() : boolean
+    }
+    enum TemplateType <<Value Object>> {
+        INSPECTION
+        SCHEDULED_MAINTENANCE
+        OVERHAUL
+        MODIFICATION
+    }
+    class MaintenanceInterval <<Value Object>> {
+        - flightHours : Integer [0..1]
+        - calendarDays : Integer [0..1]
+    }
+
+    MaintenanceTemplate "1" *-- "1" TemplateType : type
+    MaintenanceTemplate "1" *-- "0..1" MaintenanceInterval : interval\n(null = not periodic)
 }
 
-enum MaintenanceStatus {
-    SCHEDULED
-    IN_PROGRESS
-    COMPLETED
-    CANCELLED
+package "Maintenance Record Aggregate" {
+    class MaintenanceRecord <<Entity>> <<Root>> {
+        - id : String (UUID)
+        - aircraftRegistration : String
+        - aircraftModel : String
+        - checklist : List<String>
+        - version : Long
+        --
+        + complete(details : CompletionDetails)
+        + categorize(component)
+        + isOngoing() : boolean
+        + maintenanceMinutes() : long
+    }
+    class TemplateReference <<Value Object>> {
+        - templateId : String
+        - templateName : String
+        - templateType : TemplateType
+    }
+    class RecordDetails <<Value Object>> {
+        - description : String
+        - startDate : LocalDate
+        - expectedDurationMinutes : Integer
+    }
+    enum MaintenanceComponent <<Value Object>> {
+        ENGINE
+        AIRFRAME
+        AVIONICS
+        INTERIOR
+        EXTERIOR
+    }
+    enum MaintenanceStatus <<Value Object>> {
+        IN_PROGRESS
+        COMPLETED
+    }
+    class CompletionDetails <<Value Object>> {
+        - completionDate : LocalDate
+        - notes : String
+        - cost : BigDecimal
+        - actualDurationMinutes : Integer
+        - aircraftFlightHours : Double [0..1]
+    }
+
+    MaintenanceRecord "1" *-- "1" TemplateReference
+    MaintenanceRecord "1" *-- "1" RecordDetails
+    MaintenanceRecord "1" *-- "0..1" MaintenanceComponent : component
+    MaintenanceRecord "1" *-- "1" MaintenanceStatus : status
+    MaintenanceRecord "1" *-- "0..1" CompletionDetails : completion
 }
 
-class MaintenanceReport <<Value Object>> {
-    - text: String
-    --
-    + MaintenanceReport(text: String)
+package "Due-maintenance policy (US222, domain service)" {
+    class MaintenanceDuePolicy <<Domain Service>> {
+        + evaluate(aircraft, template, lastCompletion, flightHours) : Optional<MaintenanceAlert>
+    }
+    interface DueCriterion <<Strategy>> {
+        + check(...) : Optional<reason>
+    }
+    class FlightHoursCriterion
+    class CalendarDaysCriterion
+    MaintenanceDuePolicy o-- "1..*" DueCriterion
+    DueCriterion <|.. FlightHoursCriterion
+    DueCriterion <|.. CalendarDaysCriterion
 }
 
-Maintenance --> MaintenanceStatus : status
-Maintenance "1" *-- "0..1" MaintenanceReport : report
+package "Read Models (not persisted)" {
+    class MaintenanceAlert <<Read Model>> {
+        registration, model, templateId,
+        templateName, trigger, limit, current
+    }
+    class LastCompletion <<Read Model>> {
+        registration, templateId, completionDate,
+        aircraftFlightHours, ongoing
+    }
+}
 
+package "Aircraft Management BC (remote)" #EEEEEE {
+    class Aircraft <<Entity>> <<Root>> {
+        - registrationNumber
+        - modelName
+        - status
+    }
+    class AircraftModel <<Entity>> <<Root>> {
+        - modelName
+    }
+}
+
+TemplateReference "0..*" ..> "1" MaintenanceTemplate : templateId\n(by identity; template may be\nstored in another replica)
+MaintenanceRecord "0..*" ..> "1" Aircraft : aircraftRegistration\n(by identity + model snapshot)
+MaintenanceTemplate "0..*" ..> "1..*" AircraftModel : applicableModels\n(by model name)
+MaintenanceDuePolicy ..> MaintenanceAlert : creates
+MaintenanceDuePolicy ..> LastCompletion : uses
 @enduml

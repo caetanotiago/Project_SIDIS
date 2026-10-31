@@ -1,0 +1,110 @@
+@startuml Maintenance-CD-TemplatesReports
+!pragma layout smetana
+skinparam classAttributeIconSize 0
+skinparam packageStyle rectangle
+hide empty members
+
+package "Presentation" {
+    class MaintenanceTemplateController <<Controller>> {
+        + create(dto : CreateMaintenanceTemplateDTO)
+        + getById(id)
+        + list(model?, type?, name?)
+    }
+    class MaintenanceStatisticsController <<Controller>> {
+        + maintenanceHours() : FleetMaintenanceHoursDTO
+        + costReport(groupBy) : CostReportDTO
+        + turnaround() : TurnaroundReportDTO
+        + lastCompletions() : List<LastCompletionDTO>
+    }
+    class MaintenanceAlertController <<Controller>> {
+        + alerts() : List<MaintenanceAlertDTO>
+    }
+    class MaintenanceTemplateAssembler <<Component>>
+}
+
+package "Application" {
+    class CreateMaintenanceTemplateService <<Service>> {
+        + create(dto) : MaintenanceTemplate
+    }
+    class ViewMaintenanceTemplatesService <<Service>> {
+        + getById(id) : MaintenanceTemplateDTO
+        + list(model?, type?, name?) : List<MaintenanceTemplateDTO>
+    }
+    class MaintenanceStatisticsService <<Service>> {
+        + maintenanceHours() : FleetMaintenanceHoursDTO
+        + costs(grouping : CostGrouping) : CostReportDTO
+        + turnaround() : TurnaroundReportDTO
+        + lastCompletions() : List<LastCompletionDTO>
+    }
+    class MaintenanceAlertService <<Service>> {
+        + checkFleet() : AlertResult
+    }
+    class MaintenanceReplicaQueries <<Component>>
+}
+
+package "Domain" {
+    class MaintenanceTemplateFactory <<Factory>> {
+        + create(name, type, models, checklist, hours?, days?)
+    }
+    class MaintenanceTemplate <<Entity>> <<Root>> {
+        + appliesTo(model) : boolean
+        + isPeriodic() : boolean
+    }
+    class MaintenanceInterval <<Value Object>>
+    MaintenanceTemplate *-- MaintenanceInterval
+    enum CostGrouping <<Strategy>> {
+        AIRCRAFT
+        MODEL
+        + keyOf(record) : String
+    }
+    class MaintenanceDuePolicy <<Domain Service>>
+    interface DueCriterion <<Strategy>>
+    class FlightHoursCriterion
+    class CalendarDaysCriterion
+    MaintenanceDuePolicy o-- DueCriterion
+    DueCriterion <|.. FlightHoursCriterion
+    DueCriterion <|.. CalendarDaysCriterion
+}
+
+package "Persistence" {
+    interface MaintenanceTemplateRepository <<Repository>> {
+        + existsByNameIgnoreCase(name)
+    }
+    interface MaintenanceRecordRepository <<Repository>> {
+        + findByStatus(status)
+    }
+}
+
+package "Integration" {
+    class AircraftClient <<ACL>> {
+        + modelExists(model) : boolean
+        + fleet() : List<AircraftSnapshot>
+        + flightHours() : FlightHours
+    }
+    class "PeerClient\n(common)" as PeerClient <<Peer-to-peer>>
+}
+
+MaintenanceTemplateController --> CreateMaintenanceTemplateService
+MaintenanceTemplateController --> ViewMaintenanceTemplatesService
+MaintenanceTemplateController --> MaintenanceTemplateAssembler
+MaintenanceStatisticsController --> MaintenanceStatisticsService
+MaintenanceAlertController --> MaintenanceAlertService
+
+CreateMaintenanceTemplateService --> AircraftClient : B3c
+CreateMaintenanceTemplateService --> MaintenanceReplicaQueries : unique name\n(every replica)
+CreateMaintenanceTemplateService --> MaintenanceTemplateFactory
+CreateMaintenanceTemplateService --> MaintenanceTemplateRepository
+ViewMaintenanceTemplatesService --> MaintenanceReplicaQueries
+MaintenanceStatisticsService --> MaintenanceRecordRepository
+MaintenanceStatisticsService --> PeerClient : collect (sums, counts)
+MaintenanceStatisticsService ..> CostGrouping
+MaintenanceAlertService --> AircraftClient : B3d
+MaintenanceAlertService --> ViewMaintenanceTemplatesService : templates (all replicas)
+MaintenanceAlertService --> MaintenanceStatisticsService : last completions (all replicas)
+MaintenanceAlertService --> MaintenanceDuePolicy
+MaintenanceReplicaQueries --> MaintenanceTemplateRepository
+MaintenanceReplicaQueries --> PeerClient
+
+MaintenanceTemplateFactory ..> MaintenanceTemplate : creates
+MaintenanceTemplateRepository ..> MaintenanceTemplate : persists
+@enduml

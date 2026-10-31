@@ -1,0 +1,50 @@
+@startuml Maintenance-SD-PeerForwarding
+autonumber
+title Peer-to-peer query resolution — GET a record stored in another replica
+actor "Maintenance\nTechnician" as User
+participant "maintenance-1\n: MaintenanceRecordController" as Ctrl <<Controller>>
+participant ": ViewMaintenanceRecordsService" as Service <<Service>>
+participant ": MaintenanceReplicaQueries" as Queries
+participant "recordRepo (H2 #1)" as Repo <<Repository>>
+participant ": PeerClient" as Peers
+participant "maintenance-2" as R2
+participant "maintenance-3\n(owner)" as R3
+participant ": MaintenanceRecordAssembler" as Assembler
+
+activate User
+User -> Ctrl : GET /api/maintenance-records/{id}
+activate Ctrl
+Ctrl -> Service : getById(id)
+activate Service
+Service -> Queries : findRecord(id)
+activate Queries
+Queries -> Repo : findById(id)
+Repo --> Queries : empty (not stored here)
+Queries -> Peers : findFirst("/api/maintenance-records/{id}")
+activate Peers
+note right of Peers : log: "Not found locally:\nforwarding GET ... to peers"
+par
+    Peers -> R2 : GET (X-Peer-Hops: 1, X-Service-Key, JWT, X-Correlation-Id)
+    R2 --> Peers : 404 (not mine)
+else
+    Peers -> R3 : GET (X-Peer-Hops: 1, ...)
+    note right of R3 : peer request → answers with\nlocal data only (no re-forwarding)
+    R3 --> Peers : 200 MaintenanceRecordDTO
+end
+Peers --> Queries : first 200
+deactivate Peers
+Queries --> Service : MaintenanceRecordDTO
+deactivate Queries
+Service -> Assembler : withLinks(dto)
+Assembler --> Service : links rebuilt for maintenance-1
+Service --> Ctrl : MaintenanceRecordDTO
+deactivate Service
+Ctrl --> User : 200 OK
+deactivate Ctrl
+deactivate User
+
+note over User, Assembler
+  No replica has it → 404 (flagged X-Partial-Response: true if a peer did not answer).
+  The same flow serves GET /api/maintenance-templates/{id} and the template lookup of US115.
+end note
+@enduml

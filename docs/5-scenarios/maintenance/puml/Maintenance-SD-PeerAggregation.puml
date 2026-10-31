@@ -1,0 +1,54 @@
+@startuml Maintenance-SD-PeerAggregation
+autonumber
+title Response aggregation with a failed replica — GET /api/maintenance-records/ongoing (US219)
+actor "Maintenance\nSupervisor" as User
+participant "maintenance-1\n: MaintenanceRecordController" as Ctrl
+participant ": ViewMaintenanceRecordsService" as Service
+participant ": MaintenanceReplicaQueries" as Queries
+participant "recordRepo (H2 #1)" as Repo
+participant ": PeerClient" as Peers
+participant ": ResilientExecutor\n+ CircuitBreaker" as Res
+participant "maintenance-2" as R2
+participant "maintenance-3\n(down)" as R3
+
+activate User
+User -> Ctrl : GET /api/maintenance-records/ongoing?page=0&size=20
+activate Ctrl
+Ctrl -> Service : ongoing(0, 20)
+activate Service
+Service -> Queries : searchRecords(RecordFilter(status=IN_PROGRESS))
+activate Queries
+Queries -> Repo : findAll() filtered by RecordFilter
+Repo --> Queries : local records
+Queries -> Peers : collectList("/api/maintenance-records/search?status=IN_PROGRESS")
+activate Peers
+par
+    Peers -> Res : execute(R2, GET)
+    Res -> R2 : GET (X-Peer-Hops: 1)
+    R2 --> Res : 200 [records of #2]
+    Res --> Peers : records of #2
+else
+    Peers -> Res : execute(R3, GET)
+    Res -> R3 : GET
+    R3 --> Res : connection refused / timeout
+    Res -> Res : retry with exponential backoff\n(100 ms, 200 ms)
+    Res -> Res : recordFailure()\n(3 failures → circuit OPEN:\nR3 skipped for 10 s)
+    Res --> Peers : failure
+end
+Peers -> Peers : response header\nX-Partial-Response: true\nX-Unavailable-Peers: 1
+Peers --> Queries : [records of #2]
+deactivate Peers
+Queries -> Queries : merge by id (local copy wins)
+Queries --> Service : records of #1 + #2
+deactivate Queries
+Service -> Service : Pages.of(sorted by startDate desc, 0, 20)
+Service --> Ctrl : PageDTO<MaintenanceRecordDTO>
+deactivate Service
+Ctrl --> User : 200 OK + X-Partial-Response: true
+deactivate Ctrl
+
+note over User, R3
+  Availability + Partition tolerance (CAP): the replica answers with the data it can reach and tells
+  the client the result may be incomplete. Same flow for US116, US218 and the template list.
+end note
+@enduml

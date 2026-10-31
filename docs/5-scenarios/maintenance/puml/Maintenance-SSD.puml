@@ -1,20 +1,83 @@
 @startuml Maintenance-SSD
-title Agendar Manutenção — System Sequence Diagram
+autonumber
+actor "Maintenance\nTechnician" as TECH
+actor "Maintenance\nSupervisor" as SUP
+actor "ATCC" as ATCC
+participant "Maintenance\n(System)" as SYS
+participant "Aircraft Management\n(microservice)" as AM
 
-actor "Gestor de Manutenção" as Manager
-participant "Maintenance Service" as Maintenance
-participant "Aircraft Management Service" as AircraftManagement
+== WP#4A — Templates and records ==
 
-Manager -> Maintenance: Agendar manutenção(matrícula, data prevista, tipo de serviço)
-activate Maintenance
+TECH -> SYS : POST /api/maintenance-templates (name, type, applicableModels, checklist, flightHoursInterval?, calendarDaysInterval?)
+activate SYS
+SYS -> AM : GET /api/aircraft-models/{model} (B3c, per model)
+AM --> SYS : 200 / 404
+SYS --> TECH : 201 Created (MaintenanceTemplateDTO + links)
+deactivate SYS
 
-Maintenance -> AircraftManagement: Validar matrícula(registration)
-activate AircraftManagement
-AircraftManagement --> Maintenance: 200 OK — aeronave existe
-deactivate AircraftManagement
+TECH -> SYS : POST /api/maintenance-records (aircraftRegistration, templateId, description, startDate, expectedDurationMinutes, component?)
+activate SYS
+SYS -> AM : GET /api/aircrafts/{reg} (B3a)
+AM --> SYS : 200 (modelName, status)
+SYS -> AM : PATCH /api/aircrafts/{reg}/status {UNDER_MAINTENANCE} (B3b)
+AM --> SYS : 200
+SYS --> TECH : 201 Created (MaintenanceRecordDTO with checklist + links)
+deactivate SYS
 
-Maintenance -> Maintenance: Persistir agendamento(status = SCHEDULED)
-Maintenance --> Manager: 201 Created — manutenção agendada
-deactivate Maintenance
+TECH -> SYS : GET /api/maintenance-records/aircraft/{reg}?page=&size= (US116)
+activate SYS
+SYS --> TECH : 200 OK (PageDTO<MaintenanceRecordDTO>)
+deactivate SYS
 
+ATCC -> SYS : GET /api/maintenance-records/statistics/hours (US117)
+activate SYS
+SYS --> ATCC : 200 OK (FleetMaintenanceHoursDTO)
+deactivate SYS
+
+TECH -> SYS : PATCH /api/maintenance-records/{id}/complete (notes, cost, actualDurationMinutes, completionDate?, aircraftFlightHours?) (US119)
+activate SYS
+SYS -> AM : PATCH /api/aircrafts/{reg}/status {AVAILABLE} (B3b, if nothing else ongoing)
+AM --> SYS : 200
+SYS --> TECH : 200 OK (MaintenanceRecordDTO, COMPLETED)
+deactivate SYS
+
+== WP#4B — Enhanced maintenance management ==
+
+TECH -> SYS : PATCH /api/maintenance-records/{id}/component (component) (US217)
+activate SYS
+SYS --> TECH : 200 OK (MaintenanceRecordDTO)
+deactivate SYS
+
+TECH -> SYS : GET /api/maintenance-records?aircraft=&component=&status=&from=&to=&page=&size= (US218)
+activate SYS
+SYS --> TECH : 200 OK (PageDTO<MaintenanceRecordDTO>)
+deactivate SYS
+
+SUP -> SYS : GET /api/maintenance-records/ongoing?page=&size= (US219)
+activate SYS
+SYS --> SUP : 200 OK (PageDTO<MaintenanceRecordDTO>)
+deactivate SYS
+
+ATCC -> SYS : GET /api/maintenance-records/reports/costs?groupBy=AIRCRAFT|MODEL (US220)
+activate SYS
+SYS --> ATCC : 200 OK (CostReportDTO)
+deactivate SYS
+
+SUP -> SYS : GET /api/maintenance-records/reports/turnaround (US221)
+activate SYS
+SYS --> SUP : 200 OK (TurnaroundReportDTO)
+deactivate SYS
+
+ATCC -> SYS : GET /api/maintenance-alerts (US222, manual trigger)
+activate SYS
+SYS -> AM : GET /api/aircrafts?page=&size=, GET /api/aircrafts/operational-hours?page=&size= (B3d)
+AM --> SYS : 200 (fleet, flight hours)
+SYS --> ATCC : 200 OK (List<MaintenanceAlertDTO>)
+deactivate SYS
+
+note over TECH, AM
+  Every request carries "Authorization: Bearer <JWT>"; the JWT is forwarded to Aircraft Management
+  and to the peer replicas (+ X-Service-Key). "System" = any of the 3 replicas: every GET answers
+  with the data of all replicas (X-Partial-Response: true when a replica did not answer).
+end note
 @enduml

@@ -1,0 +1,121 @@
+@startuml Maintenance-CD-Records
+!pragma layout smetana
+skinparam classAttributeIconSize 0
+skinparam packageStyle rectangle
+hide empty members
+
+package "Presentation" {
+    class MaintenanceRecordController <<Controller>> {
+        + create(dto : CreateMaintenanceRecordDTO)
+        + getById(id)
+        + byAircraft(registration, page, size)
+        + search(aircraft?, component?, status?, from?, to?, page, size)
+        + ongoing(page, size)
+        + searchAll(filters) : List
+        + complete(id, dto : CompleteMaintenanceRecordDTO)
+        + categorize(id, dto : CategorizeRecordDTO)
+    }
+    class MaintenanceRecordAssembler <<Component>> {
+        + toDTO(record) : MaintenanceRecordDTO
+        + withLinks(dto) : MaintenanceRecordDTO
+    }
+    class PageDTO<T> <<DTO>> {
+        content, page, size,
+        totalElements, totalPages
+    }
+}
+
+package "Application" {
+    class CreateMaintenanceRecordService <<Service>> {
+        + create(dto) : MaintenanceRecord
+    }
+    class CompleteMaintenanceRecordService <<Service>> {
+        + complete(id, dto) : MaintenanceRecordDTO
+    }
+    class CategorizeMaintenanceRecordService <<Service>> {
+        + categorize(id, dto) : MaintenanceRecordDTO
+    }
+    class ViewMaintenanceRecordsService <<Service>> {
+        + getById(id) : MaintenanceRecordDTO
+        + byAircraft(reg, page, size) : PageDTO
+        + search(filter, page, size) : PageDTO
+        + ongoing(page, size) : PageDTO
+    }
+    class AircraftAvailabilityService <<Service>> {
+        + markUnderMaintenance(aircraft : AircraftSnapshot)
+        + releaseIfNoOtherOngoing(reg, recordId)
+    }
+    class MaintenanceReplicaQueries <<Component>> {
+        + findRecord(id) : Optional<MaintenanceRecordDTO>
+        + findTemplate(id) : Optional<MaintenanceTemplateDTO>
+        + searchRecords(filter) : List<MaintenanceRecordDTO>
+        + searchRecordsWithStatus(filter) : PeerSearch
+    }
+    class RecordFilter <<Value Object>> {
+        aircraft, component, status, from, to
+        + matches(record) : boolean
+    }
+}
+
+package "Domain" {
+    class MaintenanceRecordFactory <<Factory>> {
+        + create(aircraft : AircraftSnapshot,\n template : MaintenanceTemplateDTO,\n details : RecordDetails, component?) : MaintenanceRecord
+    }
+    class MaintenanceRecord <<Entity>> <<Root>>
+    class TemplateReference <<Value Object>>
+    class RecordDetails <<Value Object>>
+    class CompletionDetails <<Value Object>>
+    enum MaintenanceComponent
+    MaintenanceRecord *-- TemplateReference
+    MaintenanceRecord *-- RecordDetails
+    MaintenanceRecord *-- CompletionDetails
+    MaintenanceRecord *-- MaintenanceComponent
+}
+
+package "Persistence" {
+    interface MaintenanceRecordRepository <<Repository>> {
+        + findByAircraftRegistration(reg)
+        + findByStatus(status)
+    }
+}
+
+package "Integration" {
+    class AircraftClient <<ACL>> {
+        + getAircraft(reg) : AircraftSnapshot
+        + updateStatus(reg, status) : AircraftSnapshot
+    }
+    class AircraftSnapshot <<Read Model>> {
+        registrationNumber, modelName,
+        manufacturingDate, status
+    }
+    class "PeerClient\n(common)" as PeerClient <<Peer-to-peer>>
+}
+
+MaintenanceRecordController --> CreateMaintenanceRecordService
+MaintenanceRecordController --> CompleteMaintenanceRecordService
+MaintenanceRecordController --> CategorizeMaintenanceRecordService
+MaintenanceRecordController --> ViewMaintenanceRecordsService
+MaintenanceRecordController --> MaintenanceRecordAssembler
+
+CreateMaintenanceRecordService --> AircraftClient : B3a
+CreateMaintenanceRecordService --> MaintenanceReplicaQueries : template (any replica)
+CreateMaintenanceRecordService --> MaintenanceRecordFactory
+CreateMaintenanceRecordService --> MaintenanceRecordRepository
+CreateMaintenanceRecordService --> AircraftAvailabilityService
+CompleteMaintenanceRecordService --> MaintenanceRecordRepository
+CompleteMaintenanceRecordService --> PeerClient : forwardToOwner
+CompleteMaintenanceRecordService --> AircraftAvailabilityService
+CategorizeMaintenanceRecordService --> MaintenanceRecordRepository
+CategorizeMaintenanceRecordService --> PeerClient : forwardToOwner
+ViewMaintenanceRecordsService --> MaintenanceReplicaQueries
+ViewMaintenanceRecordsService --> AircraftClient : US116 (B3a)
+AircraftAvailabilityService --> AircraftClient : B3b
+AircraftAvailabilityService --> MaintenanceReplicaQueries : other ongoing\nrecords (any replica)
+MaintenanceReplicaQueries --> MaintenanceRecordRepository
+MaintenanceReplicaQueries --> PeerClient
+MaintenanceReplicaQueries ..> RecordFilter
+AircraftClient ..> AircraftSnapshot : creates
+
+MaintenanceRecordFactory ..> MaintenanceRecord : creates
+MaintenanceRecordRepository ..> MaintenanceRecord : persists
+@enduml

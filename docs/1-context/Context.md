@@ -16,8 +16,8 @@ It was originally a monolith (PSOFT). In SIDIS it is redesigned as a distributed
 |---|---|
 | **Administrator** | Manages users and their roles. |
 | **Backoffice Operator** | Registers airports, aircraft models and aircraft; updates and deactivates routes; consults statistics such as the busiest airports. |
-| **Air Traffic Control Coordinator (ATCC)** | Defines flight routes, assigns aircraft to routes at a date/time, and queries the route network (popular routes, network distance, alternative itineraries). |
-| **Maintenance Technician / Supervisor** | Plans and records maintenance of the aircraft and checks which routes an aircraft can fly. |
+| **Air Traffic Control Coordinator (ATCC)** | Defines flight routes, assigns aircraft to routes at a date/time, and queries the route network (popular routes, network distance, alternative itineraries); follows maintenance hours and costs of the fleet and checks which aircraft are due for maintenance. |
+| **Maintenance Technician / Supervisor** | Defines maintenance templates, records and completes the maintenance of the aircraft (taking them out of service while it lasts), and follows ongoing maintenance and turnaround times. |
 
 Every person authenticates and is given a **role**; each role can only use the functions meant for it.
 

@@ -1,0 +1,76 @@
+@startuml Maintenance-SD-CreateRecord
+autonumber
+title US115 — Create a maintenance record (aircraft set UNDER_MAINTENANCE through B3b)
+actor "Maintenance\nTechnician" as User
+participant "maintenance-1\n: MaintenanceRecordController" as Ctrl <<Controller>>
+participant ": CreateMaintenanceRecordService" as Service <<Service>>
+participant ": AircraftClient" as ACL <<ACL>>
+participant ": MaintenanceReplicaQueries" as Queries
+participant ": MaintenanceRecordFactory" as Factory <<Factory>>
+participant "recordRepo" as Repo <<Repository>>
+participant ": AircraftAvailabilityService" as Avail <<Service>>
+participant "Aircraft Management\n(any replica)" as AM
+
+activate User
+User -> Ctrl : POST /api/maintenance-records\n(aircraftRegistration, templateId, description,\n startDate, expectedDurationMinutes, component?)
+activate Ctrl
+Ctrl -> Service : create(dto)
+activate Service
+note right of Service : @Transactional begins
+
+Service -> ACL : getAircraft(reg)
+activate ACL
+ACL -> AM : GET /api/aircrafts/{reg} (B3a, JWT forwarded)
+AM --> ACL : 200 {registrationNumber, modelName, status}
+ACL --> Service : AircraftSnapshot
+deactivate ACL
+note right of ACL : 404 → EntityNotFoundException (404)\nno replica → 503
+
+Service -> Queries : findTemplate(templateId)
+activate Queries
+Queries --> Service : MaintenanceTemplateDTO\n(local or PeerClient.findFirst)
+deactivate Queries
+note right of Queries : not in any replica → 404
+
+Service -> Service : template.appliesTo(aircraft.modelName)\n(else 400)
+Service -> Factory : create(aircraft, template, RecordDetails, component?)
+activate Factory
+note right of Factory
+  RecordDetails: startDate <= today,
+  expectedDurationMinutes > 0 (else 400).
+  Copies checklist + TemplateReference;
+  status = IN_PROGRESS
+end note
+Factory --> Service : record
+deactivate Factory
+Service -> Repo : saveAndFlush(record)
+Repo --> Service : saved (local validation done)
+
+Service -> Avail : markUnderMaintenance(aircraft)
+activate Avail
+Avail -> ACL : updateStatus(reg, UNDER_MAINTENANCE)
+ACL -> AM : PATCH /api/aircrafts/{reg}/status (B3b)\n(executed by the owner replica of the aircraft)
+alt 200
+    AM --> ACL : 200 AircraftDTO
+    Avail -> Avail : register TransactionSynchronization:\nif rolled back → PATCH previous status (compensation)
+else 409 (aircraft IN_FLIGHT) / 404 / 503
+    AM --> ACL : error
+    ACL --> Avail : exception
+    Avail --> Service : exception
+    Service --> Ctrl : exception → transaction rolled back:\nno record, aircraft unchanged
+    Ctrl --> User : 409 / 404 / 503
+end
+Avail --> Service
+deactivate Avail
+note right of Service : commit (record stored in replica 1)
+Service --> Ctrl : record
+deactivate Service
+Ctrl --> User : 201 Created + Location + links\n(MaintenanceRecordDTO with checklist)
+deactivate Ctrl
+deactivate User
+
+note over User, AM
+  "Aircraft under maintenance cannot be assigned to flights": Flight Routes only schedules aircraft whose
+  status is AVAILABLE (B1a), so the status set here blocks new flights without Flight Routes calling Maintenance.
+end note
+@enduml

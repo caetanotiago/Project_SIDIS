@@ -29,9 +29,12 @@ All communication is **synchronous HTTP/REST with JSON** (commands and queries; 
 | Flight Routes | Aircraft Management | `GET /api/aircrafts/{reg}`, `GET /api/aircraft-models/{model}` | Status, seating capacity and range (US212, US213) |
 | Aircraft Management | Flight Routes | `GET /api/routes/compatible`, `GET /api/scheduled-flights/operational-hours` | US203, US206 |
 | Airports | Flight Routes | `GET /api/routes/statistics/count-by-airport` | US210 |
-| Replica | other replicas of the **same** service | the same endpoint that was called, with `X-Peer-Hops: 1` | Peer forwarding / aggregation (section 3.2) |
+| Maintenance | Aircraft Management | `GET /api/aircrafts/{reg}`, `PATCH /api/aircrafts/{reg}/status` | Aircraft exists and its model; `UNDER_MAINTENANCE` when a record starts, `AVAILABLE` when the last ongoing record is completed (US115, US116, US119) |
+| Maintenance | Aircraft Management | `GET /api/aircraft-models/{model}` | Applicable models of a template exist (US115 templates) |
+| Maintenance | Aircraft Management | `GET /api/aircrafts`, `GET /api/aircrafts/operational-hours` | Fleet and flight hours for due-maintenance alerts (US222) |
+| Replica | other replicas of the **same** service | the same endpoint that was called (or its non-paginated `/search` / statistics variant), with `X-Peer-Hops: 1` | Peer forwarding / aggregation (section 3.2) |
 
-*(Rows for Maintenance and the other services are added by their owners.)*
+Maintenance is only a consumer: no other service calls it, and the aircraft status in Aircraft Management is the single source of truth for availability (Flight Routes never calls Maintenance).
 
 Exact request/response schemas, status codes, roles and replica behaviour of each call: [Integration-Contracts.md](Integration-Contracts.md).
 
