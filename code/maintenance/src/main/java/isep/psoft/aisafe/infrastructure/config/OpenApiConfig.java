@@ -26,10 +26,12 @@ public class OpenApiConfig {
                 .info(new Info()
                         .title("AISafe - Maintenance Service API")
                         .description("Maintenance microservice of the distributed AISafe "
-                                + "system (SIDIS 2026/27). Every GET returns the data of all replicas "
-                                + "(peer-to-peer forwarding/aggregation); X-Partial-Response: true means a "
-                                + "replica did not answer. Authorize with a JWT — in development obtain one "
-                                + "with POST /auth/dev-token {\"username\":\"atcc1\",\"roles\":[\"ATCC\"]}.")
+                                + "system (SIDIS 2026/27): templates and records (WP#4). Every GET returns the "
+                                + "data of all replicas (peer-to-peer forwarding/aggregation); "
+                                + "X-Partial-Response: true means a replica did not answer. Authorize with a JWT — "
+                                + "in development obtain one with POST /auth/dev-token, e.g. "
+                                + "{\"username\":\"tech1\",\"roles\":[\"MAINTENANCE_TECHNICIAN\"]}, "
+                                + "MAINTENANCE_SUPERVISOR or ATCC.")
                         .version("v3"))
                 .addSecurityItem(new SecurityRequirement().addList(SECURITY_SCHEME_NAME))
                 .components(new Components().addSecuritySchemes(SECURITY_SCHEME_NAME,

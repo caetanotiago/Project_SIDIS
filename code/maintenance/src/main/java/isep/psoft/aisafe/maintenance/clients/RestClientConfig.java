@@ -8,18 +8,13 @@ import org.springframework.context.annotation.Configuration;
 
 import java.util.List;
 
-/**
- * Configures resilient HTTP clients for remote replicated services.
- *
- * @author Diogo Fernandes - 1240632
- */
+/** Cliente resiliente (round-robin + failover) para as 3 réplicas do Aircraft Management. */
 @Configuration
 public class RestClientConfig {
 
     @Bean
-    public ReplicatedServiceClient aircraftService(
-            ReplicatedServiceClientFactory factory,
-            @Value("${services.aircraft.urls}") List<String> urls) {
+    public ReplicatedServiceClient aircraftService(ReplicatedServiceClientFactory factory,
+                                                   @Value("${services.aircraft.urls}") List<String> urls) {
         return factory.create("Aircraft Management", urls);
     }
 }
