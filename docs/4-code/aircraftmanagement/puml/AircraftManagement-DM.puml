@@ -1,0 +1,67 @@
+@startuml AircraftManagement-DM
+!pragma layout smetana
+skinparam packageStyle rectangle
+skinparam classAttributeIconSize 0
+hide empty members
+
+package "Aircraft Model Aggregate" {
+    class AircraftModel <<Entity>> <<Root>> {
+        - modelName : String  {id}
+        - manufacturer : String
+        - seatingCapacity : int  [> 0]
+        - fuelCapacity : double  [> 0]
+        - maximumRange : double  [> 0, km]
+        - cruisingSpeed : double  [> 0]
+        - version : Long
+        --
+        + toSummary() : AircraftModelSummary
+    }
+}
+
+package "Aircraft Aggregate" {
+    class Aircraft <<Entity>> <<Root>> {
+        - registrationNumber : String  {id}
+        - modelName : String  (reference by identity)
+        - seatingCapacity : int  [> 0]
+        - manufacturingDate : LocalDate
+        - version : Long
+        --
+        + changeStatus(AircraftStatus)
+        + toSummary() : AircraftSummary
+    }
+    enum AircraftStatus <<Value Object>> {
+        AVAILABLE
+        IN_FLIGHT
+        UNDER_MAINTENANCE
+        INACTIVE
+        + {static} parse(String) : AircraftStatus
+    }
+}
+
+package "Read models (not persisted)" {
+    class AircraftSummary <<read model>> {
+        registrationNumber, modelName,
+        seatingCapacity, manufacturingDate, status
+    }
+    class AircraftModelSummary <<read model>> {
+        modelName, manufacturer, seatingCapacity,
+        fuelCapacity, maximumRange, cruisingSpeed
+    }
+}
+
+Aircraft --> "1" AircraftStatus
+Aircraft ..> AircraftModel : "modelName\n(by identity, may be\nin another replica)"
+Aircraft ..> AircraftSummary : toSummary()
+AircraftModel ..> AircraftModelSummary : toSummary()
+
+class "FlightRoute / ScheduledFlight\n(Flight Routes)" as FR <<external>>
+class "MaintenanceRecord\n(Maintenance)" as MR <<external>>
+FR ..> Aircraft : registrationNumber
+MR ..> Aircraft : registrationNumber
+
+note bottom of Aircraft
+  seatingCapacity belongs to the AIRCRAFT, not to the model:
+  the same model can have different seat configurations (US203).
+  Status rule: IN_FLIGHT cannot move to UNDER_MAINTENANCE or INACTIVE.
+end note
+@enduml

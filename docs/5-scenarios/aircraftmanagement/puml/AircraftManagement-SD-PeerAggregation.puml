@@ -1,0 +1,59 @@
+@startuml AircraftManagement-SD-PeerAggregation
+autonumber
+title Response aggregation with a failed replica — GET /api/aircrafts?status=AVAILABLE (US104)
+actor "ATCC" as ATCC
+participant "aircraftmanagement-1\n: AircraftController" as Ctrl
+participant ": SearchAircraftsService" as Service
+participant "aircraftRepo (H2 #1)" as Repo
+participant ": AircraftReplicaQueries" as Queries
+participant ": PeerClient" as Peers
+participant ": ResilientExecutor\n+ CircuitBreaker" as Res
+participant "aircraftmanagement-2" as R2
+participant "aircraftmanagement-3\n(down)" as R3
+
+activate ATCC
+ATCC -> Ctrl : GET /api/aircrafts?status=AVAILABLE&page=0&size=20
+activate Ctrl
+Ctrl -> Ctrl : page >= 0, 1 <= size <= 100 (else 400)
+Ctrl -> Service : search(null, "AVAILABLE", null)
+activate Service
+Service -> Service : AircraftStatus.parse("AVAILABLE")\n(unknown value → 400)
+Service -> Repo : findAll() + filters
+Repo --> Service : local aircraft of #1
+Service -> Queries : withPeers(local, "/api/aircrafts?status=AVAILABLE")
+activate Queries
+Queries -> Peers : collectList(uri)
+activate Peers
+par
+    Peers -> Res : execute(R2, GET)
+    Res -> R2 : GET (X-Peer-Hops: 1)
+    R2 -> R2 : peer request → complete,\nUNPAGINATED local list
+    R2 --> Res : 200 [aircraft of #2]
+    Res --> Peers : aircraft of #2
+else
+    Peers -> Res : execute(R3, GET)
+    Res -> R3 : GET
+    R3 --> Res : connection refused / timeout
+    Res -> Res : retry with exponential backoff\n(100 ms, 200 ms)
+    Res -> Res : recordFailure()\n(3 failures → circuit OPEN:\nR3 is skipped for 10 s)
+    Res --> Peers : failure
+end
+Peers -> Peers : response header\nX-Partial-Response: true\nX-Unavailable-Peers: 1
+Peers --> Queries : [aircraft of #2]
+deactivate Peers
+Queries -> Queries : merge by registrationNumber\n(local copy wins)
+Queries --> Service : aircraft of #1 + #2
+deactivate Queries
+Service -> Service : sort by registrationNumber
+Service --> Ctrl : List<AircraftSummary>
+deactivate Service
+Ctrl -> Ctrl : PageDTO.of(list, page, size)\n(pagination AFTER merging)
+Ctrl --> ATCC : 200 OK (PageDTO<AircraftDTO>)\n+ X-Partial-Response: true
+deactivate Ctrl
+
+note over ATCC, R3
+  Availability + Partition tolerance (CAP): the replica answers with the data it can reach
+  instead of failing; the client is told the result may be incomplete.
+  The aircraft stored in replica 3 reappear when it recovers (single owner, nothing to reconcile).
+end note
+@enduml

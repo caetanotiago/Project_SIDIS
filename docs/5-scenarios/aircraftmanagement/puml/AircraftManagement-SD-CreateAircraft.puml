@@ -1,0 +1,64 @@
+@startuml AircraftManagement-SD-CreateAircraft
+autonumber
+title Register aircraft — POST /api/aircrafts (US102); the model is stored in another replica
+actor "ATCC" as ATCC
+participant "aircraftmanagement-1\n: AircraftController" as Ctrl
+participant ": CreateAircraftService" as Service
+participant ": AircraftReplicaQueries" as Queries
+participant "aircraftRepo (H2 #1)" as Repo
+participant ": PeerClient" as Peers
+participant "aircraftmanagement-2" as R2
+participant "aircraftmanagement-3\n(has model E190)" as R3
+
+activate ATCC
+ATCC -> Ctrl : POST /api/aircrafts\n{"registrationNumber":"CS-TUG","modelName":"E190",\n"seatingCapacity":98,"manufacturingDate":"2023-03-01"}
+activate Ctrl
+Ctrl -> Ctrl : @Valid CreateAircraftDTO\n(registration pattern, positive seats,\ndate not in the future) → 400 on error
+Ctrl -> Service : create(dto)
+activate Service
+Service -> Service : AircraftStatus.parse(dto.status)\n(default AVAILABLE)
+
+Service -> Queries : findAircraft("CS-TUG")
+activate Queries
+Queries -> Repo : findById("CS-TUG")
+Repo --> Queries : empty
+Queries -> Peers : findFirst("/api/aircrafts/CS-TUG")
+Peers -> R2 : GET (X-Peer-Hops: 1)
+R2 --> Peers : 404
+Peers -> R3 : GET (X-Peer-Hops: 1)
+R3 --> Peers : 404
+Peers --> Queries : empty
+Queries --> Service : empty (registration is free)
+deactivate Queries
+
+Service -> Queries : findModel("E190")
+activate Queries
+Queries -> Peers : findFirst("/api/aircraft-models/E190")
+Peers -> R3 : GET /api/aircraft-models/E190
+R3 --> Peers : 200 AircraftModelDTO
+Peers --> Queries : Optional(dto)
+Queries --> Service : AircraftModelSummary
+deactivate Queries
+
+Service -> Service : new Aircraft(...)\n(validates the invariants)
+Service -> Repo : save(aircraft)
+Repo --> Service : Aircraft (this replica is now the owner)
+Service --> Ctrl : Aircraft
+deactivate Service
+Ctrl --> ATCC : 201 Created (AircraftDTO)
+deactivate Ctrl
+
+alt registration found in any replica that answers
+    Service --> Ctrl : IllegalStateException
+    Ctrl --> ATCC : 409 Conflict "Aircraft already registered: CS-TUG"
+else model found in no replica
+    Service --> Ctrl : IllegalArgumentException
+    Ctrl --> ATCC : 400 Bad Request "Aircraft model not found: E190"
+end
+
+note over ATCC, R3
+  Uniqueness across replicas is best-effort (AP): if a peer is down the check continues
+  with the replicas that answer, so a duplicate is possible under a partition
+  or with simultaneous POSTs on two replicas (L2 §3.3).
+end note
+@enduml

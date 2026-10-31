@@ -1,0 +1,48 @@
+@startuml AircraftManagement-SD-OperationalHours
+autonumber
+title Operational hours of the fleet — GET /api/aircrafts/operational-hours (US206, contract B4b)
+actor "ATCC" as ATCC
+participant "aircraftmanagement-1\n: AircraftStatisticsController" as Ctrl
+participant ": CalculateOperationalHoursService" as Service
+participant ": SearchAircraftsService" as Search
+participant ": FlightRoutesClient" as FRC
+participant ": ReplicatedServiceClient\n+ ResilientExecutor" as RSC
+participant "flightroutes-N\n(any replica)" as FR
+participant "other flightroutes\nreplicas" as FRP
+
+activate ATCC
+ATCC -> Ctrl : GET /api/aircrafts/operational-hours?page=0&size=20
+activate Ctrl
+Ctrl -> Service : calculate()
+activate Service
+Service -> Search : search(null, null, null)
+Search --> Service : fleet of ALL aircraft replicas\n(sorted by registration — see peer aggregation)
+
+Service -> FRC : minutesByAircraft()
+activate FRC
+FRC -> RSC : call(GET /api/scheduled-flights/statistics/minutes-by-aircraft)
+activate RSC
+RSC -> FR : GET (JWT forwarded, X-Service-Key, X-Correlation-Id)\nround-robin; retry; failover to next replica
+FR -> FRP : sums the figures of its peers
+FRP --> FR : partial maps
+FR --> RSC : 200 {"CS-TUA": 55, ...}\n(+ X-Partial-Response if a peer failed)
+RSC --> FRC : ResponseEntity<Map<String, Long>>
+deactivate RSC
+FRC --> Service : MinutesByAircraft(minutes, partial)
+deactivate FRC
+
+Service -> Service : for each aircraft: minutes.getOrDefault(reg, 0)\n→ AircraftOperationalHoursDTO (hours = minutes / 60, 2 decimals)
+Service --> Ctrl : Result(rows, partial)
+deactivate Service
+Ctrl -> Ctrl : PageDTO.of(rows, page, size)
+Ctrl --> ATCC : 200 OK (PageDTO<AircraftOperationalHoursDTO>)\n+ X-Partial-Response: true (only if partial)
+deactivate Ctrl
+
+alt no Flight Routes replica answers (timeouts / 5xx / circuits open)
+    RSC --> Ctrl : RemoteServiceUnavailableException
+    Ctrl --> ATCC : 503 {"error": "Flight Routes service is unavailable."}
+else Flight Routes rejects the forwarded JWT
+    FRC --> Ctrl : ResponseStatusException(401/403)
+    Ctrl --> ATCC : 401/403 "Flight Routes rejected the request."
+end
+@enduml

@@ -1,0 +1,37 @@
+@startuml AircraftManagement-SD-TopUtilizedModels
+autonumber
+title Top most utilised aircraft models — GET /api/aircraft-models/top-utilized?limit=5 (US204, contract B4b)
+actor "Backoffice Operator / ATCC" as User
+participant "aircraftmanagement-1\n: AircraftModelStatisticsController" as Ctrl
+participant ": TopUtilizedModelsService" as Service
+participant ": SearchAircraftsService" as Search
+participant ": FlightRoutesClient" as FRC
+participant "Flight Routes\n(replicas)" as FR
+
+activate User
+User -> Ctrl : GET /api/aircraft-models/top-utilized?limit=5
+activate Ctrl
+Ctrl -> Ctrl : 1 <= limit <= 20 (else 400)
+Ctrl -> Service : topUtilized(5)
+activate Service
+Service -> Search : search(null, null, null)
+Search --> Service : fleet of ALL replicas (registration → model)
+Service -> FRC : minutesByAircraft()
+FRC -> FR : GET /api/scheduled-flights/statistics/minutes-by-aircraft\n(JWT of the user forwarded)
+FR --> FRC : 200 {"CS-TUA": 55, "CS-TUC": 140, ...}
+FRC --> Service : MinutesByAircraft(minutes, partial)
+
+Service -> Service : sum minutes per model (via the fleet)\ncount aircraft per model\ndrop models with 0 minutes
+Service -> Service : sort by minutes desc (ties: model name)\nlimit(5)
+Service --> Ctrl : Result(rows, partial)
+deactivate Service
+Ctrl --> User : 200 OK (List<ModelUtilizationDTO>)\n+ X-Partial-Response: true (only if partial)
+deactivate Ctrl
+
+note over User, FR
+  Flight Routes only knows registrations, so the mapping registration → model is done here.
+  "Most utilised" = flight time (contract Q5).
+  FR accepts only ATCC on /api/scheduled-flights/**: a Backoffice token gets 403
+  "Flight Routes rejected the request." until that rule changes (contract Q4).
+end note
+@enduml

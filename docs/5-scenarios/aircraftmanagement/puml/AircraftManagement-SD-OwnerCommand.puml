@@ -1,0 +1,69 @@
+@startuml AircraftManagement-SD-OwnerCommand
+autonumber
+title Command forwarded to the owner replica — PATCH /api/aircrafts/{registrationNumber}/status (US105, contract B3b)
+actor "ATCC / Maintenance" as User
+participant "aircraftmanagement-1\n: AircraftController" as Ctrl
+participant ": UpdateAircraftStatusService" as Service
+participant "aircraftRepo (H2 #1)" as Repo
+participant ": PeerClient" as Peers
+participant "aircraftmanagement-2\n(owner of CS-TUC)" as R2
+participant "aircraftRepo (H2 #2)" as Repo2
+participant "aircraftmanagement-3" as R3
+
+activate User
+User -> Ctrl : PATCH /api/aircrafts/CS-TUC/status\n{"status":"UNDER_MAINTENANCE"}
+activate Ctrl
+Ctrl -> Service : updateStatus("CS-TUC", dto)
+activate Service
+Service -> Service : AircraftStatus.parse(dto.status)\n(unknown → 400, before forwarding)
+Service -> Repo : findById("CS-TUC")
+Repo --> Service : empty (not stored here)
+
+Service -> Peers : forwardToOwner(PATCH, "/api/aircrafts/CS-TUC/status", dto, AircraftDTO)
+activate Peers
+note right of Peers
+  Unicast: peers are tried ONE AT A TIME.
+  Same method, path, body and JWT; X-Peer-Hops: 1.
+end note
+Peers -> R3 : PATCH /api/aircrafts/CS-TUC/status
+R3 -> R3 : hops=1 → no re-forwarding
+R3 --> Peers : 404 (not mine) → try next peer
+Peers -> R2 : PATCH /api/aircrafts/CS-TUC/status
+activate R2
+R2 -> Repo2 : findById("CS-TUC")
+Repo2 --> R2 : Aircraft (version 5)
+R2 -> R2 : aircraft.changeStatus(UNDER_MAINTENANCE)
+R2 -> Repo2 : saveAndFlush(aircraft)
+note right of Repo2
+  @Version: UPDATE ... WHERE version = 5.
+  A concurrent change already committed → 409.
+end note
+Repo2 --> R2 : Aircraft (version 6)
+R2 --> Peers : 200 AircraftDTO (UNDER_MAINTENANCE)
+deactivate R2
+Peers --> Service : Optional(AircraftDTO)
+deactivate Peers
+Service --> Ctrl : AircraftDTO
+deactivate Service
+Ctrl --> User : 200 OK (AircraftDTO, status = UNDER_MAINTENANCE)
+deactivate Ctrl
+
+alt aircraft is IN_FLIGHT and the target is UNDER_MAINTENANCE / INACTIVE
+    R2 --> Peers : 409 {"error": "Aircraft CS-TUC is in flight and cannot change to ..."}
+    Peers --> Ctrl : propagated with its status and message
+    Ctrl --> User : 409 Conflict
+else no replica has the aircraft
+    Peers --> Service : Optional.empty
+    Service --> Ctrl : EntityNotFoundException
+    Ctrl --> User : 404 Not Found
+else no peer reachable
+    Peers --> Ctrl : RemoteServiceUnavailableException
+    Ctrl --> User : 503 Service Unavailable
+end
+
+note over User, R3
+  Single owner per record: only aircraftmanagement-2 writes CS-TUC, so replicas never conflict.
+  When Maintenance calls B3b the same flow runs; a 409/503 is propagated to Maintenance,
+  which must not start or complete its record (contract B3b).
+end note
+@enduml

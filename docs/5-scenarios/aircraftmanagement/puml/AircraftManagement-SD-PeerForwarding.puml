@@ -1,0 +1,54 @@
+@startuml AircraftManagement-SD-PeerForwarding
+autonumber
+title Peer-to-peer query resolution — GET /api/aircrafts/{registrationNumber} (US103, contract B1a)
+actor "ATCC" as ATCC
+participant "aircraftmanagement-1\n: AircraftController" as Ctrl
+participant ": SearchAircraftsService" as Service
+participant ": AircraftReplicaQueries" as Queries
+participant "aircraftRepo (H2 #1)" as Repo
+participant ": PeerClient" as Peers
+participant "aircraftmanagement-2\n(owner of CS-TUC)" as R2
+participant "aircraftmanagement-3" as R3
+
+activate ATCC
+ATCC -> Ctrl : GET /api/aircrafts/CS-TUC\nAuthorization: Bearer JWT
+activate Ctrl
+Ctrl -> Service : getByRegistration("CS-TUC")
+activate Service
+Service -> Queries : findAircraft("CS-TUC")
+activate Queries
+Queries -> Repo : findById("CS-TUC")
+Repo --> Queries : empty (not stored here)
+
+Queries -> Peers : findFirst("/api/aircrafts/CS-TUC", AircraftDTO)
+activate Peers
+note right of Peers
+  Headers: Authorization (same JWT), X-Correlation-Id,
+  X-Peer-Hops: 1, X-Service-Key, X-Caller-Instance.
+  Parallel calls with timeout + retry + circuit breaker.
+end note
+par
+    Peers -> R2 : GET /api/aircrafts/CS-TUC
+    R2 -> R2 : ServiceKeyFilter ✓, JWT ✓\nhops=1 → local lookup only
+    R2 --> Peers : 200 AircraftDTO
+else
+    Peers -> R3 : GET /api/aircrafts/CS-TUC
+    R3 --> Peers : 404 (not mine)
+end
+Peers --> Queries : Optional(dto)
+deactivate Peers
+Queries -> Queries : AircraftAssembler.toSummary(dto)
+Queries --> Service : AircraftSummary
+deactivate Queries
+Service --> Ctrl : AircraftSummary
+deactivate Service
+Ctrl -> Ctrl : AircraftAssembler.toDTO(summary)
+Ctrl --> ATCC : 200 OK (AircraftDTO)
+deactivate Ctrl
+
+note over ATCC, R3
+  The same flow serves contract B1a (Flight Routes, Maintenance) and B1b (GET /api/aircraft-models/{name}).
+  No replica has it → 404. A peer down/timing out is counted as unavailable
+  (X-Partial-Response: true on the 404).
+end note
+@enduml

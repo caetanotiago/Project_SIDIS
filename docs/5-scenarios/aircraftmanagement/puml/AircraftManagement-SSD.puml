@@ -1,0 +1,88 @@
+@startuml AircraftManagement-SSD
+autonumber
+actor "Backoffice Operator" as BO
+actor "ATCC" as ATCC
+participant "Flight Routes\n(microservice)" as FR
+participant "Maintenance\n(microservice)" as MT
+participant "Aircraft Management\n(System)" as SYS
+
+== WP#1A — Aircraft Management ==
+
+BO -> SYS : POST /api/aircraft-models (modelName, manufacturer, seatingCapacity, fuelCapacity, maximumRange, cruisingSpeed)
+activate SYS
+SYS --> BO : 201 Created (AircraftModelDTO)
+deactivate SYS
+
+ATCC -> SYS : POST /api/aircrafts (registrationNumber, modelName, seatingCapacity, manufacturingDate, status?)
+activate SYS
+SYS --> ATCC : 201 Created (AircraftDTO)
+deactivate SYS
+
+ATCC -> SYS : GET /api/aircrafts/{registrationNumber}
+activate SYS
+SYS --> ATCC : 200 OK (AircraftDTO)
+deactivate SYS
+note right of ATCC : also allowed for Backoffice Operator\nand Maintenance roles
+
+ATCC -> SYS : GET /api/aircrafts?modelName=&status=&manufacturingYear=&page=&size=
+activate SYS
+SYS --> ATCC : 200 OK (PageDTO<AircraftDTO>)
+deactivate SYS
+
+ATCC -> SYS : PATCH /api/aircrafts/{registrationNumber}/status (status)
+activate SYS
+SYS --> ATCC : 200 OK (AircraftDTO)
+deactivate SYS
+
+== WP#1B — Enhanced Aircraft Features ==
+
+ATCC -> SYS : GET /api/aircrafts/{registrationNumber}/compatible-routes
+activate SYS
+SYS -> FR : GET /api/routes/compatible?range=&capacity=
+FR --> SYS : 200 OK (List<FlightRouteDTO>)
+SYS --> ATCC : 200 OK (List<CompatibleRouteDTO>)
+deactivate SYS
+
+BO -> SYS : GET /api/aircraft-models/top-utilized?limit=5
+activate SYS
+SYS -> FR : GET /api/scheduled-flights/statistics/minutes-by-aircraft
+FR --> SYS : 200 OK (Map<registration, minutes>)
+SYS --> BO : 200 OK (List<ModelUtilizationDTO>)
+deactivate SYS
+
+ATCC -> SYS : GET /api/aircrafts/operational-hours?page=&size=
+activate SYS
+SYS -> FR : GET /api/scheduled-flights/statistics/minutes-by-aircraft
+FR --> SYS : 200 OK (Map<registration, minutes>)
+SYS --> ATCC : 200 OK (PageDTO<AircraftOperationalHoursDTO>)
+deactivate SYS
+
+== Queries requested by other components ==
+
+FR -> SYS : GET /api/aircrafts/{registrationNumber} (B1a, US212/US213)
+activate SYS
+SYS --> FR : 200 OK (registrationNumber, modelName, seatingCapacity, status)
+deactivate SYS
+
+FR -> SYS : GET /api/aircraft-models/{modelName} (B1b, US212)
+activate SYS
+SYS --> FR : 200 OK (modelName, maximumRange)
+deactivate SYS
+
+MT -> SYS : GET /api/aircrafts/{registrationNumber} (B3a, US115)
+activate SYS
+SYS --> MT : 200 OK (AircraftDTO)
+deactivate SYS
+
+MT -> SYS : PATCH /api/aircrafts/{registrationNumber}/status (B3b, US115/US119)
+activate SYS
+SYS --> MT : 200 OK (AircraftDTO)
+deactivate SYS
+
+note over BO, SYS
+  Every request carries "Authorization: Bearer <JWT>".
+  Requests from other components forward the end user's JWT (+ X-Service-Key).
+  "System" = any of the 3 replicas: every GET answers with the data of all replicas
+  (X-Partial-Response: true when a replica did not answer).
+end note
+@enduml

@@ -1,0 +1,150 @@
+@startuml AircraftManagement-CD
+!pragma layout smetana
+skinparam classAttributeIconSize 0
+hide empty members
+
+package controllers {
+    class AircraftController {
+        + create(CreateAircraftDTO)
+        + search(modelName, status, manufacturingYear, page, size)
+        + getByRegistration(String)
+        + updateStatus(String, UpdateAircraftStatusDTO)
+    }
+    class AircraftStatisticsController {
+        + operationalHours(page, size)
+        + compatibleRoutes(String)
+    }
+    class AircraftModelController {
+        + create(CreateAircraftModelDTO)
+        + getByName(String)
+    }
+    class AircraftModelStatisticsController {
+        + topUtilized(limit)
+    }
+}
+
+package services {
+    class CreateAircraftModelService {
+        + create(CreateAircraftModelDTO) : AircraftModel
+    }
+    class CreateAircraftService {
+        + create(CreateAircraftDTO) : Aircraft
+    }
+    class SearchAircraftsService {
+        + getByRegistration(String) : AircraftSummary
+        + search(modelName, status, year) : List<AircraftSummary>
+    }
+    class SearchAircraftModelsService {
+        + getByName(String) : AircraftModelSummary
+    }
+    class UpdateAircraftStatusService {
+        + updateStatus(String, UpdateAircraftStatusDTO) : AircraftDTO
+    }
+    class CalculateOperationalHoursService {
+        + calculate() : Result
+    }
+    class TopUtilizedModelsService {
+        + topUtilized(int) : Result
+    }
+    class FindCompatibleRoutesService {
+        + findFor(String) : CompatibleRoutes
+    }
+    class AircraftReplicaQueries {
+        + findAircraft(String) : Optional<AircraftSummary>
+        + findModel(String) : Optional<AircraftModelSummary>
+        + withPeers(List<AircraftSummary>, String) : List<AircraftSummary>
+        + isPeerRequest() : boolean
+    }
+}
+
+package domain {
+    class Aircraft <<Root>>
+    class AircraftModel <<Root>>
+    enum AircraftStatus
+    class AircraftSummary <<record>>
+    class AircraftModelSummary <<record>>
+}
+
+package assemblers {
+    class AircraftAssembler {
+        + toDTO(Aircraft) : AircraftDTO
+        + toSummary(AircraftDTO) : AircraftSummary
+        + toDTO(AircraftModel) : AircraftModelDTO
+    }
+}
+
+package dto {
+    class PageDTO<T> <<record>> {
+        + {static} of(List<T>, page, size)
+    }
+    class AircraftDTO
+    class AircraftModelDTO
+    class ModelUtilizationDTO <<record>>
+    class AircraftOperationalHoursDTO <<record>>
+}
+
+package repositories {
+    interface AircraftRepository
+    interface AircraftModelRepository
+}
+
+package clients {
+    class FlightRoutesClient {
+        + minutesByAircraft() : MinutesByAircraft
+        + compatibleRoutes(range, capacity) : CompatibleRoutes
+    }
+}
+
+package "common (library)" {
+    class PeerClient {
+        + findFirst(uri, type)
+        + collectList(uri, type)
+        + forwardToOwner(method, uri, body, type)
+        + isPeerRequest()
+    }
+    class ReplicatedServiceClient {
+        + call(...)
+    }
+}
+
+AircraftController --> CreateAircraftService
+AircraftController --> SearchAircraftsService
+AircraftController --> UpdateAircraftStatusService
+AircraftController --> AircraftAssembler
+AircraftController ..> PageDTO
+AircraftStatisticsController --> CalculateOperationalHoursService
+AircraftStatisticsController --> FindCompatibleRoutesService
+AircraftModelController --> CreateAircraftModelService
+AircraftModelController --> SearchAircraftModelsService
+AircraftModelStatisticsController --> TopUtilizedModelsService
+
+CreateAircraftService --> AircraftRepository
+CreateAircraftService --> AircraftReplicaQueries
+CreateAircraftModelService --> AircraftModelRepository
+CreateAircraftModelService --> AircraftReplicaQueries
+SearchAircraftsService --> AircraftReplicaQueries
+SearchAircraftsService --> AircraftRepository
+SearchAircraftModelsService --> AircraftReplicaQueries
+UpdateAircraftStatusService --> AircraftRepository
+UpdateAircraftStatusService --> PeerClient
+CalculateOperationalHoursService --> SearchAircraftsService
+CalculateOperationalHoursService --> FlightRoutesClient
+TopUtilizedModelsService --> SearchAircraftsService
+TopUtilizedModelsService --> FlightRoutesClient
+FindCompatibleRoutesService --> AircraftReplicaQueries
+FindCompatibleRoutesService --> FlightRoutesClient
+
+AircraftReplicaQueries --> AircraftRepository
+AircraftReplicaQueries --> AircraftModelRepository
+AircraftReplicaQueries --> PeerClient
+AircraftReplicaQueries --> AircraftAssembler
+FlightRoutesClient --> ReplicatedServiceClient
+
+AircraftRepository ..> Aircraft
+AircraftModelRepository ..> AircraftModel
+Aircraft --> AircraftStatus
+AircraftAssembler ..> AircraftDTO
+AircraftAssembler ..> AircraftModelDTO
+AircraftAssembler ..> AircraftSummary
+AircraftAssembler ..> AircraftModelSummary
+@enduml

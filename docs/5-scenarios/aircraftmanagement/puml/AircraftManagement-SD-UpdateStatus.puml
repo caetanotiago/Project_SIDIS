@@ -1,0 +1,58 @@
+@startuml AircraftManagement-SD-UpdateStatus
+autonumber
+title Update aircraft status: command forwarded to the owner replica (US105 / B3b)
+actor "ATCC / Maintenance" as User
+participant "aircraftmanagement-1\n: AircraftController" as Ctrl
+participant ": UpdateAircraftStatusService" as Service
+participant "aircraftRepo (H2 #1)" as Repo1
+participant ": PeerClient" as Peers
+participant "aircraftmanagement-3\n(owner)" as R3
+participant "aircraftRepo (H2 #3)" as Repo3
+participant "CS-TUE : Aircraft" as AC
+
+activate User
+User -> Ctrl : PATCH /api/aircrafts/CS-TUE/status\n{"status": "UNDER_MAINTENANCE"}
+activate Ctrl
+Ctrl -> Service : updateStatus("CS-TUE", dto)
+activate Service
+Service -> Service : AircraftStatus.parse(dto.status)\n(invalid value → 400)
+Service -> Repo1 : findById("CS-TUE")
+Repo1 --> Service : empty (not mine)
+
+Service -> Peers : forwardToOwner(PATCH, "/api/aircrafts/CS-TUE/status", dto)
+activate Peers
+note right of Peers
+  Peers are tried one by one: 404 = "not mine".
+  A business 4xx of the owner (400 / 409) is propagated with its status and message.
+end note
+Peers -> R3 : PATCH /api/aircrafts/CS-TUE/status\nX-Peer-Hops: 1, X-Service-Key, JWT
+activate R3
+R3 -> Repo3 : findById("CS-TUE")
+Repo3 --> R3 : Aircraft
+R3 -> AC : changeStatus(UNDER_MAINTENANCE)
+alt status is IN_FLIGHT and target is UNDER_MAINTENANCE / INACTIVE
+    AC --> R3 : IllegalStateException
+    R3 --> Peers : 409 {"error": "Aircraft CS-TUE is in flight and cannot change to ..."}
+else valid transition
+    AC --> R3 : ok
+    R3 -> Repo3 : saveAndFlush(aircraft)\n(UPDATE ... WHERE version = n)
+    alt concurrent update on the owner (@Version clash)
+        Repo3 --> R3 : ObjectOptimisticLockingFailureException
+        R3 --> Peers : 409 "The resource was updated by another user. Please refresh and try again."
+    else saved
+        R3 --> Peers : 200 AircraftDTO (status UNDER_MAINTENANCE)
+    end
+end
+deactivate R3
+Peers --> Service : Optional(AircraftDTO) or propagated 4xx
+deactivate Peers
+Service --> Ctrl : AircraftDTO
+deactivate Service
+Ctrl --> User : 200 OK (AircraftDTO) | 409 | 400
+deactivate Ctrl
+
+note over User, Repo3
+  Unknown registration in every replica → 404. If the aircraft is local, steps 5-10 run in the same
+  replica without forwarding. Setting a fixed status is idempotent, so retries are safe.
+end note
+@enduml

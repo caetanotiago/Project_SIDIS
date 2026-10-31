@@ -1,0 +1,29 @@
+@startuml AircraftManagement-SD-CompatibleRoutes
+autonumber
+title Routes compatible with an aircraft — GET /api/aircrafts/{registrationNumber}/compatible-routes (US203, contract B6)
+actor "ATCC" as ATCC
+participant "aircraftmanagement-1\n: AircraftStatisticsController" as Ctrl
+participant ": FindCompatibleRoutesService" as Service
+participant ": AircraftReplicaQueries" as Queries
+participant ": FlightRoutesClient" as FRC
+participant "Flight Routes\n(replicas)" as FR
+
+activate ATCC
+ATCC -> Ctrl : GET /api/aircrafts/CS-TUC/compatible-routes
+activate Ctrl
+Ctrl -> Service : findFor("CS-TUC")
+activate Service
+Service -> Queries : findAircraft("CS-TUC")
+Queries --> Service : AircraftSummary (seatingCapacity = 290 → the AIRCRAFT's configuration)
+Service -> Queries : findModel(aircraft.modelName)
+Queries --> Service : AircraftModelSummary (maximumRange = 11750 km)
+note right of Queries : aircraft and model are looked up with the\nsame local-then-peers strategy\n(either may be in another replica; 404 if absent)
+Service -> FRC : compatibleRoutes(11750, 290)
+FRC -> FR : GET /api/routes/compatible?range=11750.0&capacity=290
+FR --> FRC : 200 [ACTIVE routes with minRange <= 11750 and minCapacity <= 290]\n(all Flight Routes replicas)
+FRC --> Service : CompatibleRoutes(routes, partial)
+Service --> Ctrl : CompatibleRoutes
+deactivate Service
+Ctrl --> ATCC : 200 OK (List<CompatibleRouteDTO>)\n+ X-Partial-Response: true (only if partial)
+deactivate Ctrl
+@enduml
