@@ -3,20 +3,23 @@
 LAYOUT_TOP_DOWN()
 title Aircraft Management Service — Components (C4 Level 3)
 
-Person(user, "<Actor>")
+Person(user, "Gestor de Frota")
+System_Ext(flightRoutes, "Flight Routes / Maintenance", "Consome dados dos aviões")
+
 Container(peer, "Aircraft Management Service (peer replicas)", "Spring Boot")
 ContainerDb(db, "aircraftManagementdb-N", "H2 in-memory", "Database of THIS replica")
 
 Container_Boundary(svc, "Aircraft Management Service (one replica)") {
     Component(sec, "Security & Observability filters", "common", "JWT, X-Service-Key, audit, correlation id")
-    Component(ctrl, "<X> Controller", "Spring REST Controller", "...")
-    Component(app, "<X> application services", "Spring Services", "...")
-    Component(domain, "Domain model", "DDD aggregates", "...")
+    Component(ctrl, "Aircraft Controller", "Spring REST Controller", "Endpoints HTTP (aeronaves e modelos)")
+    Component(app, "Aircraft Service", "Spring Services", "Regras de negócio e lógica P2P")
+    Component(domain, "Domain model", "Aircraft, AircraftModel", "Entidades principais e Value Objects")
     Component(repos, "Repositories", "Spring Data JPA", "local data")
     Component(peerClient, "PeerClient", "common", "peer forwarding / aggregation")
 }
 
 Rel(user, sec, "HTTPS + JWT")
+Rel(flightRoutes, sec, "HTTPS + X-Service-Key", "Consulta avião")
 Rel(sec, ctrl, "authorised requests")
 Rel(ctrl, app, "uses")
 Rel(app, domain, "uses")

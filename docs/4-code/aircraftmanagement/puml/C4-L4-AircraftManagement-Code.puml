@@ -1,0 +1,68 @@
+@startuml C4-L4-AircraftManagement-Code
+title Aircraft Management Service — Code (C4 Level 4)
+
+package "Controller (REST)" {
+    class AircraftController {
+        - aircraftService: AircraftService
+        + getAircraft(registration: String): ResponseEntity<AircraftDTO>
+        + getAllAircrafts(): ResponseEntity<List<AircraftDTO>>
+        + createAircraft(dto: AircraftDTO): ResponseEntity<AircraftDTO>
+    }
+}
+
+package "Service (Business & P2P Logic)" {
+    class AircraftService {
+        - repository: AircraftRepository
+        - peerClient: PeerClient
+        + findAircraft(registration: String): AircraftDTO
+        + aggregateAircrafts(): List<AircraftDTO>
+        - mergeLocalAndRemote(local: List, remote: List): List
+    }
+}
+
+package "Domain (Entities & VOs)" {
+    class Aircraft <<Entity>> {
+        - registration: String
+        - seatingCapacity: Integer
+        - maxRange: Double
+        - model: AircraftModel
+        + validateRegistration(): boolean
+    }
+    
+    class AircraftModel <<Entity>> {
+        - modelId: String
+        - manufacturer: String
+        - description: String
+    }
+    
+    class AircraftDTO <<DTO>> {
+        + registration: String
+        + seatingCapacity: Integer
+        + modelId: String
+    }
+    
+    Aircraft "*" --> "1" AircraftModel : "possui"
+}
+
+package "Repository (Data Access)" {
+    interface AircraftRepository <<Spring Data JPA>> {
+        + findByRegistration(registration: String): Optional<Aircraft>
+        + findAll(): List<Aircraft>
+    }
+}
+
+package "Client (Anti-Corruption Layer)" {
+    class PeerClient <<Component>> {
+        + fetchRemoteAircrafts(): List<AircraftDTO>
+        + forwardCommand(reg: String, command: Object): void
+    }
+}
+
+AircraftController ..> AircraftService : "delega execução"
+AircraftController ..> AircraftDTO : "retorna"
+AircraftService ..> AircraftRepository : "lê / escreve partição local"
+AircraftService ..> PeerClient : "consulta / encaminha réplicas"
+AircraftService ..> Aircraft : "mapeia de/para DTO"
+AircraftRepository ..> Aircraft : "persiste H2"
+
+@enduml
