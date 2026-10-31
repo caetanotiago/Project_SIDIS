@@ -175,7 +175,9 @@ class ReplicaCollaborationTest {
         assertEquals(routeOnB, active.get(0).get("id").asString());
         assertEquals(1, active.get(0).get("usageCount").asLong());
 
-        JsonNode hours = json(send("GET", urlB + "/api/scheduled-flights/operational-hours", null));
+        // Endpoint só para serviços (aisafe.security.service-only-paths): o teste faz-se passar pelo consumidor
+        JsonNode hours = json(send("GET", urlB + "/api/scheduled-flights/operational-hours", null,
+                Map.of(AisafeHeaders.SERVICE_KEY, SERVICE_KEY)));
         assertEquals("CS-TUA", hours.get("content").get(0).get("registrationNumber").asString());
         assertEquals(55, hours.get("content").get(0).get("totalMinutes").asLong());
 

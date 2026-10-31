@@ -31,6 +31,10 @@ public class FlightRoutesAuthorizationRules implements AuthorizationRules {
                 //Regras para o WP#3B (Scheduled Flights / Flight Operations); inclui US206 (operational-hours),
                 // a pesquisa /search e as estatísticas /statistics/** usadas na agregação entre réplicas
                 .requestMatchers(HttpMethod.POST,  "/api/scheduled-flights").hasRole("ATCC")
+                // US204 — GET /api/aircraft-models/top-utilized (Aircraft Management) é feito por um
+                // Backoffice Operator ou ATCC (Q4); tem de vir antes de /api/scheduled-flights/**
+                .requestMatchers(HttpMethod.GET,   "/api/scheduled-flights/statistics/minutes-by-aircraft")
+                        .hasAnyRole("ATCC", "BACKOFFICE_OPERATOR")
                 .requestMatchers(HttpMethod.GET,   "/api/scheduled-flights/**").hasRole("ATCC");
     }
 }

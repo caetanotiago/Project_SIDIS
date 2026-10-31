@@ -92,10 +92,17 @@ public class AisafeProperties {
     public static class Security {
         /** Segredo partilhado que identifica os serviços AISafe entre si (header X-Service-Key). */
         private String serviceKey = "";
+        /**
+         * Caminhos (padrões Ant, ex.: {@code /api/routes/statistics/**}) que só outros serviços AISafe podem
+         * chamar: sem {@code X-Service-Key} válida → 401, mesmo com um JWT válido. Por omissão, nenhum.
+         */
+        private List<String> serviceOnlyPaths = new ArrayList<>();
         private final DevToken devToken = new DevToken();
 
         public String getServiceKey() { return serviceKey; }
         public void setServiceKey(String serviceKey) { this.serviceKey = serviceKey; }
+        public List<String> getServiceOnlyPaths() { return serviceOnlyPaths; }
+        public void setServiceOnlyPaths(List<String> serviceOnlyPaths) { this.serviceOnlyPaths = serviceOnlyPaths; }
         public DevToken getDevToken() { return devToken; }
 
         /** POST /auth/dev-token — só para desenvolvimento/demonstração. */

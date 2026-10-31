@@ -16,11 +16,14 @@ import org.springframework.security.config.annotation.method.configuration.Enabl
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
+import org.springframework.security.config.annotation.web.configurers.AuthorizeHttpRequestsConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.HttpStatusEntryPoint;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.security.web.context.SecurityContextHolderFilter;
+import org.springframework.security.web.util.matcher.RequestMatcher;
+import org.springframework.util.ClassUtils;
 
 /**
  * Auto-configuração da segurança partilhada. Registada em
@@ -75,7 +78,7 @@ public class JwtSecurityAutoConfiguration {
                         .requestMatchers("/auth/dev-token").permitAll();
 
                     // Regras de cada microsserviço (beans AuthorizationRules)
-                    serviceRules.orderedStream().forEach(rules -> rules.configure(auth));
+                    serviceRules.orderedStream().forEach(rules -> applyServiceRules(auth, rules));
 
                     auth.anyRequest().authenticated();
                 })
@@ -84,9 +87,35 @@ public class JwtSecurityAutoConfiguration {
                         .authenticationEntryPoint(new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED)))
                 .headers(h -> h.frameOptions(f -> f.disable()))
                 .addFilterAfter(new AuditLogFilter(), SecurityContextHolderFilter.class)
-                .addFilterBefore(new ServiceKeyFilter(props.getSecurity().getServiceKey()),
+                .addFilterBefore(new ServiceKeyFilter(props.getSecurity().getServiceKey(),
+                                props.getSecurity().getServiceOnlyPaths()),
                         UsernamePasswordAuthenticationFilter.class)
                 .addFilterBefore(new JwtAuthenticationFilter(jwtTokenProvider), UsernamePasswordAuthenticationFilter.class)
                 .build();
+    }
+
+    /** Matcher que nunca corresponde: serve só para detetar um anyRequest() já configurado. */
+    private static final RequestMatcher NEVER = request -> false;
+
+    /**
+     * Aplica as regras de um serviço e falha com uma mensagem clara se elas chamarem anyRequest()
+     * (sem isto o arranque falha com "Can't configure anyRequest after itself", sem dizer onde).
+     */
+    static void applyServiceRules(AuthorizeHttpRequestsConfigurer<HttpSecurity>.AuthorizationManagerRequestMatcherRegistry auth,
+                                  AuthorizationRules rules) {
+        String name = ClassUtils.getUserClass(rules).getName();
+        try {
+            rules.configure(auth);
+            // Depois de um anyRequest() o Spring Security recusa qualquer outro matcher
+            auth.requestMatchers(NEVER).denyAll();
+        } catch (IllegalStateException e) {
+            // "Can't configure anyRequest after itself" / "Can't configure requestMatchers after anyRequest"
+            if (e.getMessage() == null || !e.getMessage().contains("anyRequest")) {
+                throw e;
+            }
+            throw new IllegalStateException(name + " must not call anyRequest(): the common library adds "
+                    + "anyRequest().authenticated() after every service's rules. Remove that call from " + name
+                    + " (list only the service's own endpoints).", e);
+        }
     }
 }
