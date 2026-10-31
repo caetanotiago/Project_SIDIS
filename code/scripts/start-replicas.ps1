@@ -6,8 +6,10 @@ param(
     [int]$Replicas = 3
 )
 $ErrorActionPreference = "Stop"
+. (Join-Path $PSScriptRoot "lib\dev-certs.ps1")
 $codeDir = Resolve-Path (Join-Path $PSScriptRoot "..")
 Set-Location $codeDir
+Assert-DevCerts $Profiles
 .\mvnw.cmd -q -pl $Service -am -DskipTests package
 foreach ($i in 1..$Replicas) {
     $argList = "-NoExit", "-File", (Join-Path $PSScriptRoot "run-instance.ps1"), "-Service", $Service, "-Instance", $i

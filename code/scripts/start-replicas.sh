@@ -6,6 +6,8 @@ set -euo pipefail
 SERVICE="${1:?servico em falta}"
 EXTRA="${2:-}"
 cd "$(dirname "$0")/.."
+. scripts/lib/dev-certs.sh
+assert_dev_certs "$EXTRA"
 ./mvnw -q -pl "$SERVICE" -am -DskipTests package
 mkdir -p logs
 for i in 1 2 3; do
