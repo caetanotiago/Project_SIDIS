@@ -1,76 +1,15 @@
 {
   "info": {
-    "name": "AISafe - Aircraft Management (distributed)",
-    "description": "Testes da componente Aircraft Management com 3 réplicas (SIDIS Assignment 1).\nPré-requisito: a partir de code/, `./scripts/start-replicas.sh aircraftmanagement` (ou `.\\scripts\\start-replicas.ps1 -Service aircraftmanagement`). Os dados de demonstração vêm das propriedades aisafe.bootstrap.* (cada réplica carrega dados diferentes).\nA pasta 6 (US203, US204, US206) precisa também do Flight Routes: `-Service flightroutes -Profiles demo`.\nUsar o environment AircraftManagement.postman_environment.json e correr as pastas por ordem (a pasta 0 gera os tokens).\nAntes da pasta 7, PARAR a réplica 2 (porta 8181).\nOs pedidos que criam dados usam valores aleatórios, por isso a coleção pode ser corrida mais do que uma vez (reiniciar as réplicas repõe os dados de demonstração).",
+    "name": "AISafe - Aircraft Management (SIDIS)",
+    "description": "Testes automáticos do Aircraft Management (WP#1). Usar com o environment AISafe-Aircraft-Local. Correr as pastas 0 a 5 com as 3 réplicas ligadas (8081, 8181, 8281) e depois reiniciar/pará a réplica 3 para a pasta 6. A pasta 5 precisa do Flight Routes (ou do stub flightroutes_stub.py na 8084).",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "item": [
     {
-      "name": "0. Setup — health and tokens",
+      "name": "0 - Setup (obter tokens e gerar dados únicos)",
       "item": [
         {
-          "name": "Health am1",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": "{{am1}}/actuator/health"
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
-                  "pm.test(\"UP\", () => pm.expect(pm.response.json().status).to.eql(\"UP\"));",
-                  "pm.test(\"peers component present\", () => pm.expect(pm.response.json().components).to.have.property(\"peers\"));"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "Health am2",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": "{{am2}}/actuator/health"
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
-                  "pm.test(\"UP\", () => pm.expect(pm.response.json().status).to.eql(\"UP\"));"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "Health am3",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": "{{am3}}/actuator/health"
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
-                  "pm.test(\"UP\", () => pm.expect(pm.response.json().status).to.eql(\"UP\"));"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "Token ATCC (dev only)",
+          "name": "0.1 Token ATCC",
           "request": {
             "method": "POST",
             "header": [
@@ -79,553 +18,18 @@
                 "value": "application/json"
               }
             ],
-            "url": "{{am1}}/auth/dev-token",
+            "url": "{{base1}}/auth/dev-token",
+            "auth": {
+              "type": "noauth"
+            },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"username\": \"atcc1\",\n  \"roles\": [\n    \"ATCC\"\n  ]\n}"
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
-                  "pm.environment.set(\"atccToken\", pm.response.json().token);"
-                ]
+              "raw": "{\n  \"username\": \"atcc1\",\n  \"roles\": [\n    \"ATCC\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
               }
-            }
-          ]
-        },
-        {
-          "name": "Token Backoffice Operator (dev only)",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": "{{am1}}/auth/dev-token",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"username\": \"bo1\",\n  \"roles\": [\n    \"BACKOFFICE_OPERATOR\"\n  ]\n}"
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
-                  "pm.environment.set(\"boToken\", pm.response.json().token);"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "Token Maintenance Technician (dev only)",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": "{{am1}}/auth/dev-token",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"username\": \"mt1\",\n  \"roles\": [\n    \"MAINTENANCE_TECHNICIAN\"\n  ]\n}"
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
-                  "pm.environment.set(\"mtToken\", pm.response.json().token);"
-                ]
-              }
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "name": "1. Local access (US103, B1a, B1b)",
-      "item": [
-        {
-          "name": "US103 — CS-TUA on replica 1 (stored locally)",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{atccToken}}"
-              }
-            ],
-            "url": "{{am1}}/api/aircrafts/CS-TUA"
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
-                  "const a = pm.response.json();",
-                  "pm.test(\"B1a fields present and not null\", () => { [\"registrationNumber\",\"modelName\",\"seatingCapacity\",\"status\"].forEach(f => pm.expect(a[f], f).to.not.be.null.and.not.be.undefined); });",
-                  "pm.test(\"values\", () => { pm.expect(a.registrationNumber).to.eql(\"CS-TUA\"); pm.expect(a.modelName).to.eql(\"A320\"); });",
-                  "pm.test(\"status is one of the contract values\", () => pm.expect([\"AVAILABLE\",\"IN_FLIGHT\",\"UNDER_MAINTENANCE\",\"INACTIVE\"]).to.include(a.status));",
-                  "pm.test(\"correlation id\", () => pm.expect(pm.response.headers.has(\"X-Correlation-Id\")).to.eql(true));"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "B1b — model A320 on replica 1 (stored locally)",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{atccToken}}"
-              }
-            ],
-            "url": "{{am1}}/api/aircraft-models/A320"
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
-                  "pm.test(\"B1b fields\", () => { const m = pm.response.json(); pm.expect(m.modelName).to.eql(\"A320\"); pm.expect(m.maximumRange).to.be.a(\"number\").and.to.be.above(0); });"
-                ]
-              }
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "name": "2. Peer-to-peer forwarding (GET by id)",
-      "item": [
-        {
-          "name": "US103 — CS-TUC asked to replica 1 (stored in replica 2)",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{atccToken}}"
-              }
-            ],
-            "url": "{{am1}}/api/aircrafts/CS-TUC"
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
-                  "pm.test(\"found in peer\", () => { const a = pm.response.json(); pm.expect(a.registrationNumber).to.eql(\"CS-TUC\"); pm.expect(a.modelName).to.eql(\"A330\"); });",
-                  "pm.test(\"correlation id\", () => pm.expect(pm.response.headers.has(\"X-Correlation-Id\")).to.eql(true));"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "US103 — CS-TUE asked to replica 2 (stored in replica 3)",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{atccToken}}"
-              }
-            ],
-            "url": "{{am2}}/api/aircrafts/CS-TUE"
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
-                  "pm.test(\"found in peer\", () => pm.expect(pm.response.json().modelName).to.eql(\"E190\"));"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "US103 — same aircraft asked to replica 3 (same answer)",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{atccToken}}"
-              }
-            ],
-            "url": "{{am3}}/api/aircrafts/CS-TUC"
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
-                  "pm.test(\"same aircraft\", () => pm.expect(pm.response.json().registrationNumber).to.eql(\"CS-TUC\"));"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "B1b — model A330 asked to replica 1 (stored in replica 2)",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{atccToken}}"
-              }
-            ],
-            "url": "{{am1}}/api/aircraft-models/A330"
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
-                  "pm.test(\"model from peer\", () => { const m = pm.response.json(); pm.expect(m.modelName).to.eql(\"A330\"); pm.expect(m.maximumRange).to.eql(11750); });"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "US103 — unknown aircraft → 404 in every replica",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{atccToken}}"
-              }
-            ],
-            "url": "{{am1}}/api/aircrafts/XX-NONE"
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"status 404\", () => pm.response.to.have.status(404));",
-                  "pm.test(\"error body\", () => pm.expect(pm.response.json()).to.have.property(\"error\"));"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "B1b — unknown model → 404",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{atccToken}}"
-              }
-            ],
-            "url": "{{am1}}/api/aircraft-models/NOPE"
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"status 404\", () => pm.response.to.have.status(404));"
-                ]
-              }
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "name": "3. Aggregation of responses (US104)",
-      "item": [
-        {
-          "name": "US104 — all aircraft from replica 1",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{atccToken}}"
-              }
-            ],
-            "url": "{{am1}}/api/aircrafts?size=100"
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
-                  "const p = pm.response.json();",
-                  "pm.test(\"page format\", () => { [\"content\",\"page\",\"size\",\"totalElements\",\"totalPages\"].forEach(f => pm.expect(p).to.have.property(f)); });",
-                  "pm.test(\"aircraft of all three replicas\", () => { const regs = p.content.map(a => a.registrationNumber); [\"CS-TUA\",\"CS-TUB\",\"CS-TUC\",\"CS-TUD\",\"CS-TUE\",\"CS-TUF\"].forEach(r => pm.expect(regs).to.include(r)); });",
-                  "pm.test(\"sorted by registration\", () => { const regs = p.content.map(a => a.registrationNumber); pm.expect(regs).to.eql([...regs].sort()); });",
-                  "pm.test(\"no duplicates\", () => { const regs = p.content.map(a => a.registrationNumber); pm.expect(new Set(regs).size).to.eql(regs.length); });",
-                  "pm.test(\"complete response\", () => pm.expect(pm.response.headers.has(\"X-Partial-Response\")).to.eql(false));"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "US104 — all aircraft from replica 3 (same answer)",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{atccToken}}"
-              }
-            ],
-            "url": "{{am3}}/api/aircrafts?size=100"
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
-                  "pm.test(\"same fleet\", () => { const regs = pm.response.json().content.map(a => a.registrationNumber); pm.expect(regs).to.include.members([\"CS-TUA\",\"CS-TUC\",\"CS-TUE\"]); });"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "US104 — filter by model (applied in every replica)",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{atccToken}}"
-              }
-            ],
-            "url": "{{am1}}/api/aircrafts?modelName=A330"
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
-                  "pm.test(\"only A330\", () => { const c = pm.response.json().content; pm.expect(c.map(a => a.registrationNumber)).to.have.members([\"CS-TUC\",\"CS-TUD\"]); c.forEach(a => pm.expect(a.modelName).to.eql(\"A330\")); });"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "US104 — filter by status",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{atccToken}}"
-              }
-            ],
-            "url": "{{am1}}/api/aircrafts?status=UNDER_MAINTENANCE"
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
-                  "pm.test(\"every item under maintenance\", () => { const c = pm.response.json().content; pm.expect(c.map(a => a.registrationNumber)).to.include(\"CS-TUB\"); c.forEach(a => pm.expect(a.status).to.eql(\"UNDER_MAINTENANCE\")); });"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "US104 — filter by manufacturing year",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{atccToken}}"
-              }
-            ],
-            "url": "{{am2}}/api/aircrafts?manufacturingYear=2022"
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
-                  "pm.test(\"2022 aircraft of replica 3\", () => { const c = pm.response.json().content; pm.expect(c.map(a => a.registrationNumber)).to.include.members([\"CS-TUE\",\"CS-TUF\"]); c.forEach(a => pm.expect(a.manufacturingDate.substring(0,4)).to.eql(\"2022\")); });"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "US104 — combined filters (model + status)",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{atccToken}}"
-              }
-            ],
-            "url": "{{am1}}/api/aircrafts?modelName=E190&status=INACTIVE"
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
-                  "pm.test(\"only CS-TUF\", () => pm.expect(pm.response.json().content.map(a => a.registrationNumber)).to.eql([\"CS-TUF\"]));"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "US104 — pagination after merging (size=2, page=1)",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{atccToken}}"
-              }
-            ],
-            "url": "{{am1}}/api/aircrafts?size=2&page=1"
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "US104 — invalid status → 400",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{atccToken}}"
-              }
-            ],
-            "url": "{{am1}}/api/aircrafts?status=FLYING"
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"status 400\", () => pm.response.to.have.status(400));",
-                  "pm.test(\"message lists allowed values\", () => pm.expect(pm.response.json().error).to.include(\"Allowed\"));"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "US104 — size out of range → 400",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{atccToken}}"
-              }
-            ],
-            "url": "{{am1}}/api/aircrafts?size=1000"
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"status 400\", () => pm.response.to.have.status(400));"
-                ]
-              }
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "name": "4. Commands (US101, US102, US105)",
-      "item": [
-        {
-          "name": "US101 — register a model on replica 1",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{boToken}}"
-              },
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": "{{am1}}/api/aircraft-models",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"modelName\": \"{{newModel}}\",\n  \"manufacturer\": \"TestAir\",\n  \"seatingCapacity\": 120,\n  \"fuelCapacity\": 15000,\n  \"maximumRange\": 4000,\n  \"cruisingSpeed\": 800\n}"
             }
           },
           "event": [
@@ -634,7 +38,12 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.environment.set(\"newModel\", \"TST\" + Math.floor(Math.random()*1000000));"
+                  "const L = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';",
+                  "const r = n => Array.from({length: n}, () => L[Math.floor(Math.random() * L.length)]).join('');",
+                  "pm.environment.set('newReg', 'CS-' + r(3));",
+                  "pm.environment.set('p2pReg', 'P2-' + r(3));",
+                  "pm.environment.set('crossReg', 'X1-' + r(3));",
+                  "pm.environment.set('newModel', 'ZT' + r(4));"
                 ]
               }
             },
@@ -643,156 +52,38 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test(\"status 201\", () => pm.response.to.have.status(201));",
-                  "pm.test(\"created model\", () => { const m = pm.response.json(); pm.expect(m.modelName).to.eql(pm.environment.get(\"newModel\")); pm.expect(m.maximumRange).to.eql(4000); });"
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('Devolve token', () => pm.expect(j.token).to.be.a('string').and.not.empty);",
+                  "pm.environment.set('tokenAtcc', j.token);"
                 ]
               }
             }
           ]
         },
         {
-          "name": "US101 — new model visible from replica 3",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{atccToken}}"
-              }
-            ],
-            "url": "{{am3}}/api/aircraft-models/{{newModel}}"
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
-                  "pm.test(\"found through the peer\", () => pm.expect(pm.response.json().manufacturer).to.eql(\"TestAir\"));"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "US101 — duplicate model A330 on replica 1 (A330 is in replica 2) → 409",
+          "name": "0.2 Token BACKOFFICE_OPERATOR",
           "request": {
             "method": "POST",
             "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{boToken}}"
-              },
               {
                 "key": "Content-Type",
                 "value": "application/json"
               }
             ],
-            "url": "{{am1}}/api/aircraft-models",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"modelName\": \"A330\",\n  \"manufacturer\": \"Airbus\",\n  \"seatingCapacity\": 300,\n  \"fuelCapacity\": 139090,\n  \"maximumRange\": 11750,\n  \"cruisingSpeed\": 871\n}"
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"status 409\", () => pm.response.to.have.status(409));"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "US101 — invalid input → 400 (validation map)",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{boToken}}"
-              },
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": "{{am1}}/api/aircraft-models",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"modelName\": \"\",\n  \"manufacturer\": \"X\",\n  \"seatingCapacity\": -5,\n  \"fuelCapacity\": 0,\n  \"maximumRange\": -1\n}"
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"status 400\", () => pm.response.to.have.status(400));",
-                  "pm.test(\"one message per invalid field\", () => { const e = pm.response.json(); pm.expect(e).to.have.property(\"modelName\"); pm.expect(e).to.have.property(\"seatingCapacity\"); pm.expect(e).to.have.property(\"maximumRange\"); pm.expect(e).to.have.property(\"cruisingSpeed\"); });"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "US102 — register an aircraft on replica 1 with model E190 (stored in replica 3)",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{atccToken}}"
-              },
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": "{{am1}}/api/aircrafts",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"registrationNumber\": \"{{newReg}}\",\n  \"modelName\": \"E190\",\n  \"seatingCapacity\": 98,\n  \"manufacturingDate\": \"2023-03-01\"\n}"
-            }
-          },
-          "event": [
-            {
-              "listen": "prerequest",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "const letters = \"ABCDEFGHJKLMNPQRSTUVWXYZ\"; let s = \"CS-\"; for (let i = 0; i < 3; i++) { s += letters[Math.floor(Math.random()*letters.length)]; } pm.environment.set(\"newReg\", s);"
-                ]
-              }
+            "url": "{{base1}}/auth/dev-token",
+            "auth": {
+              "type": "noauth"
             },
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"status 201\", () => pm.response.to.have.status(201));",
-                  "pm.test(\"created AVAILABLE by default\", () => { const a = pm.response.json(); pm.expect(a.registrationNumber).to.eql(pm.environment.get(\"newReg\")); pm.expect(a.status).to.eql(\"AVAILABLE\"); pm.expect(a.seatingCapacity).to.eql(98); });"
-                ]
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"bo1\",\n  \"roles\": [\n    \"BACKOFFICE_OPERATOR\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
               }
             }
-          ]
-        },
-        {
-          "name": "US102 — new aircraft visible from replica 3",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{atccToken}}"
-              }
-            ],
-            "url": "{{am3}}/api/aircrafts/{{newReg}}"
           },
           "event": [
             {
@@ -800,31 +91,37 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
-                  "pm.test(\"found through the peer\", () => pm.expect(pm.response.json().modelName).to.eql(\"E190\"));"
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('Devolve token', () => pm.expect(j.token).to.be.a('string').and.not.empty);",
+                  "pm.environment.set('tokenBackoffice', j.token);"
                 ]
               }
             }
           ]
         },
         {
-          "name": "US102 — duplicate CS-TUC on replica 1 (CS-TUC is in replica 2) → 409",
+          "name": "0.3 Token MAINTENANCE_TECHNICIAN",
           "request": {
             "method": "POST",
             "header": [
               {
-                "key": "Authorization",
-                "value": "Bearer {{atccToken}}"
-              },
-              {
                 "key": "Content-Type",
                 "value": "application/json"
               }
             ],
-            "url": "{{am1}}/api/aircrafts",
+            "url": "{{base1}}/auth/dev-token",
+            "auth": {
+              "type": "noauth"
+            },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"registrationNumber\": \"CS-TUC\",\n  \"modelName\": \"A330\",\n  \"seatingCapacity\": 300,\n  \"manufacturingDate\": \"2020-09-21\"\n}"
+              "raw": "{\n  \"username\": \"mt1\",\n  \"roles\": [\n    \"MAINTENANCE_TECHNICIAN\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             }
           },
           "event": [
@@ -833,393 +130,10 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test(\"status 409\", () => pm.response.to.have.status(409));"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "US102 — unknown model → 400",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{atccToken}}"
-              },
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": "{{am1}}/api/aircrafts",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"registrationNumber\": \"CS-ZZZ\",\n  \"modelName\": \"NOPE\",\n  \"seatingCapacity\": 100,\n  \"manufacturingDate\": \"2020-01-01\"\n}"
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"status 400\", () => pm.response.to.have.status(400));",
-                  "pm.test(\"message\", () => pm.expect(pm.response.json().error).to.include(\"model not found\"));"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "US102 — invalid registration format → 400",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{atccToken}}"
-              },
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": "{{am1}}/api/aircrafts",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"registrationNumber\": \"cs-tua\",\n  \"modelName\": \"A320\",\n  \"seatingCapacity\": 100,\n  \"manufacturingDate\": \"2020-01-01\"\n}"
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"status 400\", () => pm.response.to.have.status(400));",
-                  "pm.test(\"field error\", () => pm.expect(pm.response.json()).to.have.property(\"registrationNumber\"));"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "US102 — manufacturing date in the future → 400",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{atccToken}}"
-              },
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": "{{am1}}/api/aircrafts",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"registrationNumber\": \"CS-FUT\",\n  \"modelName\": \"A320\",\n  \"seatingCapacity\": 100,\n  \"manufacturingDate\": \"2999-01-01\"\n}"
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"status 400\", () => pm.response.to.have.status(400));",
-                  "pm.test(\"field error\", () => pm.expect(pm.response.json()).to.have.property(\"manufacturingDate\"));"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "US105 — status of CS-TUC changed through replica 1 (owner: replica 2)",
-          "request": {
-            "method": "PATCH",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{atccToken}}"
-              },
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": "{{am1}}/api/aircrafts/CS-TUC/status",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"status\": \"UNDER_MAINTENANCE\"\n}"
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
-                  "pm.test(\"updated by the owner\", () => { const a = pm.response.json(); pm.expect(a.registrationNumber).to.eql(\"CS-TUC\"); pm.expect(a.status).to.eql(\"UNDER_MAINTENANCE\"); });"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "US105 — change stored in the owner (read from replica 2)",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{atccToken}}"
-              }
-            ],
-            "url": "{{am2}}/api/aircrafts/CS-TUC"
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
-                  "pm.test(\"stored\", () => pm.expect(pm.response.json().status).to.eql(\"UNDER_MAINTENANCE\"));"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "B3b — Maintenance Technician sets CS-TUC back to AVAILABLE",
-          "request": {
-            "method": "PATCH",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{mtToken}}"
-              },
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": "{{am3}}/api/aircrafts/CS-TUC/status",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"status\": \"AVAILABLE\"\n}"
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
-                  "pm.test(\"available again\", () => pm.expect(pm.response.json().status).to.eql(\"AVAILABLE\"));"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "US105 — lower-case status is accepted (new aircraft → in_flight)",
-          "request": {
-            "method": "PATCH",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{atccToken}}"
-              },
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": "{{am2}}/api/aircrafts/{{newReg}}/status",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"status\": \"in_flight\"\n}"
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
-                  "pm.test(\"normalised\", () => pm.expect(pm.response.json().status).to.eql(\"IN_FLIGHT\"));"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "US105 — IN_FLIGHT → UNDER_MAINTENANCE is rejected → 409",
-          "request": {
-            "method": "PATCH",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{atccToken}}"
-              },
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": "{{am1}}/api/aircrafts/{{newReg}}/status",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"status\": \"UNDER_MAINTENANCE\"\n}"
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"status 409\", () => pm.response.to.have.status(409));",
-                  "pm.test(\"message\", () => pm.expect(pm.response.json().error).to.include(\"in flight\"));"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "US105 — IN_FLIGHT → AVAILABLE is allowed",
-          "request": {
-            "method": "PATCH",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{atccToken}}"
-              },
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": "{{am1}}/api/aircrafts/{{newReg}}/status",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"status\": \"AVAILABLE\"\n}"
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
-                  "pm.test(\"available\", () => pm.expect(pm.response.json().status).to.eql(\"AVAILABLE\"));"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "US105 — unknown status → 400",
-          "request": {
-            "method": "PATCH",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{atccToken}}"
-              },
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": "{{am1}}/api/aircrafts/CS-TUC/status",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"status\": \"FLYING\"\n}"
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"status 400\", () => pm.response.to.have.status(400));"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "US105 — missing status → 400",
-          "request": {
-            "method": "PATCH",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{atccToken}}"
-              },
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": "{{am1}}/api/aircrafts/CS-TUC/status",
-            "body": {
-              "mode": "raw",
-              "raw": "{}"
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"status 400\", () => pm.response.to.have.status(400));",
-                  "pm.test(\"field error\", () => pm.expect(pm.response.json()).to.have.property(\"status\"));"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "US105 — unknown aircraft → 404",
-          "request": {
-            "method": "PATCH",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{atccToken}}"
-              },
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": "{{am1}}/api/aircrafts/XX-NONE/status",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"status\": \"AVAILABLE\"\n}"
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"status 404\", () => pm.response.to.have.status(404));"
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('Devolve token', () => pm.expect(j.token).to.be.a('string').and.not.empty);",
+                  "pm.environment.set('tokenMaintenance', j.token);"
                 ]
               }
             }
@@ -1228,14 +142,234 @@
       ]
     },
     {
-      "name": "5. Security (JWT, roles, service key)",
+      "name": "1 - Aircraft models (US101, US201, ponte B1b)",
       "item": [
         {
-          "name": "No token → 401",
+          "name": "US101 Criar modelo (BACKOFFICE) -> 201",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base1}}/api/aircraft-models",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenBackoffice}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"modelName\": \"{{newModel}}\",\n  \"manufacturer\": \"TestAir\",\n  \"seatingCapacity\": 150,\n  \"fuelCapacity\": 20000,\n  \"maximumRange\": 6000,\n  \"cruisingSpeed\": 800\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "const j = pm.response.json();",
+                  "pm.test('Campos do contrato B1b', () => { pm.expect(j.modelName).to.eql(pm.environment.get('newModel')); pm.expect(j.maximumRange).to.eql(6000); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "US101 Modelo duplicado -> 409",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base1}}/api/aircraft-models",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenBackoffice}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"modelName\": \"{{newModel}}\",\n  \"manufacturer\": \"TestAir\",\n  \"seatingCapacity\": 150,\n  \"fuelCapacity\": 20000,\n  \"maximumRange\": 6000,\n  \"cruisingSpeed\": 800\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 409', () => pm.response.to.have.status(409));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "US101 Dados inválidos (maximumRange negativo) -> 400",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base1}}/api/aircraft-models",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenBackoffice}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"modelName\": \"{{newModel}}X\",\n  \"manufacturer\": \"TestAir\",\n  \"seatingCapacity\": 150,\n  \"fuelCapacity\": 20000,\n  \"maximumRange\": -1,\n  \"cruisingSpeed\": 800\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "US101 Role errada (ATCC) -> 403",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base1}}/api/aircraft-models",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenAtcc}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"modelName\": \"{{newModel}}Y\",\n  \"manufacturer\": \"TestAir\",\n  \"seatingCapacity\": 150,\n  \"fuelCapacity\": 20000,\n  \"maximumRange\": 6000,\n  \"cruisingSpeed\": 800\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 403', () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "US101 Sem token -> 401",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base1}}/api/aircraft-models",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"modelName\": \"{{newModel}}Z\",\n  \"manufacturer\": \"TestAir\",\n  \"seatingCapacity\": 150,\n  \"fuelCapacity\": 20000,\n  \"maximumRange\": 6000,\n  \"cruisingSpeed\": 800\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 401', () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "B1b Obter modelo A320 (ATCC) -> 200",
           "request": {
             "method": "GET",
             "header": [],
-            "url": "{{am1}}/api/aircrafts/CS-TUA"
+            "url": "{{base1}}/api/aircraft-models/A320",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenAtcc}}",
+                  "type": "string"
+                }
+              ]
+            }
           },
           "event": [
             {
@@ -1243,54 +377,29 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test(\"status 401\", () => pm.response.to.have.status(401));"
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('modelName e maximumRange (number > 0)', () => { pm.expect(j.modelName).to.eql('A320'); pm.expect(j.maximumRange).to.be.a('number').and.above(0); });"
                 ]
               }
             }
           ]
         },
         {
-          "name": "Garbage token → 401",
+          "name": "B1b Modelo inexistente -> 404",
           "request": {
             "method": "GET",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer not.a.jwt"
-              }
-            ],
-            "url": "{{am1}}/api/aircrafts/CS-TUA"
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"status 401\", () => pm.response.to.have.status(401));"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "ATCC cannot register models (US101) → 403",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{atccToken}}"
-              },
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": "{{am1}}/api/aircraft-models",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"modelName\": \"NOPE1\",\n  \"manufacturer\": \"X\",\n  \"seatingCapacity\": 10,\n  \"fuelCapacity\": 1,\n  \"maximumRange\": 1,\n  \"cruisingSpeed\": 1\n}"
+            "header": [],
+            "url": "{{base1}}/api/aircraft-models/NaoExiste",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenAtcc}}",
+                  "type": "string"
+                }
+              ]
             }
           },
           "event": [
@@ -1299,675 +408,41 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test(\"status 403\", () => pm.response.to.have.status(403));"
+                  "pm.test('Status 404', () => pm.response.to.have.status(404));"
                 ]
               }
             }
           ]
         },
         {
-          "name": "Backoffice cannot register aircraft (US102) → 403",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{boToken}}"
-              },
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": "{{am1}}/api/aircrafts",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"registrationNumber\": \"CS-BOO\",\n  \"modelName\": \"A320\",\n  \"seatingCapacity\": 100,\n  \"manufacturingDate\": \"2020-01-01\"\n}"
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"status 403\", () => pm.response.to.have.status(403));"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "Maintenance Technician cannot register aircraft (US102) → 403",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{mtToken}}"
-              },
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": "{{am1}}/api/aircrafts",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"registrationNumber\": \"CS-MTT\",\n  \"modelName\": \"A320\",\n  \"seatingCapacity\": 100,\n  \"manufacturingDate\": \"2020-01-01\"\n}"
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"status 403\", () => pm.response.to.have.status(403));"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "Backoffice cannot change an aircraft status (US105) → 403",
+          "name": "US201 Atualizar maximumRange (BACKOFFICE) -> 200",
           "request": {
             "method": "PATCH",
             "header": [
               {
-                "key": "Authorization",
-                "value": "Bearer {{boToken}}"
-              },
-              {
                 "key": "Content-Type",
                 "value": "application/json"
               }
             ],
-            "url": "{{am1}}/api/aircrafts/CS-TUA/status",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"status\": \"AVAILABLE\"\n}"
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"status 403\", () => pm.response.to.have.status(403));"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "Maintenance Technician can read aircraft (B3a) → 200",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{mtToken}}"
-              }
-            ],
-            "url": "{{am1}}/api/aircrafts/CS-TUA"
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "Backoffice cannot see operational hours (US206) → 403",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{boToken}}"
-              }
-            ],
-            "url": "{{am1}}/api/aircrafts/operational-hours"
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"status 403\", () => pm.response.to.have.status(403));"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "Maintenance Technician cannot see compatible routes (US203) → 403",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{mtToken}}"
-              }
-            ],
-            "url": "{{am1}}/api/aircrafts/CS-TUA/compatible-routes"
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"status 403\", () => pm.response.to.have.status(403));"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "Peer request without service key → 401",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{atccToken}}"
-              },
-              {
-                "key": "X-Peer-Hops",
-                "value": "1"
-              }
-            ],
-            "url": "{{am2}}/api/aircrafts"
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"status 401\", () => pm.response.to.have.status(401));"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "Peer request with wrong service key → 401",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{atccToken}}"
-              },
-              {
-                "key": "X-Peer-Hops",
-                "value": "1"
-              },
-              {
-                "key": "X-Service-Key",
-                "value": "wrong"
-              }
-            ],
-            "url": "{{am2}}/api/aircrafts"
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"status 401\", () => pm.response.to.have.status(401));"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "Peer request with X-Peer-Hops: 2 → 400",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{atccToken}}"
-              },
-              {
-                "key": "X-Peer-Hops",
-                "value": "2"
-              },
-              {
-                "key": "X-Service-Key",
-                "value": "{{serviceKey}}"
-              }
-            ],
-            "url": "{{am2}}/api/aircrafts"
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"status 400\", () => pm.response.to.have.status(400));"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "Valid peer request → only local data (unpaginated list)",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{atccToken}}"
-              },
-              {
-                "key": "X-Peer-Hops",
-                "value": "1"
-              },
-              {
-                "key": "X-Service-Key",
-                "value": "{{serviceKey}}"
-              }
-            ],
-            "url": "{{am1}}/api/aircrafts"
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
-                  "pm.test(\"plain list with local aircraft only\", () => { const l = pm.response.json(); pm.expect(l).to.be.an(\"array\"); const regs = l.map(a => a.registrationNumber); pm.expect(regs).to.include(\"CS-TUA\"); [\"CS-TUC\",\"CS-TUD\",\"CS-TUE\",\"CS-TUF\"].forEach(r => pm.expect(regs).to.not.include(r)); });"
-                ]
-              }
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "name": "6. Integration with Flight Routes (US203, US204, US206) — needs Flight Routes running",
-      "item": [
-        {
-          "name": "US206 — operational hours of the fleet (ATCC)",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{atccToken}}"
-              }
-            ],
-            "url": "{{am1}}/api/aircrafts/operational-hours?size=100"
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
-                  "const p = pm.response.json();",
-                  "pm.test(\"every aircraft of the fleet is listed\", () => { const regs = p.content.map(r => r.registrationNumber); [\"CS-TUA\",\"CS-TUB\",\"CS-TUC\",\"CS-TUD\",\"CS-TUE\",\"CS-TUF\"].forEach(r => pm.expect(regs).to.include(r)); });",
-                  "pm.test(\"row fields\", () => p.content.forEach(r => { pm.expect(r).to.have.property(\"modelName\"); pm.expect(r.totalMinutes).to.be.a(\"number\").and.to.be.at.least(0); pm.expect(r.totalHours).to.be.a(\"number\"); pm.expect(r.totalHours).to.eql(Math.round(r.totalMinutes/60*100)/100); }));"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "US203 — compatible routes of CS-TUA (ATCC)",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{atccToken}}"
-              }
-            ],
-            "url": "{{am1}}/api/aircrafts/CS-TUA/compatible-routes"
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
-                  "pm.test(\"list of ACTIVE routes within the aircraft limits\", () => { const l = pm.response.json(); pm.expect(l).to.be.an(\"array\"); l.forEach(r => { pm.expect(r.status).to.eql(\"ACTIVE\"); pm.expect(r.minRange).to.be.at.most(6100); pm.expect(r.minCapacity).to.be.at.most(180); }); });"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "US203 — aircraft of replica 2 asked to replica 3 (capacity 290, range 11750)",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{atccToken}}"
-              }
-            ],
-            "url": "{{am3}}/api/aircrafts/CS-TUD/compatible-routes"
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
-                  "pm.test(\"limits of CS-TUD\", () => pm.response.json().forEach(r => { pm.expect(r.minRange).to.be.at.most(11750); pm.expect(r.minCapacity).to.be.at.most(290); }));"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "US203 — unknown aircraft → 404",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{atccToken}}"
-              }
-            ],
-            "url": "{{am1}}/api/aircrafts/XX-NONE/compatible-routes"
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"status 404\", () => pm.response.to.have.status(404));"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "US204 — Top 5 models (ATCC)",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{atccToken}}"
-              }
-            ],
-            "url": "{{am1}}/api/aircraft-models/top-utilized"
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
-                  "pm.test(\"at most 5 rows, descending\", () => { const l = pm.response.json(); pm.expect(l.length).to.be.at.most(5); for (let i = 1; i < l.length; i++) pm.expect(l[i-1].totalMinutes).to.be.at.least(l[i].totalMinutes); });",
-                  "pm.test(\"row fields\", () => pm.response.json().forEach(r => { pm.expect(r).to.have.property(\"modelName\"); pm.expect(r.totalMinutes).to.be.above(0); pm.expect(r.aircraftCount).to.be.at.least(1); }));"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "US204 — limit=2 (ATCC)",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{atccToken}}"
-              }
-            ],
-            "url": "{{am1}}/api/aircraft-models/top-utilized?limit=2"
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
-                  "pm.test(\"at most 2 rows\", () => pm.expect(pm.response.json().length).to.be.at.most(2));"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "US204 — limit out of range → 400",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{atccToken}}"
-              }
-            ],
-            "url": "{{am1}}/api/aircraft-models/top-utilized?limit=0"
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"status 400\", () => pm.response.to.have.status(400));"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "US204 as Backoffice (documents observation O1: Flight Routes accepts only ATCC today)",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{boToken}}"
-              }
-            ],
-            "url": "{{am1}}/api/aircraft-models/top-utilized"
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"200 once Flight Routes accepts Backoffice, otherwise 403 (contract Q4)\", () => pm.expect([200, 403]).to.include(pm.response.code));"
-                ]
-              }
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "name": "7. Replica failure — STOP replica 2 (port 8181) before running this folder",
-      "item": [
-        {
-          "name": "US104 — replica 2 down: partial answer from replica 1",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{atccToken}}"
-              }
-            ],
-            "url": "{{am1}}/api/aircrafts?size=100"
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
-                  "pm.test(\"partial response flag\", () => pm.expect(pm.response.headers.get(\"X-Partial-Response\")).to.eql(\"true\"));",
-                  "pm.test(\"unavailable peers reported\", () => pm.expect(Number(pm.response.headers.get(\"X-Unavailable-Peers\"))).to.be.at.least(1));",
-                  "pm.test(\"aircraft of replicas 1 and 3 only\", () => { const regs = pm.response.json().content.map(a => a.registrationNumber); pm.expect(regs).to.include.members([\"CS-TUA\",\"CS-TUE\"]); pm.expect(regs).to.not.include(\"CS-TUC\"); });"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "US104 — replica 2 down: same answer from replica 3",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{atccToken}}"
-              }
-            ],
-            "url": "{{am3}}/api/aircrafts?size=100"
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
-                  "pm.test(\"partial response flag\", () => pm.expect(pm.response.headers.get(\"X-Partial-Response\")).to.eql(\"true\"));"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "US103 — local aircraft still available",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{atccToken}}"
-              }
-            ],
-            "url": "{{am1}}/api/aircrafts/CS-TUA"
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "US103 — aircraft of the stopped replica → 404 (flagged as partial)",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{atccToken}}"
-              }
-            ],
-            "url": "{{am1}}/api/aircrafts/CS-TUC"
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"status 404\", () => pm.response.to.have.status(404));",
-                  "pm.test(\"partial response flag\", () => pm.expect(pm.response.headers.get(\"X-Partial-Response\")).to.eql(\"true\"));"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "US102 — registration still possible on a live replica",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{atccToken}}"
-              },
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": "{{am1}}/api/aircrafts",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"registrationNumber\": \"{{newReg}}\",\n  \"modelName\": \"A320\",\n  \"seatingCapacity\": 150,\n  \"manufacturingDate\": \"2021-04-01\"\n}"
-            }
-          },
-          "event": [
-            {
-              "listen": "prerequest",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "let r = pm.environment.get(\"newReg\") || \"CS-AAA\"; pm.environment.set(\"newReg\", r.substring(0,3) + Math.random().toString(36).substring(2,5).toUpperCase());"
-                ]
-              }
+            "url": "{{base1}}/api/aircraft-models/{{newModel}}",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenBackoffice}}",
+                  "type": "string"
+                }
+              ]
             },
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"status 201\", () => pm.response.to.have.status(201));"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "US105 — command for an aircraft of the stopped replica → 503",
-          "request": {
-            "method": "PATCH",
-            "header": [
-              {
-                "key": "Authorization",
-                "value": "Bearer {{atccToken}}"
-              },
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": "{{am1}}/api/aircrafts/CS-TUC/status",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"status\": \"AVAILABLE\"\n}"
+              "raw": "{\n  \"maximumRange\": 7000\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             }
           },
           "event": [
@@ -1976,7 +451,1911 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test(\"status 503\", () => pm.response.to.have.status(503));"
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('maximumRange atualizado', () => pm.expect(pm.response.json().maximumRange).to.eql(7000));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "US201 Body vazio -> 400",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base1}}/api/aircraft-models/{{newModel}}",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenBackoffice}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "US201 Valor negativo -> 400",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base1}}/api/aircraft-models/{{newModel}}",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenBackoffice}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"maximumRange\": -5\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "US201 Role errada (ATCC) -> 403",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base1}}/api/aircraft-models/{{newModel}}",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenAtcc}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"maximumRange\": 100\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 403', () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "US201 Modelo inexistente -> 404",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base1}}/api/aircraft-models/NaoExiste",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenBackoffice}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"maximumRange\": 100\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 404', () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "2 - Aircraft (US102 a US105, pontes B1a/B3a/B3b)",
+      "item": [
+        {
+          "name": "US102 Registar aeronave (ATCC) -> 201",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base1}}/api/aircrafts",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenAtcc}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"registrationNumber\": \"{{newReg}}\",\n  \"modelName\": \"{{newModel}}\",\n  \"seatingCapacity\": 150,\n  \"manufacturingDate\": \"2021-04-01\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "const j = pm.response.json();",
+                  "pm.test('Estado por omissão AVAILABLE', () => { pm.expect(j.registrationNumber).to.eql(pm.environment.get('newReg')); pm.expect(j.status).to.eql('AVAILABLE'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "US102 Matrícula duplicada -> 409",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base1}}/api/aircrafts",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenAtcc}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"registrationNumber\": \"{{newReg}}\",\n  \"modelName\": \"{{newModel}}\",\n  \"seatingCapacity\": 150,\n  \"manufacturingDate\": \"2021-04-01\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 409', () => pm.response.to.have.status(409));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "US102 Matrícula inválida (minúsculas) -> 400",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base1}}/api/aircrafts",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenAtcc}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"registrationNumber\": \"cs-bad\",\n  \"modelName\": \"{{newModel}}\",\n  \"seatingCapacity\": 150,\n  \"manufacturingDate\": \"2021-04-01\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "US102 Modelo inexistente -> 400",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base1}}/api/aircrafts",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenAtcc}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"registrationNumber\": \"CS-ZZZ\",\n  \"modelName\": \"NaoExiste\",\n  \"seatingCapacity\": 150,\n  \"manufacturingDate\": \"2021-04-01\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "US102 Data de fabrico no futuro -> 400",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base1}}/api/aircrafts",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenAtcc}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"registrationNumber\": \"CS-ZZY\",\n  \"modelName\": \"{{newModel}}\",\n  \"seatingCapacity\": 150,\n  \"manufacturingDate\": \"2999-01-01\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "US102 Role errada (BACKOFFICE) -> 403",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base1}}/api/aircrafts",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenBackoffice}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"registrationNumber\": \"CS-ZZX\",\n  \"modelName\": \"{{newModel}}\",\n  \"seatingCapacity\": 150,\n  \"manufacturingDate\": \"2021-04-01\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 403', () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "US103 / B1a Consultar aeronave (ATCC) -> 200",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base1}}/api/aircrafts/{{newReg}}",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenAtcc}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('Campos do contrato B1a', () => { pm.expect(j.registrationNumber).to.be.a('string'); pm.expect(j.modelName).to.be.a('string'); pm.expect(j.seatingCapacity).to.be.a('number'); pm.expect(['AVAILABLE','IN_FLIGHT','UNDER_MAINTENANCE','INACTIVE']).to.include(j.status); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "US103 Consultar aeronave (BACKOFFICE) -> 200",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base1}}/api/aircrafts/{{newReg}}",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenBackoffice}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "US103 Aeronave inexistente -> 404",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base1}}/api/aircrafts/CS-XXX",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenAtcc}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 404', () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "US103 Sem token -> 401",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base1}}/api/aircrafts/{{newReg}}",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 401', () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "US104 Pesquisar por modelo -> 200",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base1}}/api/aircrafts?modelName={{newModel}}",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenAtcc}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('Página com a aeronave criada', () => { pm.expect(j.content).to.be.an('array').and.not.empty; j.content.forEach(a => pm.expect(a.modelName).to.eql(pm.environment.get('newModel'))); pm.expect(j).to.include.keys(['content','number','size','totalElements','totalPages','numberOfElements','first','last','empty']); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "US104 Pesquisar por estado AVAILABLE -> 200",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base1}}/api/aircrafts?status=AVAILABLE&size=100",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenAtcc}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Todas AVAILABLE', () => pm.response.json().content.forEach(a => pm.expect(a.status).to.eql('AVAILABLE')));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "US104 Pesquisar por ano de fabrico -> 200",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base1}}/api/aircrafts?manufacturingYear=2021&modelName={{newModel}}",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenAtcc}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Aeronave de 2021', () => { const c = pm.response.json().content; pm.expect(c).to.not.be.empty; c.forEach(a => pm.expect(a.manufacturingDate).to.match(/^2021/)); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "US104 Paginação (size=1) -> 200",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base1}}/api/aircrafts?size=1&page=0",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenAtcc}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('Uma aeronave por página', () => { pm.expect(j.content).to.have.lengthOf(1); pm.expect(j.totalPages).to.be.at.least(1); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "US104 Estado inválido -> 400",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base1}}/api/aircrafts?status=BANANA",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenAtcc}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "US104 size acima do máximo -> 400",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base1}}/api/aircrafts?size=500",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenAtcc}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "US105 Passar a UNDER_MAINTENANCE (ATCC) -> 200",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base1}}/api/aircrafts/{{newReg}}/status",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenAtcc}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"UNDER_MAINTENANCE\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Estado atualizado', () => pm.expect(pm.response.json().status).to.eql('UNDER_MAINTENANCE'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "B3b Voltar a AVAILABLE (MAINTENANCE_TECHNICIAN) -> 200",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base1}}/api/aircrafts/{{newReg}}/status",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenMaintenance}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"AVAILABLE\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Estado atualizado', () => pm.expect(pm.response.json().status).to.eql('AVAILABLE'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "US105 Estado inválido -> 400",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base1}}/api/aircrafts/{{newReg}}/status",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenAtcc}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"BANANA\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "US105 Role errada (BACKOFFICE) -> 403",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base1}}/api/aircrafts/{{newReg}}/status",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenBackoffice}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"INACTIVE\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 403', () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "US105 Aeronave inexistente -> 404",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base1}}/api/aircrafts/CS-XXX/status",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenAtcc}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"INACTIVE\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 404', () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "US105 Passar a IN_FLIGHT -> 200",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base1}}/api/aircrafts/{{newReg}}/status",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenAtcc}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"IN_FLIGHT\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "US105 IN_FLIGHT -> UNDER_MAINTENANCE (transição inválida) -> 409",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base1}}/api/aircrafts/{{newReg}}/status",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenAtcc}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"UNDER_MAINTENANCE\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 409', () => pm.response.to.have.status(409));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "US105 IN_FLIGHT -> AVAILABLE -> 200",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base1}}/api/aircrafts/{{newReg}}/status",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenAtcc}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"AVAILABLE\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "3 - Peer-to-peer (precisa das 3 réplicas ligadas)",
+      "item": [
+        {
+          "name": "3.1 Criar aeronave diretamente na RÉPLICA 2 (8181) -> 201",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base2}}/api/aircrafts",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenAtcc}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"registrationNumber\": \"{{p2pReg}}\",\n  \"modelName\": \"A330\",\n  \"seatingCapacity\": 300,\n  \"manufacturingDate\": \"2022-02-02\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3.2 GET na réplica 1 (aeronave só existe na 2) -> 200 (peer forwarding)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base1}}/api/aircrafts/{{p2pReg}}",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenAtcc}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Aeronave certa', () => pm.expect(pm.response.json().registrationNumber).to.eql(pm.environment.get('p2pReg')));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3.3 GET na réplica 3 -> 200 (também encontra no peer)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base3}}/api/aircrafts/{{p2pReg}}",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenAtcc}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3.4 GET modelo A330 na réplica 1 (modelo só existe na 2) -> 200",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base1}}/api/aircraft-models/A330",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenAtcc}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Modelo A330', () => pm.expect(pm.response.json().modelName).to.eql('A330'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3.5 PATCH na réplica 1 encaminhado para o dono (réplica 2) -> 200",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base1}}/api/aircrafts/{{p2pReg}}/status",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenAtcc}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"UNDER_MAINTENANCE\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Estado atualizado', () => pm.expect(pm.response.json().status).to.eql('UNDER_MAINTENANCE'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3.6 GET direto na réplica 2: a escrita ficou no dono",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base2}}/api/aircrafts/{{p2pReg}}",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenAtcc}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('UNDER_MAINTENANCE no dono', () => pm.expect(pm.response.json().status).to.eql('UNDER_MAINTENANCE'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3.7 PATCH de modelo na réplica 1 encaminhado para a réplica 2 -> 200",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base1}}/api/aircraft-models/A330",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenBackoffice}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cruisingSpeed\": 875\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('cruisingSpeed atualizado', () => pm.expect(pm.response.json().cruisingSpeed).to.eql(875));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3.8 Criar aeronave na réplica 1 com modelo da réplica 2 -> 201",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base1}}/api/aircrafts",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenAtcc}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"registrationNumber\": \"{{crossReg}}\",\n  \"modelName\": \"A330\",\n  \"seatingCapacity\": 300,\n  \"manufacturingDate\": \"2022-02-02\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3.9 Listagem agregada (réplica 1) contém dados das 3 réplicas -> 200",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base1}}/api/aircrafts?size=100",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenAtcc}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "const regs = j.content.map(a => a.registrationNumber);",
+                  "pm.test('Aeronave da réplica 1 presente', () => pm.expect(regs).to.include(pm.environment.get('newReg')));",
+                  "pm.test('Aeronave da réplica 2 presente', () => pm.expect(regs).to.include(pm.environment.get('p2pReg')));",
+                  "pm.test('Aeronave da réplica 3 presente (CS-TUE, bootstrap)', () => pm.expect(regs).to.include('CS-TUE'));",
+                  "pm.test('Sem duplicados', () => pm.expect(new Set(regs).size).to.eql(regs.length));",
+                  "pm.test('Resposta completa (sem X-Partial-Response)', () => pm.expect(pm.response.headers.has('X-Partial-Response')).to.be.false);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3.10 Pesquisa agregada por modelo A330 -> 200",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base1}}/api/aircrafts?modelName=A330&size=100",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenAtcc}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Inclui aeronave da réplica 2', () => pm.expect(pm.response.json().content.map(a => a.registrationNumber)).to.include(pm.environment.get('p2pReg')));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "4 - Disponibilidade (US205)",
+      "item": [
+        {
+          "name": "US205 Disponibilidade de uma aeronave -> 200",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base1}}/api/aircrafts/{{newReg}}/availability",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenAtcc}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('Campos', () => { pm.expect(j.status).to.be.a('string'); pm.expect(j.available).to.be.a('boolean'); pm.expect(j.available).to.eql(j.status === 'AVAILABLE'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "US205 Disponibilidade de aeronave de outra réplica -> 200",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base1}}/api/aircrafts/{{p2pReg}}/availability",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenAtcc}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('UNDER_MAINTENANCE => não disponível', () => pm.expect(pm.response.json().available).to.be.false);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "US205 Disponibilidade da frota -> 200",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base1}}/api/aircrafts/availability",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenAtcc}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('4 estados presentes', () => pm.expect(Object.keys(j.countByStatus)).to.have.members(['AVAILABLE','IN_FLIGHT','UNDER_MAINTENANCE','INACTIVE']));",
+                  "pm.test('Total coerente com a soma', () => pm.expect(Object.values(j.countByStatus).reduce((a, b) => a + b, 0)).to.eql(j.total));",
+                  "pm.test('Taxa entre 0 e 1', () => pm.expect(j.availabilityRate).to.be.within(0, 1));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "US205 Aeronave inexistente -> 404",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base1}}/api/aircrafts/CS-XXX/availability",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenAtcc}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 404', () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "US205 Role errada (BACKOFFICE) -> 403",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base1}}/api/aircrafts/availability",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenBackoffice}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 403', () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "5 - Integração com Flight Routes (US203, US204, US206) - precisa do Flight Routes ou do stub na 8084",
+      "item": [
+        {
+          "name": "US206 Horas operacionais da frota -> 200",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base1}}/api/aircrafts/operational-hours?size=100",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenAtcc}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('Linhas com minutos e horas', () => { pm.expect(j.content).to.be.an('array').and.not.empty; j.content.forEach(r => { pm.expect(r.totalMinutes).to.be.a('number').and.at.least(0); pm.expect(r.totalHours).to.be.closeTo(r.totalMinutes / 60, 0.01); }); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "US206 Role errada (BACKOFFICE) -> 403",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base1}}/api/aircrafts/operational-hours",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenBackoffice}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 403', () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "US203 Rotas compatíveis com CS-TUA -> 200",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base1}}/api/aircrafts/CS-TUA/compatible-routes",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenAtcc}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Lista de rotas', () => pm.expect(pm.response.json()).to.be.an('array'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "US203 Aeronave inexistente -> 404",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base1}}/api/aircrafts/CS-XXX/compatible-routes",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenAtcc}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 404', () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "US203 Role errada (BACKOFFICE) -> 403",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base1}}/api/aircrafts/CS-TUA/compatible-routes",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenBackoffice}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 403', () => pm.response.to.have.status(403));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "US204 Top 5 modelos mais utilizados (BACKOFFICE) -> 200",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base1}}/api/aircraft-models/top-utilized",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenBackoffice}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('No máximo 5 e por ordem decrescente', () => { pm.expect(j).to.be.an('array').and.have.length.at.most(5); for (let i = 1; i < j.length; i++) pm.expect(j[i-1].totalMinutes).to.be.at.least(j[i].totalMinutes); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "US204 limit=0 -> 400",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base1}}/api/aircraft-models/top-utilized?limit=0",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenBackoffice}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "6 - Tolerância a falhas (MANUAL: pára a réplica 3 e corre só esta pasta)",
+      "item": [
+        {
+          "name": "6.1 Réplica 3 em baixo: aeronave da réplica 2 continua acessível -> 200",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base1}}/api/aircrafts/{{p2pReg}}",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenAtcc}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "6.2 Réplica 3 em baixo: aeronave da réplica 3 -> 404 + X-Partial-Response",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base1}}/api/aircrafts/CS-TUE",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenAtcc}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 404', () => pm.response.to.have.status(404));",
+                  "pm.test('X-Partial-Response: true', () => pm.expect(pm.response.headers.get('X-Partial-Response')).to.eql('true'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "6.3 Réplica 3 em baixo: listagem agregada continua a responder (200 parcial)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base1}}/api/aircrafts?size=100",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenAtcc}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('X-Partial-Response: true', () => pm.expect(pm.response.headers.get('X-Partial-Response')).to.eql('true'));",
+                  "pm.test('Mantém dados das réplicas 1 e 2', () => pm.expect(pm.response.json().content.length).to.be.at.least(1));"
                 ]
               }
             }

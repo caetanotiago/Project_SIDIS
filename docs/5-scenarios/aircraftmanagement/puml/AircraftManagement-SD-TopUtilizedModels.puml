@@ -31,7 +31,7 @@ deactivate Ctrl
 note over User, FR
   Flight Routes only knows registrations, so the mapping registration → model is done here.
   "Most utilised" = flight time (contract Q5).
-  FR accepts only ATCC on /api/scheduled-flights/**: a Backoffice token gets 403
-  "Flight Routes rejected the request." until that rule changes (contract Q4).
+  B4b (minutes-by-aircraft) accepts ATCC and BACKOFFICE_OPERATOR (contract Q4),
+  so US204 works for both roles. Other roles: 403 "Flight Routes rejected the request."
 end note
 @enduml

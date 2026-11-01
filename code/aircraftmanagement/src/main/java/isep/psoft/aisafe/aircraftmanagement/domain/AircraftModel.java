@@ -4,7 +4,7 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.Version;
 
-/** Modelo de aeronave (US101). maximumRange em km (decisão Q9 do contrato). */
+/** Modelo de aeronave (US101, US201). maximumRange em km (decisão Q9 do contrato). */
 @Entity
 public class AircraftModel {
 
@@ -42,6 +42,26 @@ public class AircraftModel {
         this.fuelCapacity = fuelCapacity;
         this.maximumRange = maximumRange;
         this.cruisingSpeed = cruisingSpeed;
+    }
+
+    /** US201: atualização parcial; o nome (identificador) é imutável. Parâmetros null = não alterar. */
+    public void updateSpecifications(String manufacturer, Integer seatingCapacity, Double fuelCapacity,
+                                     Double maximumRange, Double cruisingSpeed) {
+        if (manufacturer != null && manufacturer.isBlank()) {
+            throw new IllegalArgumentException("Manufacturer cannot be empty");
+        }
+        if ((seatingCapacity != null && seatingCapacity <= 0)
+                || (fuelCapacity != null && fuelCapacity <= 0)
+                || (maximumRange != null && maximumRange <= 0)
+                || (cruisingSpeed != null && cruisingSpeed <= 0)) {
+            throw new IllegalArgumentException(
+                    "Seating capacity, fuel capacity, maximum range and cruising speed must be positive");
+        }
+        if (manufacturer != null) this.manufacturer = manufacturer;
+        if (seatingCapacity != null) this.seatingCapacity = seatingCapacity;
+        if (fuelCapacity != null) this.fuelCapacity = fuelCapacity;
+        if (maximumRange != null) this.maximumRange = maximumRange;
+        if (cruisingSpeed != null) this.cruisingSpeed = cruisingSpeed;
     }
 
     public AircraftModelSummary toSummary() {

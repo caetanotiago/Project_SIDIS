@@ -2,7 +2,7 @@
 
 **ISEP — Instituto Superior de Engenharia do Porto**
 
-**Generated:** 2026-10-31
+**Generated:** 2026-11-01
 
 | Student | Number | Work package |
 |---|---|---|
@@ -45,7 +45,7 @@
     - [C4 Level 4 — Maintenance Service: Code](#sec-c4-level-4-maintenance-service-code)
     - [C4+1 — Maintenance Service: Scenarios](#sec-c4-1-maintenance-service-scenarios)
 - [Appendix A — Postman collections](#sec-appendix-a-postman-collections)
-  - [AISafe - Aircraft Management (distributed)](#sec-aisafe-aircraft-management-distributed)
+  - [AISafe - Aircraft Management (SIDIS)](#sec-aisafe-aircraft-management-sidis)
   - [AISafe - Airports (distributed)](#sec-aisafe-airports-distributed)
   - [AISafe - Flight Routes (distributed)](#sec-aisafe-flight-routes-distributed)
   - [AISafe - Maintenance Service (WP#4)](#sec-aisafe-maintenance-service-wp-4)
@@ -1337,7 +1337,7 @@ Every endpoint is served by every replica; **every GET returns the data of all r
 |---|---|---|---|---|---|---|
 | POST | `/api/aircraft-models` | US101 | `CreateAircraftModelDTO` (modelName, manufacturer, seatingCapacity, fuelCapacity, maximumRange, cruisingSpeed) | `201` `AircraftModelDTO` | BACKOFFICE_OPERATOR | Implemented |
 | GET | `/api/aircraft-models/{modelName}` | **B1b** | model name | `200` `AircraftModelDTO` | ATCC, BACKOFFICE_OPERATOR, MAINTENANCE_TECHNICIAN, MAINTENANCE_SUPERVISOR | Implemented |
-| GET | `/api/aircraft-models/top-utilized?limit=` | US204 | `limit` 1–20 (default 5) | `200` `List<ModelUtilizationDTO>` (+ `X-Partial-Response`) | BACKOFFICE_OPERATOR, ATCC | Implemented (see observation O1) |
+| GET | `/api/aircraft-models/top-utilized?limit=` | US204 | `limit` 1–20 (default 5) | `200` `List<ModelUtilizationDTO>` (+ `X-Partial-Response`) | BACKOFFICE_OPERATOR, ATCC | Implemented |
 
 **Planned (not implemented yet — proposed design, to be confirmed with the customer)**
 
@@ -1394,9 +1394,8 @@ The system-wide decisions (consistency model, fault tolerance, security) are in 
 
 #### 6. Observations
 
-- **O1 — US204 for Backoffice Operators.** The US says the *Backoffice Operator* sees the Top 5, and `AircraftManagementAuthorizationRules` allows `BACKOFFICE_OPERATOR` and `ATCC`. But the JWT is forwarded to Flight Routes, whose rule for `/api/scheduled-flights/**` accepts only `ATCC` ([Integration-Contracts Q4](#src-2-containers-integration-contracts)). A Backoffice token is therefore expected to end in `403` ("Flight Routes rejected the request.") until that rule is widened. The Postman collection has a request that documents this.
-- **O2 — HATEOAS.** The PSOFT non-functional requirements ask for links in the representations. The starter is a dependency, but `AircraftAssembler` returns plain DTOs (no `_links`) and `springdoc.enable-hateoas=false`. To be added (the contract allows extra fields such as `_links`).
-- **O3 — Implementation status.** US101–US105, US203, US204, US206 are implemented. US201, US202, US205 and the bonus US223/US224 are planned only.
+- **O1 — HATEOAS.** The PSOFT non-functional requirements ask for links in the representations. The starter is a dependency, but `AircraftAssembler` returns plain DTOs (no `_links`) and `springdoc.enable-hateoas=false`. To be added (the contract allows extra fields such as `_links`).
+- **O2 — Implementation status.** US101–US105, US203, US204, US206 are implemented. US201, US202, US205 and the bonus US223/US224 are planned only.
 
 <a id="src-4-code-aircraftmanagement-aircraftmanagement-code"></a>
 
@@ -1578,7 +1577,7 @@ The `factories` package is empty (`.gitkeep`): the aggregates are created throug
 | 1B | US201 | Update an aircraft model's specifications | Backoffice Operator | Planned |
 | 1B | US202 | Register an aircraft model with an optional image or technical diagram | Backoffice Operator | Planned |
 | 1B | US203 | View the routes compatible with an aircraft (range of the model, capacity of the aircraft) | ATCC | Implemented |
-| 1B | US204 | Top 5 most utilised aircraft models | Backoffice Operator | Implemented (see O1 in [L3](#sec-6-observations)) |
+| 1B | US204 | Top 5 most utilised aircraft models | Backoffice Operator | Implemented |
 | 1B | US205 | Real-time aircraft availability status (available, in-flight, under maintenance, inactive) | ATCC | Planned |
 | 1B | US206 | Total operational hours of each aircraft of the fleet | ATCC | Implemented |
 | Bonus | US223, US224 | Utilisation graphs; search by features (Wi-Fi, engine type) | ATCC | Planned |
@@ -1596,7 +1595,7 @@ The `factories` package is empty (`.gitkeep`): the aggregates are created throug
 - **Registration format (Q10, proposal):** `PREFIX-SUFFIX`, upper case, e.g. `CS-TUA` (`^[A-Z0-9]{1,2}-[A-Z0-9]{2,5}$`), checked when an aircraft is registered. To be confirmed with the customer.
 - **"Most utilised" (Q5):** total **flight time** (minutes) of all the aircraft of the model, from contract B4b. Models without flights are not ranked.
 - **Pagination (Q8):** a stable `PageDTO` (`content`, `page`, `size`, `totalElements`, `totalPages`) instead of Spring's `Page`; maximum size 100.
-- **Roles (Q4):** US102 → ATCC; US101 → Backoffice Operator; reads (US103/US104, B1, B3a) also for the Backoffice and Maintenance roles because the JWT of the consumer's user is forwarded; US105/B3b → ATCC and Maintenance roles; US203/US206 → ATCC; US204 → Backoffice Operator and ATCC (Backoffice is rejected by Flight Routes today — see O1).
+- **Roles (Q4):** US102 → ATCC; US101 → Backoffice Operator; reads (US103/US104, B1, B3a) also for the Backoffice and Maintenance roles because the JWT of the consumer's user is forwarded; US105/B3b → ATCC and Maintenance roles; US203/US206 → ATCC; US204 → Backoffice Operator and ATCC (Flight Routes admits both roles on `minutes-by-aircraft`, B4b).
 - **Open question Q-AM1 (US205):** what is "in-flight"? Today `IN_FLIGHT` is only a status that can be set through US105. A real-time value would be derived from the scheduled flights of Flight Routes (a flight whose date/time interval contains *now*), which needs a new endpoint there. To be decided with the customer and the Flight Routes owner before implementing.
 
 
@@ -1722,9 +1721,9 @@ H2 console: `http://localhost:8081/h2-console` (JDBC URL `jdbc:h2:mem:aircraftMa
 
 - Cross-replica uniqueness of the registration number and of the model name is best-effort (AP, see [L2 §3.3](#sec-3-3-consistency-model-cap)): during a partition, or with two simultaneous registrations on different replicas, the same value can be stored twice. Deterministic ownership (hash of the registration → replica) would remove this at the cost of availability for writes when that replica is down.
 - US203, US204 and US206 depend on Flight Routes being available (`503` otherwise); the figures are already summed over the Flight Routes replicas and a partial answer is passed on with `X-Partial-Response`.
-- **US204 for the Backoffice Operator** is expected to fail with `403` today (Flight Routes accepts only `ATCC` on `/api/scheduled-flights/**`). Options: widen that rule in Flight Routes (contract Q4), or let Aircraft Management obtain the minutes with a service identity. The Postman request *US204 as Backoffice* documents the current behaviour.
+- **US204 works for the Backoffice Operator and for the ATCC**: the JWT is forwarded to Flight Routes, whose rule for `GET /api/scheduled-flights/statistics/minutes-by-aircraft` (B4b) accepts `ATCC` and `BACKOFFICE_OPERATOR` (contract Q4); the rest of `/api/scheduled-flights/**` stays `ATCC` only, which matches US206. The Postman request *US204 Top 5 modelos mais utilizados (BACKOFFICE) -> 200* covers it.
 - US205 depends on the answer to Q-AM1. US201 and US202 reuse the owner-forwarding pattern of S3 and need an `update` behaviour on `AircraftModel`.
-- The PSOFT requirement of HATEOAS links is not implemented yet (see O2 in L3).
+- The PSOFT requirement of HATEOAS links is not implemented yet (see O1 in L3).
 
 <div style="page-break-before: always;"></div>
 
@@ -3072,83 +3071,78 @@ H2 console: `http://localhost:8082/h2-console` (JDBC URL `jdbc:h2:mem:maintenanc
 
 # Appendix A — Postman collections
 
-<a id="sec-aisafe-aircraft-management-distributed"></a>
+<a id="sec-aisafe-aircraft-management-sidis"></a>
 
-## AISafe - Aircraft Management (distributed)
+## AISafe - Aircraft Management (SIDIS)
 
 *Source: [docs/5-scenarios/aircraftmanagement/postman/AircraftManagement.postman_collection.json](5-scenarios/aircraftmanagement/postman/AircraftManagement.postman_collection.json)*
 
 | Folder | Request | Method | URL |
 |---|---|---|---|
-| 0. Setup — health and tokens | Health am1 | GET | `{{am1}}/actuator/health` |
-| 0. Setup — health and tokens | Health am2 | GET | `{{am2}}/actuator/health` |
-| 0. Setup — health and tokens | Health am3 | GET | `{{am3}}/actuator/health` |
-| 0. Setup — health and tokens | Token ATCC (dev only) | POST | `{{am1}}/auth/dev-token` |
-| 0. Setup — health and tokens | Token Backoffice Operator (dev only) | POST | `{{am1}}/auth/dev-token` |
-| 0. Setup — health and tokens | Token Maintenance Technician (dev only) | POST | `{{am1}}/auth/dev-token` |
-| 1. Local access (US103, B1a, B1b) | US103 — CS-TUA on replica 1 (stored locally) | GET | `{{am1}}/api/aircrafts/CS-TUA` |
-| 1. Local access (US103, B1a, B1b) | B1b — model A320 on replica 1 (stored locally) | GET | `{{am1}}/api/aircraft-models/A320` |
-| 2. Peer-to-peer forwarding (GET by id) | US103 — CS-TUC asked to replica 1 (stored in replica 2) | GET | `{{am1}}/api/aircrafts/CS-TUC` |
-| 2. Peer-to-peer forwarding (GET by id) | US103 — CS-TUE asked to replica 2 (stored in replica 3) | GET | `{{am2}}/api/aircrafts/CS-TUE` |
-| 2. Peer-to-peer forwarding (GET by id) | US103 — same aircraft asked to replica 3 (same answer) | GET | `{{am3}}/api/aircrafts/CS-TUC` |
-| 2. Peer-to-peer forwarding (GET by id) | B1b — model A330 asked to replica 1 (stored in replica 2) | GET | `{{am1}}/api/aircraft-models/A330` |
-| 2. Peer-to-peer forwarding (GET by id) | US103 — unknown aircraft → 404 in every replica | GET | `{{am1}}/api/aircrafts/XX-NONE` |
-| 2. Peer-to-peer forwarding (GET by id) | B1b — unknown model → 404 | GET | `{{am1}}/api/aircraft-models/NOPE` |
-| 3. Aggregation of responses (US104) | US104 — all aircraft from replica 1 | GET | `{{am1}}/api/aircrafts?size=100` |
-| 3. Aggregation of responses (US104) | US104 — all aircraft from replica 3 (same answer) | GET | `{{am3}}/api/aircrafts?size=100` |
-| 3. Aggregation of responses (US104) | US104 — filter by model (applied in every replica) | GET | `{{am1}}/api/aircrafts?modelName=A330` |
-| 3. Aggregation of responses (US104) | US104 — filter by status | GET | `{{am1}}/api/aircrafts?status=UNDER_MAINTENANCE` |
-| 3. Aggregation of responses (US104) | US104 — filter by manufacturing year | GET | `{{am2}}/api/aircrafts?manufacturingYear=2022` |
-| 3. Aggregation of responses (US104) | US104 — combined filters (model + status) | GET | `{{am1}}/api/aircrafts?modelName=E190&status=INACTIVE` |
-| 3. Aggregation of responses (US104) | US104 — pagination after merging (size=2, page=1) | GET | `{{am1}}/api/aircrafts?size=2&page=1` |
-| 3. Aggregation of responses (US104) | US104 — invalid status → 400 | GET | `{{am1}}/api/aircrafts?status=FLYING` |
-| 3. Aggregation of responses (US104) | US104 — size out of range → 400 | GET | `{{am1}}/api/aircrafts?size=1000` |
-| 4. Commands (US101, US102, US105) | US101 — register a model on replica 1 | POST | `{{am1}}/api/aircraft-models` |
-| 4. Commands (US101, US102, US105) | US101 — new model visible from replica 3 | GET | `{{am3}}/api/aircraft-models/{{newModel}}` |
-| 4. Commands (US101, US102, US105) | US101 — duplicate model A330 on replica 1 (A330 is in replica 2) → 409 | POST | `{{am1}}/api/aircraft-models` |
-| 4. Commands (US101, US102, US105) | US101 — invalid input → 400 (validation map) | POST | `{{am1}}/api/aircraft-models` |
-| 4. Commands (US101, US102, US105) | US102 — register an aircraft on replica 1 with model E190 (stored in replica 3) | POST | `{{am1}}/api/aircrafts` |
-| 4. Commands (US101, US102, US105) | US102 — new aircraft visible from replica 3 | GET | `{{am3}}/api/aircrafts/{{newReg}}` |
-| 4. Commands (US101, US102, US105) | US102 — duplicate CS-TUC on replica 1 (CS-TUC is in replica 2) → 409 | POST | `{{am1}}/api/aircrafts` |
-| 4. Commands (US101, US102, US105) | US102 — unknown model → 400 | POST | `{{am1}}/api/aircrafts` |
-| 4. Commands (US101, US102, US105) | US102 — invalid registration format → 400 | POST | `{{am1}}/api/aircrafts` |
-| 4. Commands (US101, US102, US105) | US102 — manufacturing date in the future → 400 | POST | `{{am1}}/api/aircrafts` |
-| 4. Commands (US101, US102, US105) | US105 — status of CS-TUC changed through replica 1 (owner: replica 2) | PATCH | `{{am1}}/api/aircrafts/CS-TUC/status` |
-| 4. Commands (US101, US102, US105) | US105 — change stored in the owner (read from replica 2) | GET | `{{am2}}/api/aircrafts/CS-TUC` |
-| 4. Commands (US101, US102, US105) | B3b — Maintenance Technician sets CS-TUC back to AVAILABLE | PATCH | `{{am3}}/api/aircrafts/CS-TUC/status` |
-| 4. Commands (US101, US102, US105) | US105 — lower-case status is accepted (new aircraft → in_flight) | PATCH | `{{am2}}/api/aircrafts/{{newReg}}/status` |
-| 4. Commands (US101, US102, US105) | US105 — IN_FLIGHT → UNDER_MAINTENANCE is rejected → 409 | PATCH | `{{am1}}/api/aircrafts/{{newReg}}/status` |
-| 4. Commands (US101, US102, US105) | US105 — IN_FLIGHT → AVAILABLE is allowed | PATCH | `{{am1}}/api/aircrafts/{{newReg}}/status` |
-| 4. Commands (US101, US102, US105) | US105 — unknown status → 400 | PATCH | `{{am1}}/api/aircrafts/CS-TUC/status` |
-| 4. Commands (US101, US102, US105) | US105 — missing status → 400 | PATCH | `{{am1}}/api/aircrafts/CS-TUC/status` |
-| 4. Commands (US101, US102, US105) | US105 — unknown aircraft → 404 | PATCH | `{{am1}}/api/aircrafts/XX-NONE/status` |
-| 5. Security (JWT, roles, service key) | No token → 401 | GET | `{{am1}}/api/aircrafts/CS-TUA` |
-| 5. Security (JWT, roles, service key) | Garbage token → 401 | GET | `{{am1}}/api/aircrafts/CS-TUA` |
-| 5. Security (JWT, roles, service key) | ATCC cannot register models (US101) → 403 | POST | `{{am1}}/api/aircraft-models` |
-| 5. Security (JWT, roles, service key) | Backoffice cannot register aircraft (US102) → 403 | POST | `{{am1}}/api/aircrafts` |
-| 5. Security (JWT, roles, service key) | Maintenance Technician cannot register aircraft (US102) → 403 | POST | `{{am1}}/api/aircrafts` |
-| 5. Security (JWT, roles, service key) | Backoffice cannot change an aircraft status (US105) → 403 | PATCH | `{{am1}}/api/aircrafts/CS-TUA/status` |
-| 5. Security (JWT, roles, service key) | Maintenance Technician can read aircraft (B3a) → 200 | GET | `{{am1}}/api/aircrafts/CS-TUA` |
-| 5. Security (JWT, roles, service key) | Backoffice cannot see operational hours (US206) → 403 | GET | `{{am1}}/api/aircrafts/operational-hours` |
-| 5. Security (JWT, roles, service key) | Maintenance Technician cannot see compatible routes (US203) → 403 | GET | `{{am1}}/api/aircrafts/CS-TUA/compatible-routes` |
-| 5. Security (JWT, roles, service key) | Peer request without service key → 401 | GET | `{{am2}}/api/aircrafts` |
-| 5. Security (JWT, roles, service key) | Peer request with wrong service key → 401 | GET | `{{am2}}/api/aircrafts` |
-| 5. Security (JWT, roles, service key) | Peer request with X-Peer-Hops: 2 → 400 | GET | `{{am2}}/api/aircrafts` |
-| 5. Security (JWT, roles, service key) | Valid peer request → only local data (unpaginated list) | GET | `{{am1}}/api/aircrafts` |
-| 6. Integration with Flight Routes (US203, US204, US206) — needs Flight Routes running | US206 — operational hours of the fleet (ATCC) | GET | `{{am1}}/api/aircrafts/operational-hours?size=100` |
-| 6. Integration with Flight Routes (US203, US204, US206) — needs Flight Routes running | US203 — compatible routes of CS-TUA (ATCC) | GET | `{{am1}}/api/aircrafts/CS-TUA/compatible-routes` |
-| 6. Integration with Flight Routes (US203, US204, US206) — needs Flight Routes running | US203 — aircraft of replica 2 asked to replica 3 (capacity 290, range 11750) | GET | `{{am3}}/api/aircrafts/CS-TUD/compatible-routes` |
-| 6. Integration with Flight Routes (US203, US204, US206) — needs Flight Routes running | US203 — unknown aircraft → 404 | GET | `{{am1}}/api/aircrafts/XX-NONE/compatible-routes` |
-| 6. Integration with Flight Routes (US203, US204, US206) — needs Flight Routes running | US204 — Top 5 models (ATCC) | GET | `{{am1}}/api/aircraft-models/top-utilized` |
-| 6. Integration with Flight Routes (US203, US204, US206) — needs Flight Routes running | US204 — limit=2 (ATCC) | GET | `{{am1}}/api/aircraft-models/top-utilized?limit=2` |
-| 6. Integration with Flight Routes (US203, US204, US206) — needs Flight Routes running | US204 — limit out of range → 400 | GET | `{{am1}}/api/aircraft-models/top-utilized?limit=0` |
-| 6. Integration with Flight Routes (US203, US204, US206) — needs Flight Routes running | US204 as Backoffice (documents observation O1: Flight Routes accepts only ATCC today) | GET | `{{am1}}/api/aircraft-models/top-utilized` |
-| 7. Replica failure — STOP replica 2 (port 8181) before running this folder | US104 — replica 2 down: partial answer from replica 1 | GET | `{{am1}}/api/aircrafts?size=100` |
-| 7. Replica failure — STOP replica 2 (port 8181) before running this folder | US104 — replica 2 down: same answer from replica 3 | GET | `{{am3}}/api/aircrafts?size=100` |
-| 7. Replica failure — STOP replica 2 (port 8181) before running this folder | US103 — local aircraft still available | GET | `{{am1}}/api/aircrafts/CS-TUA` |
-| 7. Replica failure — STOP replica 2 (port 8181) before running this folder | US103 — aircraft of the stopped replica → 404 (flagged as partial) | GET | `{{am1}}/api/aircrafts/CS-TUC` |
-| 7. Replica failure — STOP replica 2 (port 8181) before running this folder | US102 — registration still possible on a live replica | POST | `{{am1}}/api/aircrafts` |
-| 7. Replica failure — STOP replica 2 (port 8181) before running this folder | US105 — command for an aircraft of the stopped replica → 503 | PATCH | `{{am1}}/api/aircrafts/CS-TUC/status` |
+| 0 - Setup (obter tokens e gerar dados únicos) | 0.1 Token ATCC | POST | `{{base1}}/auth/dev-token` |
+| 0 - Setup (obter tokens e gerar dados únicos) | 0.2 Token BACKOFFICE_OPERATOR | POST | `{{base1}}/auth/dev-token` |
+| 0 - Setup (obter tokens e gerar dados únicos) | 0.3 Token MAINTENANCE_TECHNICIAN | POST | `{{base1}}/auth/dev-token` |
+| 1 - Aircraft models (US101, US201, ponte B1b) | US101 Criar modelo (BACKOFFICE) -> 201 | POST | `{{base1}}/api/aircraft-models` |
+| 1 - Aircraft models (US101, US201, ponte B1b) | US101 Modelo duplicado -> 409 | POST | `{{base1}}/api/aircraft-models` |
+| 1 - Aircraft models (US101, US201, ponte B1b) | US101 Dados inválidos (maximumRange negativo) -> 400 | POST | `{{base1}}/api/aircraft-models` |
+| 1 - Aircraft models (US101, US201, ponte B1b) | US101 Role errada (ATCC) -> 403 | POST | `{{base1}}/api/aircraft-models` |
+| 1 - Aircraft models (US101, US201, ponte B1b) | US101 Sem token -> 401 | POST | `{{base1}}/api/aircraft-models` |
+| 1 - Aircraft models (US101, US201, ponte B1b) | B1b Obter modelo A320 (ATCC) -> 200 | GET | `{{base1}}/api/aircraft-models/A320` |
+| 1 - Aircraft models (US101, US201, ponte B1b) | B1b Modelo inexistente -> 404 | GET | `{{base1}}/api/aircraft-models/NaoExiste` |
+| 1 - Aircraft models (US101, US201, ponte B1b) | US201 Atualizar maximumRange (BACKOFFICE) -> 200 | PATCH | `{{base1}}/api/aircraft-models/{{newModel}}` |
+| 1 - Aircraft models (US101, US201, ponte B1b) | US201 Body vazio -> 400 | PATCH | `{{base1}}/api/aircraft-models/{{newModel}}` |
+| 1 - Aircraft models (US101, US201, ponte B1b) | US201 Valor negativo -> 400 | PATCH | `{{base1}}/api/aircraft-models/{{newModel}}` |
+| 1 - Aircraft models (US101, US201, ponte B1b) | US201 Role errada (ATCC) -> 403 | PATCH | `{{base1}}/api/aircraft-models/{{newModel}}` |
+| 1 - Aircraft models (US101, US201, ponte B1b) | US201 Modelo inexistente -> 404 | PATCH | `{{base1}}/api/aircraft-models/NaoExiste` |
+| 2 - Aircraft (US102 a US105, pontes B1a/B3a/B3b) | US102 Registar aeronave (ATCC) -> 201 | POST | `{{base1}}/api/aircrafts` |
+| 2 - Aircraft (US102 a US105, pontes B1a/B3a/B3b) | US102 Matrícula duplicada -> 409 | POST | `{{base1}}/api/aircrafts` |
+| 2 - Aircraft (US102 a US105, pontes B1a/B3a/B3b) | US102 Matrícula inválida (minúsculas) -> 400 | POST | `{{base1}}/api/aircrafts` |
+| 2 - Aircraft (US102 a US105, pontes B1a/B3a/B3b) | US102 Modelo inexistente -> 400 | POST | `{{base1}}/api/aircrafts` |
+| 2 - Aircraft (US102 a US105, pontes B1a/B3a/B3b) | US102 Data de fabrico no futuro -> 400 | POST | `{{base1}}/api/aircrafts` |
+| 2 - Aircraft (US102 a US105, pontes B1a/B3a/B3b) | US102 Role errada (BACKOFFICE) -> 403 | POST | `{{base1}}/api/aircrafts` |
+| 2 - Aircraft (US102 a US105, pontes B1a/B3a/B3b) | US103 / B1a Consultar aeronave (ATCC) -> 200 | GET | `{{base1}}/api/aircrafts/{{newReg}}` |
+| 2 - Aircraft (US102 a US105, pontes B1a/B3a/B3b) | US103 Consultar aeronave (BACKOFFICE) -> 200 | GET | `{{base1}}/api/aircrafts/{{newReg}}` |
+| 2 - Aircraft (US102 a US105, pontes B1a/B3a/B3b) | US103 Aeronave inexistente -> 404 | GET | `{{base1}}/api/aircrafts/CS-XXX` |
+| 2 - Aircraft (US102 a US105, pontes B1a/B3a/B3b) | US103 Sem token -> 401 | GET | `{{base1}}/api/aircrafts/{{newReg}}` |
+| 2 - Aircraft (US102 a US105, pontes B1a/B3a/B3b) | US104 Pesquisar por modelo -> 200 | GET | `{{base1}}/api/aircrafts?modelName={{newModel}}` |
+| 2 - Aircraft (US102 a US105, pontes B1a/B3a/B3b) | US104 Pesquisar por estado AVAILABLE -> 200 | GET | `{{base1}}/api/aircrafts?status=AVAILABLE&size=100` |
+| 2 - Aircraft (US102 a US105, pontes B1a/B3a/B3b) | US104 Pesquisar por ano de fabrico -> 200 | GET | `{{base1}}/api/aircrafts?manufacturingYear=2021&modelName={{newModel}}` |
+| 2 - Aircraft (US102 a US105, pontes B1a/B3a/B3b) | US104 Paginação (size=1) -> 200 | GET | `{{base1}}/api/aircrafts?size=1&page=0` |
+| 2 - Aircraft (US102 a US105, pontes B1a/B3a/B3b) | US104 Estado inválido -> 400 | GET | `{{base1}}/api/aircrafts?status=BANANA` |
+| 2 - Aircraft (US102 a US105, pontes B1a/B3a/B3b) | US104 size acima do máximo -> 400 | GET | `{{base1}}/api/aircrafts?size=500` |
+| 2 - Aircraft (US102 a US105, pontes B1a/B3a/B3b) | US105 Passar a UNDER_MAINTENANCE (ATCC) -> 200 | PATCH | `{{base1}}/api/aircrafts/{{newReg}}/status` |
+| 2 - Aircraft (US102 a US105, pontes B1a/B3a/B3b) | B3b Voltar a AVAILABLE (MAINTENANCE_TECHNICIAN) -> 200 | PATCH | `{{base1}}/api/aircrafts/{{newReg}}/status` |
+| 2 - Aircraft (US102 a US105, pontes B1a/B3a/B3b) | US105 Estado inválido -> 400 | PATCH | `{{base1}}/api/aircrafts/{{newReg}}/status` |
+| 2 - Aircraft (US102 a US105, pontes B1a/B3a/B3b) | US105 Role errada (BACKOFFICE) -> 403 | PATCH | `{{base1}}/api/aircrafts/{{newReg}}/status` |
+| 2 - Aircraft (US102 a US105, pontes B1a/B3a/B3b) | US105 Aeronave inexistente -> 404 | PATCH | `{{base1}}/api/aircrafts/CS-XXX/status` |
+| 2 - Aircraft (US102 a US105, pontes B1a/B3a/B3b) | US105 Passar a IN_FLIGHT -> 200 | PATCH | `{{base1}}/api/aircrafts/{{newReg}}/status` |
+| 2 - Aircraft (US102 a US105, pontes B1a/B3a/B3b) | US105 IN_FLIGHT -> UNDER_MAINTENANCE (transição inválida) -> 409 | PATCH | `{{base1}}/api/aircrafts/{{newReg}}/status` |
+| 2 - Aircraft (US102 a US105, pontes B1a/B3a/B3b) | US105 IN_FLIGHT -> AVAILABLE -> 200 | PATCH | `{{base1}}/api/aircrafts/{{newReg}}/status` |
+| 3 - Peer-to-peer (precisa das 3 réplicas ligadas) | 3.1 Criar aeronave diretamente na RÉPLICA 2 (8181) -> 201 | POST | `{{base2}}/api/aircrafts` |
+| 3 - Peer-to-peer (precisa das 3 réplicas ligadas) | 3.2 GET na réplica 1 (aeronave só existe na 2) -> 200 (peer forwarding) | GET | `{{base1}}/api/aircrafts/{{p2pReg}}` |
+| 3 - Peer-to-peer (precisa das 3 réplicas ligadas) | 3.3 GET na réplica 3 -> 200 (também encontra no peer) | GET | `{{base3}}/api/aircrafts/{{p2pReg}}` |
+| 3 - Peer-to-peer (precisa das 3 réplicas ligadas) | 3.4 GET modelo A330 na réplica 1 (modelo só existe na 2) -> 200 | GET | `{{base1}}/api/aircraft-models/A330` |
+| 3 - Peer-to-peer (precisa das 3 réplicas ligadas) | 3.5 PATCH na réplica 1 encaminhado para o dono (réplica 2) -> 200 | PATCH | `{{base1}}/api/aircrafts/{{p2pReg}}/status` |
+| 3 - Peer-to-peer (precisa das 3 réplicas ligadas) | 3.6 GET direto na réplica 2: a escrita ficou no dono | GET | `{{base2}}/api/aircrafts/{{p2pReg}}` |
+| 3 - Peer-to-peer (precisa das 3 réplicas ligadas) | 3.7 PATCH de modelo na réplica 1 encaminhado para a réplica 2 -> 200 | PATCH | `{{base1}}/api/aircraft-models/A330` |
+| 3 - Peer-to-peer (precisa das 3 réplicas ligadas) | 3.8 Criar aeronave na réplica 1 com modelo da réplica 2 -> 201 | POST | `{{base1}}/api/aircrafts` |
+| 3 - Peer-to-peer (precisa das 3 réplicas ligadas) | 3.9 Listagem agregada (réplica 1) contém dados das 3 réplicas -> 200 | GET | `{{base1}}/api/aircrafts?size=100` |
+| 3 - Peer-to-peer (precisa das 3 réplicas ligadas) | 3.10 Pesquisa agregada por modelo A330 -> 200 | GET | `{{base1}}/api/aircrafts?modelName=A330&size=100` |
+| 4 - Disponibilidade (US205) | US205 Disponibilidade de uma aeronave -> 200 | GET | `{{base1}}/api/aircrafts/{{newReg}}/availability` |
+| 4 - Disponibilidade (US205) | US205 Disponibilidade de aeronave de outra réplica -> 200 | GET | `{{base1}}/api/aircrafts/{{p2pReg}}/availability` |
+| 4 - Disponibilidade (US205) | US205 Disponibilidade da frota -> 200 | GET | `{{base1}}/api/aircrafts/availability` |
+| 4 - Disponibilidade (US205) | US205 Aeronave inexistente -> 404 | GET | `{{base1}}/api/aircrafts/CS-XXX/availability` |
+| 4 - Disponibilidade (US205) | US205 Role errada (BACKOFFICE) -> 403 | GET | `{{base1}}/api/aircrafts/availability` |
+| 5 - Integração com Flight Routes (US203, US204, US206) - precisa do Flight Routes ou do stub na 8084 | US206 Horas operacionais da frota -> 200 | GET | `{{base1}}/api/aircrafts/operational-hours?size=100` |
+| 5 - Integração com Flight Routes (US203, US204, US206) - precisa do Flight Routes ou do stub na 8084 | US206 Role errada (BACKOFFICE) -> 403 | GET | `{{base1}}/api/aircrafts/operational-hours` |
+| 5 - Integração com Flight Routes (US203, US204, US206) - precisa do Flight Routes ou do stub na 8084 | US203 Rotas compatíveis com CS-TUA -> 200 | GET | `{{base1}}/api/aircrafts/CS-TUA/compatible-routes` |
+| 5 - Integração com Flight Routes (US203, US204, US206) - precisa do Flight Routes ou do stub na 8084 | US203 Aeronave inexistente -> 404 | GET | `{{base1}}/api/aircrafts/CS-XXX/compatible-routes` |
+| 5 - Integração com Flight Routes (US203, US204, US206) - precisa do Flight Routes ou do stub na 8084 | US203 Role errada (BACKOFFICE) -> 403 | GET | `{{base1}}/api/aircrafts/CS-TUA/compatible-routes` |
+| 5 - Integração com Flight Routes (US203, US204, US206) - precisa do Flight Routes ou do stub na 8084 | US204 Top 5 modelos mais utilizados (BACKOFFICE) -> 200 | GET | `{{base1}}/api/aircraft-models/top-utilized` |
+| 5 - Integração com Flight Routes (US203, US204, US206) - precisa do Flight Routes ou do stub na 8084 | US204 limit=0 -> 400 | GET | `{{base1}}/api/aircraft-models/top-utilized?limit=0` |
+| 6 - Tolerância a falhas (MANUAL: pára a réplica 3 e corre só esta pasta) | 6.1 Réplica 3 em baixo: aeronave da réplica 2 continua acessível -> 200 | GET | `{{base1}}/api/aircrafts/{{p2pReg}}` |
+| 6 - Tolerância a falhas (MANUAL: pára a réplica 3 e corre só esta pasta) | 6.2 Réplica 3 em baixo: aeronave da réplica 3 -> 404 + X-Partial-Response | GET | `{{base1}}/api/aircrafts/CS-TUE` |
+| 6 - Tolerância a falhas (MANUAL: pára a réplica 3 e corre só esta pasta) | 6.3 Réplica 3 em baixo: listagem agregada continua a responder (200 parcial) | GET | `{{base1}}/api/aircrafts?size=100` |
 
 <a id="sec-aisafe-airports-distributed"></a>
 

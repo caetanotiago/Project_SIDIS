@@ -15,8 +15,9 @@ public class AircraftManagementAuthorizationRules implements AuthorizationRules 
     @Override
     public void configure(AuthorizeHttpRequestsConfigurer<HttpSecurity>.AuthorizationManagerRequestMatcherRegistry auth) {
         auth
-                // US101 – registar modelo
+                // US101 – registar modelo; US201 – atualizar especificações
                 .requestMatchers(HttpMethod.POST, "/api/aircraft-models").hasRole("BACKOFFICE_OPERATOR")
+                .requestMatchers(HttpMethod.PATCH, "/api/aircraft-models/*").hasRole("BACKOFFICE_OPERATOR")
                 // US204 – Top modelos (Backoffice pela US; ATCC porque é o único role que o Flight Routes
                 // aceita em /api/scheduled-flights/** – ver Q4 do contrato)
                 .requestMatchers(HttpMethod.GET, "/api/aircraft-models/top-utilized")
@@ -30,9 +31,11 @@ public class AircraftManagementAuthorizationRules implements AuthorizationRules 
                 // US105 / ponte B3b – alterar estado (ATCC ou Maintenance)
                 .requestMatchers(HttpMethod.PATCH, "/api/aircrafts/*/status")
                         .hasAnyRole("ATCC", "MAINTENANCE_TECHNICIAN", "MAINTENANCE_SUPERVISOR")
-                // US206 e US203 – só ATCC
+                // US203, US205 e US206 – só ATCC
                 .requestMatchers(HttpMethod.GET, "/api/aircrafts/operational-hours").hasRole("ATCC")
+                .requestMatchers(HttpMethod.GET, "/api/aircrafts/availability").hasRole("ATCC")
                 .requestMatchers(HttpMethod.GET, "/api/aircrafts/*/compatible-routes").hasRole("ATCC")
+                .requestMatchers(HttpMethod.GET, "/api/aircrafts/*/availability").hasRole("ATCC")
                 // US103, US104 / pontes B1a e B3a
                 .requestMatchers(HttpMethod.GET, "/api/aircrafts/**")
                         .hasAnyRole("ATCC", "BACKOFFICE_OPERATOR", "MAINTENANCE_TECHNICIAN", "MAINTENANCE_SUPERVISOR");

@@ -14,7 +14,7 @@
 | 1B | US201 | Update an aircraft model's specifications | Backoffice Operator | Planned |
 | 1B | US202 | Register an aircraft model with an optional image or technical diagram | Backoffice Operator | Planned |
 | 1B | US203 | View the routes compatible with an aircraft (range of the model, capacity of the aircraft) | ATCC | Implemented |
-| 1B | US204 | Top 5 most utilised aircraft models | Backoffice Operator | Implemented (see O1 in [L3](../../3-components/aircraftmanagement/AircraftManagement-Components.md#6-observations)) |
+| 1B | US204 | Top 5 most utilised aircraft models | Backoffice Operator | Implemented |
 | 1B | US205 | Real-time aircraft availability status (available, in-flight, under maintenance, inactive) | ATCC | Planned |
 | 1B | US206 | Total operational hours of each aircraft of the fleet | ATCC | Implemented |
 | Bonus | US223, US224 | Utilisation graphs; search by features (Wi-Fi, engine type) | ATCC | Planned |
@@ -29,7 +29,7 @@
 - **Registration format (Q10, proposal):** `PREFIX-SUFFIX`, upper case, e.g. `CS-TUA` (`^[A-Z0-9]{1,2}-[A-Z0-9]{2,5}$`), checked when an aircraft is registered. To be confirmed with the customer.
 - **"Most utilised" (Q5):** total **flight time** (minutes) of all the aircraft of the model, from contract B4b. Models without flights are not ranked.
 - **Pagination (Q8):** a stable `PageDTO` (`content`, `page`, `size`, `totalElements`, `totalPages`) instead of Spring's `Page`; maximum size 100.
-- **Roles (Q4):** US102 → ATCC; US101 → Backoffice Operator; reads (US103/US104, B1, B3a) also for the Backoffice and Maintenance roles because the JWT of the consumer's user is forwarded; US105/B3b → ATCC and Maintenance roles; US203/US206 → ATCC; US204 → Backoffice Operator and ATCC (Backoffice is rejected by Flight Routes today — see O1).
+- **Roles (Q4):** US102 → ATCC; US101 → Backoffice Operator; reads (US103/US104, B1, B3a) also for the Backoffice and Maintenance roles because the JWT of the consumer's user is forwarded; US105/B3b → ATCC and Maintenance roles; US203/US206 → ATCC; US204 → Backoffice Operator and ATCC (Flight Routes admits both roles on `minutes-by-aircraft`, B4b).
 - **Open question Q-AM1 (US205):** what is "in-flight"? Today `IN_FLIGHT` is only a status that can be set through US105. A real-time value would be derived from the scheduled flights of Flight Routes (a flight whose date/time interval contains *now*), which needs a new endpoint there. To be decided with the customer and the Flight Routes owner before implementing.
 
 ## 2. Acceptance criteria
@@ -131,6 +131,6 @@ H2 console: `http://localhost:8081/h2-console` (JDBC URL `jdbc:h2:mem:aircraftMa
 
 - Cross-replica uniqueness of the registration number and of the model name is best-effort (AP, see [L2 §3.3](../../2-containers/Containers.md#33-consistency-model-cap)): during a partition, or with two simultaneous registrations on different replicas, the same value can be stored twice. Deterministic ownership (hash of the registration → replica) would remove this at the cost of availability for writes when that replica is down.
 - US203, US204 and US206 depend on Flight Routes being available (`503` otherwise); the figures are already summed over the Flight Routes replicas and a partial answer is passed on with `X-Partial-Response`.
-- **US204 for the Backoffice Operator** is expected to fail with `403` today (Flight Routes accepts only `ATCC` on `/api/scheduled-flights/**`). Options: widen that rule in Flight Routes (contract Q4), or let Aircraft Management obtain the minutes with a service identity. The Postman request *US204 as Backoffice* documents the current behaviour.
+- **US204 works for the Backoffice Operator and for the ATCC**: the JWT is forwarded to Flight Routes, whose rule for `GET /api/scheduled-flights/statistics/minutes-by-aircraft` (B4b) accepts `ATCC` and `BACKOFFICE_OPERATOR` (contract Q4); the rest of `/api/scheduled-flights/**` stays `ATCC` only, which matches US206. The Postman request *US204 Top 5 modelos mais utilizados (BACKOFFICE) -> 200* covers it.
 - US205 depends on the answer to Q-AM1. US201 and US202 reuse the owner-forwarding pattern of S3 and need an `update` behaviour on `AircraftModel`.
-- The PSOFT requirement of HATEOAS links is not implemented yet (see O2 in L3).
+- The PSOFT requirement of HATEOAS links is not implemented yet (see O1 in L3).
