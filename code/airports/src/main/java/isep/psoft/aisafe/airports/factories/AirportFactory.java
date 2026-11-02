@@ -8,10 +8,6 @@ import org.springframework.stereotype.Component;
 
 import java.util.List;
 
-/**
- * Factory: cria um Airport válido a partir do pedido de registo (US106 + US207 + contactos US208).
- * As regras de negócio ficam no domínio; aqui só se monta o agregado e os value objects.
- */
 @Component
 public class AirportFactory {
 

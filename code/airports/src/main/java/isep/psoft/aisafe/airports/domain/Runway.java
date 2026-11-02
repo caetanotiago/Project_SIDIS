@@ -7,16 +7,6 @@ import lombok.EqualsAndHashCode;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
-/**
- * Value object: pista de um aeroporto (US106: "runway information (name, length, orientation, …)").
- * <ul>
- *   <li>{@code name}: designação, ex. "17/35";</li>
- *   <li>{@code lengthMeters}: comprimento em metros;</li>
- *   <li>{@code orientation}: rumo magnético em graus (0–359);</li>
- *   <li>{@code surface}: opcional, ex. "ASPHALT".</li>
- * </ul>
- * Não tem identidade própria: só existe dentro do agregado Airport.
- */
 @Embeddable
 @Getter
 @EqualsAndHashCode

@@ -15,11 +15,6 @@ import java.util.stream.Collectors;
 
 /**
  * US211 — aeroportos agrupados por região ou por país.
- *
- * <p>Parte da lista de TODOS os aeroportos de TODAS as réplicas (a mesma agregação da US108, sem
- * filtros) e agrupa-a aqui. Agrupar só depois de juntar os dados é obrigatório: cada réplica tem só
- * uma parte dos aeroportos, por isso um grupo pode ter aeroportos guardados em réplicas diferentes.
- * Aeroportos sem região ficam no grupo "Unspecified". Grupos por ordem alfabética.
  */
 @Service
 @RequiredArgsConstructor

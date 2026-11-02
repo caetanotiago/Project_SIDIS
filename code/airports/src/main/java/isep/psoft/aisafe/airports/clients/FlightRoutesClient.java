@@ -9,15 +9,7 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.util.Map;
 
-/**
- * Cliente HTTP do microsserviço Flight Routes (anti-corruption layer). Contrato B5:
- * {@code GET /api/routes/statistics/count-by-airport} devolve {@code {"OPO": 2, "LIS": 1}} — o número
- * de rotas de cada aeroporto (origem + destino), já somado sobre todas as réplicas do Flight Routes.
- * Aeroportos sem rotas não aparecem (contam como 0).
- *
- * <p>Erros: 401/403 → o mesmo estado (o Flight Routes recusou o utilizador); nenhuma réplica do
- * Flight Routes responde → RemoteServiceUnavailableException (503), lançada pelo ReplicatedServiceClient.
- */
+
 @Component
 public class FlightRoutesClient {
 

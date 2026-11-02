@@ -12,7 +12,9 @@ Set-Location $codeDir
 Assert-DevCerts $Profiles
 .\mvnw.cmd -q -pl $Service -am -DskipTests package
 foreach ($i in 1..$Replicas) {
-    $argList = "-NoExit", "-File", (Join-Path $PSScriptRoot "run-instance.ps1"), "-Service", $Service, "-Instance", $i
+    # Caminho entre aspas: o Start-Process do Windows PowerShell junta os argumentos sem aspas, e uma pasta
+    # com espacos (ex.: C:\Users\Nome Apelido) partia o -File em dois e a janela fechava logo.
+    $argList = "-NoExit", "-ExecutionPolicy", "Bypass", "-File", "`"$(Join-Path $PSScriptRoot "run-instance.ps1")`"", "-Service", $Service, "-Instance", $i
     if ($Profiles) { $argList += "-Profiles", $Profiles }
     Start-Process powershell -ArgumentList $argList -WorkingDirectory $codeDir
 }

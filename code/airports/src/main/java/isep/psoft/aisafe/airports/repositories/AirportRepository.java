@@ -7,18 +7,8 @@ import org.springframework.data.repository.query.Param;
 
 import java.util.List;
 
-/**
- * Aeroportos guardados NESTA réplica. Os dados das outras réplicas são obtidos por REST
- * (ver AirportReplicaQueries).
- */
 public interface AirportRepository extends JpaRepository<Airport, String> {
 
-    /**
-     * US108 — pesquisa por cidade, país e/ou nome; parâmetros a null são ignorados.
-     * Cidade e país: igualdade sem distinguir maiúsculas. Nome: "contém".
-     * Os valores chegam já em minúsculas (e o nome já como padrão LIKE) a partir do serviço,
-     * para não aplicar funções a parâmetros que podem ser null.
-     */
     @Query("""
             select a from Airport a
             where (:city is null or lower(a.city) = :city)

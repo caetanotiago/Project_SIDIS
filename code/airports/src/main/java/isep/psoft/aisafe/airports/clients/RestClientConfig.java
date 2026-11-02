@@ -8,12 +8,6 @@ import org.springframework.context.annotation.Configuration;
 
 import java.util.List;
 
-/**
- * Clientes dos microsserviços remotos usados pelo Airports. Cada um conhece TODAS as réplicas do
- * serviço (services.*.urls) e faz load balancing round-robin com failover, timeouts, retry e circuit
- * breaker (biblioteca common). Cada pedido leva o JWT do utilizador, o correlation id e a
- * X-Service-Key, para o serviço remoto aplicar o controlo de acessos com o mesmo utilizador/roles.
- */
 @Configuration
 public class RestClientConfig {
 
