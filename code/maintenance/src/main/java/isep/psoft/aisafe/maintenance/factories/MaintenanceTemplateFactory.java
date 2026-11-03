@@ -6,7 +6,6 @@ import isep.psoft.aisafe.maintenance.domain.TemplateType;
 import isep.psoft.aisafe.maintenance.dto.CreateMaintenanceTemplateDTO;
 import org.springframework.stereotype.Component;
 
-/** Factory (Creator): converte o pedido da US115 (templates) num aggregate válido. */
 @Component
 public class MaintenanceTemplateFactory {
 

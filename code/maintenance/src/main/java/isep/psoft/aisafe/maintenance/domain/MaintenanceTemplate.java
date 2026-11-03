@@ -26,11 +26,6 @@ import java.util.Locale;
 import java.util.Set;
 import java.util.UUID;
 
-/**
- * Aggregate Root: template de manutenção (US115). Define o tipo de manutenção, os modelos de
- * aeronave a que se aplica (referenciados pelo nome — pertencem ao Aircraft Management), a checklist
- * que é copiada para cada registo e, opcionalmente, a periodicidade usada nos alertas (US222).
- */
 @Entity
 @Table(name = "maintenance_template")
 @Getter
@@ -80,16 +75,11 @@ public class MaintenanceTemplate {
         this.interval = interval;
     }
 
-    /** Template criado por um utilizador: identificador aleatório (UUID). */
     public static MaintenanceTemplate create(String name, TemplateType type, Collection<String> applicableModels,
                                              List<String> checklist, MaintenanceInterval interval) {
         return new MaintenanceTemplate(UUID.randomUUID().toString(), name, type, applicableModels, checklist, interval);
     }
 
-    /**
-     * Template de referência (WP#0A), carregado em TODAS as réplicas com um id derivado do nome:
-     * as três cópias são o mesmo template e a junção por id elimina os duplicados.
-     */
     public static MaintenanceTemplate reference(String name, TemplateType type, Collection<String> applicableModels,
                                                 List<String> checklist, MaintenanceInterval interval) {
         return new MaintenanceTemplate(referenceId(name), name, type, applicableModels, checklist, interval);
@@ -100,7 +90,6 @@ public class MaintenanceTemplate {
         return UUID.nameUUIDFromBytes(key.getBytes(StandardCharsets.UTF_8)).toString();
     }
 
-    /** O template aplica-se a este modelo de aeronave? (comparação sem distinguir maiúsculas) */
     public boolean appliesTo(String modelName) {
         return modelName != null && applicableModels.stream().anyMatch(m -> m.equalsIgnoreCase(modelName.trim()));
     }

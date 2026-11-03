@@ -42,7 +42,7 @@ class MaintenanceDuePolicyTest {
     void calendarDaysSinceTheLastCompletionOrTheManufacturingDate() {
         assertTrue(policy.evaluate(ctx(null, 120, TODAY.minusDays(119), null, 0)).isEmpty());
         assertEquals(DueTrigger.CALENDAR_DAYS, policy.evaluate(ctx(null, 120, TODAY.minusDays(120), null, 0)).get(0).trigger());
-        // nunca feito: conta desde o fabrico (2026-01-01 → 303 dias)
+
         assertEquals(303, policy.evaluate(ctx(null, 120, null, null, 0)).get(0).current());
     }
 

@@ -12,7 +12,6 @@ import org.springframework.stereotype.Component;
 import static org.springframework.hateoas.server.mvc.WebMvcLinkBuilder.linkTo;
 import static org.springframework.hateoas.server.mvc.WebMvcLinkBuilder.methodOn;
 
-/** Domain → DTO (Published Language) + links HATEOAS. */
 @Component
 public class MaintenanceRecordAssembler {
 
@@ -42,10 +41,6 @@ public class MaintenanceRecordAssembler {
         return withLinks(dto);
     }
 
-    /**
-     * (Re)cria os links a apontar para ESTA réplica. Usado também nos registos recebidos de peers:
-     * os links continuam válidos aqui, porque esta réplica encaminha o pedido ao dono.
-     */
     public MaintenanceRecordDTO withLinks(MaintenanceRecordDTO dto) {
         dto.removeLinks();
         dto.add(linkTo(methodOn(MaintenanceRecordController.class).getById(dto.getId())).withSelfRel());

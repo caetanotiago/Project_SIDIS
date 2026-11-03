@@ -20,7 +20,6 @@ import org.springframework.web.bind.annotation.RestController;
 import java.net.URI;
 import java.util.List;
 
-/** /api/maintenance-templates — US115 (templates). */
 @RestController
 @RequestMapping("/api/maintenance-templates")
 @RequiredArgsConstructor

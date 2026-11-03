@@ -22,13 +22,6 @@ import lombok.NoArgsConstructor;
 import java.util.ArrayList;
 import java.util.List;
 
-/**
- * Aggregate Root: registo de manutenção de uma aeronave (US115, US119, US217).
- *
- * <p>Referencia a aeronave e o template por identidade (estão noutro serviço / podem estar noutra
- * réplica) e guarda uma cópia do modelo da aeronave, do template e da checklist no momento da
- * criação. Ciclo de vida: IN_PROGRESS → COMPLETED (uma única vez).
- */
 @Entity
 @Table(name = "maintenance_record")
 @Getter
@@ -93,7 +86,6 @@ public class MaintenanceRecord {
         this.status = MaintenanceStatus.IN_PROGRESS;
     }
 
-    /** US119: conclui o registo. Só uma vez; a data de conclusão não pode ser anterior ao início. */
     public void complete(CompletionDetails completionDetails) {
         if (completionDetails == null) {
             throw new IllegalArgumentException("The completion details are required.");
@@ -109,7 +101,6 @@ public class MaintenanceRecord {
         this.status = MaintenanceStatus.COMPLETED;
     }
 
-    /** US217: categoriza o registo por componente (só enquanto está em curso). */
     public void categorize(MaintenanceComponent newComponent) {
         if (newComponent == null) {
             throw new IllegalArgumentException("The maintenance component is required.");
@@ -124,7 +115,6 @@ public class MaintenanceRecord {
         return status == MaintenanceStatus.IN_PROGRESS;
     }
 
-    /** US117: duração real se concluído, senão a duração prevista. */
     public long maintenanceMinutes() {
         return isOngoing() ? details.getExpectedDurationMinutes() : completion.getActualDurationMinutes();
     }

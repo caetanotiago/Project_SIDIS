@@ -4,10 +4,6 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 
 import java.util.List;
 
-/**
- * US221: turnaround médio por modelo ("aircraft type", conversa 009). Cada réplica envia somas e
- * contagens; a média só é calculada depois de somar todas as réplicas.
- */
 @JsonIgnoreProperties(ignoreUnknown = true)
 public record TurnaroundReportDTO(List<TurnaroundItem> items) {
 

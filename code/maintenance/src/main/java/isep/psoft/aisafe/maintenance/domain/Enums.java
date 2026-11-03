@@ -2,7 +2,6 @@ package isep.psoft.aisafe.maintenance.domain;
 
 import java.util.Arrays;
 
-/** Conversão tolerante (maiúsculas/minúsculas, espaços) de texto para enums, com 400 explícito. */
 final class Enums {
 
     private Enums() {

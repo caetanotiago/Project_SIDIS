@@ -9,11 +9,6 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-/**
- * US115 (templates). O template fica guardado na réplica que recebeu o pedido. O nome tem de ser
- * único em todas as réplicas que respondem (best-effort, AP) e os modelos têm de existir no
- * Aircraft Management (B3c).
- */
 @Service
 @RequiredArgsConstructor
 public class CreateMaintenanceTemplateService {
@@ -25,7 +20,7 @@ public class CreateMaintenanceTemplateService {
 
     @Transactional
     public MaintenanceTemplate create(CreateMaintenanceTemplateDTO dto) {
-        MaintenanceTemplate template = factory.create(dto); // valida os dados (400)
+        MaintenanceTemplate template = factory.create(dto);
 
         if (repository.existsByNameIgnoreCase(template.getName())
                 || !viewTemplates.list(null, null, template.getName()).isEmpty()) {

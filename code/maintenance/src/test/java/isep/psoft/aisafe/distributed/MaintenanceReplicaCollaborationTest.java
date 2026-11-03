@@ -35,11 +35,6 @@ import java.util.concurrent.ConcurrentHashMap;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-/**
- * Colaboração entre réplicas da Maintenance: DUAS réplicas reais (A e B, cada uma com a sua H2),
- * peers uma da outra, e um stub com estado do Aircraft Management (aeronaves, modelos, PATCH do
- * estado, frota e horas de voo). Cobre os cenários S1–S6 de docs/5-scenarios/maintenance.
- */
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 class MaintenanceReplicaCollaborationTest {
 
@@ -48,7 +43,6 @@ class MaintenanceReplicaCollaborationTest {
     private static final HttpClient HTTP = HttpClient.newHttpClient();
     private static final String A_CHECK_ID = MaintenanceTemplate.referenceId(ReferenceTemplatesBootstrap.A_CHECK);
 
-    /** Estado das aeronaves no stub do Aircraft Management (matrícula → estado). */
     private static final Map<String, String> AIRCRAFT_STATUS = new ConcurrentHashMap<>();
 
     private static HttpServer aircraftManagement;
@@ -60,9 +54,9 @@ class MaintenanceReplicaCollaborationTest {
     private static String supervisor;
     private static String atcc;
 
-    private static String templateOnB;   // template criado em B (só A320, de 30 em 30 dias)
-    private static String recordOnA;     // CS-TUA, A-Check, guardado em A
-    private static String recordOnB;     // CS-TUA, template de B, guardado em B
+    private static String templateOnB;
+    private static String recordOnA;
+    private static String recordOnB;
 
     @BeforeAll
     static void startReplicas() throws IOException {
@@ -92,12 +86,10 @@ class MaintenanceReplicaCollaborationTest {
         if (aircraftManagement != null) aircraftManagement.stop(0);
     }
 
-    // ------------------------------------------------------------------ templates (US115)
-
     @Test
     @Order(1)
     void templatesAreCreatedInOneReplicaAndFoundFromAnyReplica() throws Exception {
-        // Templates de referência (WP#0A): em todas as réplicas, sem duplicados na listagem
+
         JsonNode list = json(send("GET", urlA + "/api/maintenance-templates", null, tech));
         assertEquals(4, list.size());
 
@@ -108,13 +100,11 @@ class MaintenanceReplicaCollaborationTest {
         assertTrue(created.headers().firstValue("Location").isPresent());
         templateOnB = json(created).get("id").asString();
 
-        // GET por id em A de um template guardado em B (S1)
         HttpResponse<String> fromA = send("GET", urlA + "/api/maintenance-templates/" + templateOnB, null, tech);
         assertEquals(200, fromA.statusCode());
         assertEquals("MODIFICATION", json(fromA).get("type").asString());
         assertEquals(5, json(send("GET", urlA + "/api/maintenance-templates", null, tech)).size());
 
-        // Nome repetido (existe em B) e modelo desconhecido (B3c) → 400
         assertEquals(400, send("POST", urlA + "/api/maintenance-templates",
                 "{\"name\":\"avionics software update\",\"type\":\"INSPECTION\",\"applicableModels\":[\"A320\"],\"checklist\":[\"x\"]}",
                 tech).statusCode());
@@ -123,12 +113,10 @@ class MaintenanceReplicaCollaborationTest {
                 tech).statusCode());
     }
 
-    // ------------------------------------------------------------------ registos (US115)
-
     @Test
     @Order(2)
     void recordsAreStoredWhereTheyAreCreatedAndTheAircraftGoesUnderMaintenance() throws Exception {
-        // Registo em A com um template de referência
+
         HttpResponse<String> onA = send("POST", urlA + "/api/maintenance-records", record("CS-TUA", A_CHECK_ID, null), tech);
         assertEquals(201, onA.statusCode(), onA.body());
         recordOnA = json(onA).get("id").asString();
@@ -136,15 +124,13 @@ class MaintenanceReplicaCollaborationTest {
         assertEquals(4, json(onA).get("checklist").size());
         assertEquals("UNDER_MAINTENANCE", AIRCRAFT_STATUS.get("CS-TUA"));
 
-        // 2.º registo em A (template guardado em B, encontrado pelos peers) e um registo em B
         HttpResponse<String> secondOnA = send("POST", urlA + "/api/maintenance-records", record("cs-tua", templateOnB, "avionics"), tech);
         assertEquals(201, secondOnA.statusCode(), secondOnA.body());
         recordOnB = json(send("POST", urlB + "/api/maintenance-records", record("CS-TUA", templateOnB, null), tech)).get("id").asString();
         assertEquals(200, send("GET", urlB + "/api/maintenance-records/" + recordOnB, null, tech).statusCode());
 
-        // Aeronave em voo → 409 do Aircraft Management, nada gravado
         assertEquals(409, send("POST", urlA + "/api/maintenance-records", record("CS-TUF", A_CHECK_ID, null), tech).statusCode());
-        // Aeronave desconhecida → 404; template não aplicável ao modelo (E190) → 400; data futura → 400
+
         assertEquals(404, send("POST", urlA + "/api/maintenance-records", record("CS-XXX", A_CHECK_ID, null), tech).statusCode());
         assertEquals(400, send("POST", urlA + "/api/maintenance-records", record("CS-TUE", templateOnB, null), tech).statusCode());
         assertEquals(400, send("POST", urlA + "/api/maintenance-records",
@@ -162,27 +148,22 @@ class MaintenanceReplicaCollaborationTest {
         assertTrue(json(forwarded).get("_links").get("self").get("href").asString().startsWith(urlA));
         assertEquals(404, send("GET", urlA + "/api/maintenance-records/missing-id", null, tech).statusCode());
 
-        // US219 a partir de A e de B → a mesma lista (3 em curso: 2 em A, 1 em B)
         List<String> fromA = ids(json(send("GET", urlA + "/api/maintenance-records/ongoing", null, supervisor)).get("content"));
         List<String> fromB = ids(json(send("GET", urlB + "/api/maintenance-records/ongoing", null, supervisor)).get("content"));
         assertEquals(3, fromA.size());
         assertEquals(fromA, fromB);
 
-        // US116: aeronave existente (3 registos) / inexistente → 404; paginação depois de juntar
         JsonNode page = json(send("GET", urlB + "/api/maintenance-records/aircraft/CS-TUA?page=0&size=2", null, tech));
         assertEquals(3, page.get("totalElements").asInt());
         assertEquals(2, page.get("content").size());
         assertEquals(2, page.get("totalPages").asInt());
         assertEquals(404, send("GET", urlB + "/api/maintenance-records/aircraft/CS-XXX", null, tech).statusCode());
 
-        // US218: filtro por componente e por intervalo de datas
         assertEquals(1, json(send("GET", urlB + "/api/maintenance-records?component=AVIONICS", null, tech)).get("totalElements").asInt());
         assertEquals(0, json(send("GET", urlB + "/api/maintenance-records?to=" + LocalDate.now().minusDays(1), null, tech))
                 .get("totalElements").asInt());
         assertEquals(400, send("GET", urlB + "/api/maintenance-records?from=2026-12-01&to=2026-01-01", null, tech).statusCode());
     }
-
-    // ------------------------------------------------------------------ comandos (US217, US119)
 
     @Test
     @Order(4)
@@ -192,7 +173,6 @@ class MaintenanceReplicaCollaborationTest {
         assertEquals(200, categorized.statusCode(), categorized.body());
         assertEquals("ENGINE", json(send("GET", urlB + "/api/maintenance-records/" + recordOnB, null, tech)).get("component").asString());
 
-        // Completar em A um registo de B: executado por B; ainda há registos em curso → aeronave não é libertada
         HttpResponse<String> completed = send("PATCH", urlA + "/api/maintenance-records/" + recordOnB + "/complete",
                 "{\"notes\":\"Software updated\",\"cost\":1200.50,\"actualDurationMinutes\":90,\"aircraftFlightHours\":1500}", tech);
         assertEquals(200, completed.statusCode(), completed.body());
@@ -200,12 +180,11 @@ class MaintenanceReplicaCollaborationTest {
         assertEquals("false", completed.headers().firstValue("X-Aircraft-Released").orElse(null));
         assertEquals("UNDER_MAINTENANCE", AIRCRAFT_STATUS.get("CS-TUA"));
 
-        // Erros de negócio do dono propagados: já concluído → 409; recategorizar concluído → 409
         assertEquals(409, send("PATCH", urlA + "/api/maintenance-records/" + recordOnB + "/complete",
                 "{\"notes\":\"again\",\"cost\":1,\"actualDurationMinutes\":1}", tech).statusCode());
         assertEquals(409, send("PATCH", urlA + "/api/maintenance-records/" + recordOnB + "/component",
                 "{\"component\":\"ENGINE\"}", tech).statusCode());
-        // Validação → 400
+
         assertEquals(400, send("PATCH", urlA + "/api/maintenance-records/" + recordOnA + "/complete",
                 "{\"notes\":\"x\",\"cost\":-1,\"actualDurationMinutes\":10}", tech).statusCode());
     }
@@ -227,8 +206,6 @@ class MaintenanceReplicaCollaborationTest {
         assertEquals("true", r2.headers().firstValue("X-Aircraft-Released").orElse(null));
         assertEquals("AVAILABLE", AIRCRAFT_STATUS.get("CS-TUA"));
     }
-
-    // ------------------------------------------------------------------ estatísticas e alertas
 
     @Test
     @Order(6)
@@ -255,18 +232,15 @@ class MaintenanceReplicaCollaborationTest {
         alerts.forEach(a -> keys.add(a.get("aircraftRegistration").asString() + "|" + a.get("templateName").asString()
                 + "|" + a.get("trigger").asString()));
 
-        // CS-TUA (2019): C-Check nunca feito → dias; A-Check feito hoje com 1500 h (agora 1600) → não
         assertTrue(keys.contains("CS-TUA|C-Check Heavy Maintenance|CALENDAR_DAYS"), keys.toString());
         assertFalse(keys.stream().anyMatch(k -> k.startsWith("CS-TUA|A-Check")), keys.toString());
         assertFalse(keys.stream().anyMatch(k -> k.startsWith("CS-TUA|Avionics")), keys.toString());
-        // CS-TUE (fabricado há 200 dias): A-Check (120 dias) em atraso; C-Check (730) não
+
         assertTrue(keys.contains("CS-TUE|A-Check Inspection|CALENDAR_DAYS"), keys.toString());
         assertFalse(keys.contains("CS-TUE|C-Check Heavy Maintenance|CALENDAR_DAYS"), keys.toString());
-        // CS-TUG está INACTIVE → ignorada
+
         assertFalse(keys.stream().anyMatch(k -> k.startsWith("CS-TUG")), keys.toString());
     }
-
-    // ------------------------------------------------------------------ segurança
 
     @Test
     @Order(8)
@@ -290,8 +264,6 @@ class MaintenanceReplicaCollaborationTest {
         assertEquals(403, send("GET", urlA + "/api/maintenance-records/ongoing", null, tech).statusCode());
     }
 
-    // ------------------------------------------------------------------ falha de uma réplica
-
     @Test
     @Order(9)
     void whenAReplicaFailsTheOthersKeepServingSafely() throws Exception {
@@ -303,7 +275,6 @@ class MaintenanceReplicaCollaborationTest {
         assertEquals(404, send("GET", urlA + "/api/maintenance-records/" + recordOnB, null, tech).statusCode());
         assertEquals(200, send("GET", urlA + "/api/maintenance-records/" + recordOnA, null, tech).statusCode());
 
-        // Novo registo em A e conclusão: B não respondeu → a aeronave fica UNDER_MAINTENANCE (lado seguro)
         String id = json(send("POST", urlA + "/api/maintenance-records", record("CS-TUE", A_CHECK_ID, null), tech)).get("id").asString();
         HttpResponse<String> completed = send("PATCH", urlA + "/api/maintenance-records/" + id + "/complete",
                 "{\"notes\":\"done\",\"cost\":100,\"actualDurationMinutes\":60}", tech);
@@ -311,8 +282,6 @@ class MaintenanceReplicaCollaborationTest {
         assertEquals("false", completed.headers().firstValue("X-Aircraft-Released").orElse(null));
         assertEquals("UNDER_MAINTENANCE", AIRCRAFT_STATUS.get("CS-TUE"));
     }
-
-    // ------------------------------------------------------------------ infraestrutura do teste
 
     private static String record(String registration, String templateId, String component) {
         return "{\"aircraftRegistration\":\"" + registration + "\",\"templateId\":\"" + templateId + "\","
@@ -334,10 +303,9 @@ class MaintenanceReplicaCollaborationTest {
                 "--logging.file.name=target/it-logs/maintenance-" + name + ".log");
     }
 
-    /** Stub com estado do Aircraft Management (contratos B3a–B3d). */
     private static HttpServer startAircraftManagementStub() throws IOException {
         LocalDate now = LocalDate.now();
-        Map<String, String[]> aircraft = Map.of( // matrícula → modelo, data de fabrico, horas de voo
+        Map<String, String[]> aircraft = Map.of(
                 "CS-TUA", new String[]{"A320", "2019-05-14", "1600"},
                 "CS-TUE", new String[]{"E190", now.minusDays(200).toString(), "100"},
                 "CS-TUF", new String[]{"E190", now.minusDays(10).toString(), "5"},

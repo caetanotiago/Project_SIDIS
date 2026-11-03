@@ -16,12 +16,6 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 
-/**
- * WP#0A — "Preload maintenance templates". Carregados em TODAS as réplicas com ids derivados do nome
- * ({@link MaintenanceTemplate#reference}): as três cópias são o mesmo template, qualquer réplica o
- * serve localmente e a junção por id elimina os duplicados. Os templates não têm caso de uso de
- * alteração, por isso as cópias nunca divergem.
- */
 @Component
 @Order(1)
 @ConditionalOnProperty(prefix = "maintenance.bootstrap", name = "reference-templates", havingValue = "true",

@@ -29,7 +29,6 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 
-/** As réplicas trocam somas e contagens; médias e horas só depois de somar. */
 @ExtendWith(MockitoExtension.class)
 class MaintenanceStatisticsServiceTest {
 
@@ -46,11 +45,11 @@ class MaintenanceStatisticsServiceTest {
 
     @Test
     void turnaroundAverageIsComputedAfterAddingThePeers() {
-        // local: 2 registos A320 com 450 min de média (900 no total)
+
         when(repository.findByStatus(MaintenanceStatus.COMPLETED)).thenReturn(List.of(
                 completed("CS-TUA", "A320", "100", 400, LocalDate.now()),
                 completed("CS-TUA", "A320", "100", 500, LocalDate.now())));
-        // peer: 1 registo A320 com 300 min
+
         when(peerClient.collect(eq(MaintenanceStatisticsService.TURNAROUND_URI), any())).thenReturn(new PeerResult<>(
                 List.of(new TurnaroundReportDTO(List.of(TurnaroundReportDTO.TurnaroundItem.of("A320", 1, 300)))), 0, 1));
 
@@ -58,7 +57,7 @@ class MaintenanceStatisticsServiceTest {
 
         assertEquals(3, a320.completedRecords());
         assertEquals(1200, a320.totalMinutes());
-        assertEquals(400.0, a320.averageMinutes()); // não 375 (média das médias)
+        assertEquals(400.0, a320.averageMinutes());
         assertEquals(6.67, a320.averageHours());
     }
 
@@ -75,7 +74,7 @@ class MaintenanceStatisticsServiceTest {
 
         assertEquals(new BigDecimal("4000.50"), report.totalCost());
         assertEquals(3, report.records());
-        assertEquals("E190", report.items().get(0).key()); // mais caro primeiro
+        assertEquals("E190", report.items().get(0).key());
         assertEquals(new BigDecimal("1500.50"), report.items().get(1).totalCost());
     }
 

@@ -8,7 +8,6 @@ import org.springframework.context.annotation.Configuration;
 
 import java.util.List;
 
-/** Cliente resiliente (round-robin + failover) para as 3 réplicas do Aircraft Management. */
 @Configuration
 public class RestClientConfig {
 

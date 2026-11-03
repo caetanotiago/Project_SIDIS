@@ -64,7 +64,7 @@ class CompleteMaintenanceRecordServiceTest {
         CompleteMaintenanceRecordService.Result result = service.complete("rec-1", REQUEST);
 
         assertEquals(MaintenanceStatus.COMPLETED, record.getStatus());
-        assertEquals(LocalDate.now(), record.getCompletion().getCompletionDate()); // por omissão: hoje
+        assertEquals(LocalDate.now(), record.getCompletion().getCompletionDate());
         assertTrue(result.aircraftReleased());
         verify(peerClient, never()).forwardToOwner(any(), any(), any(), any());
     }

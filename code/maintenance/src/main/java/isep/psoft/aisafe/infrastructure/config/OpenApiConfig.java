@@ -8,13 +8,6 @@ import io.swagger.v3.oas.models.security.SecurityScheme;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
-/**
- * OpenAPI / Swagger UI configuration. Declares the API metadata and a JWT Bearer
- * security scheme so the Swagger UI "Authorize" button can attach the token
- * (in development: POST /auth/dev-token), allowing protected endpoints to be tested.
- *
- * Swagger UI: /swagger-ui.html  |  OpenAPI spec: /v3/api-docs
- */
 @Configuration
 public class OpenApiConfig {
 

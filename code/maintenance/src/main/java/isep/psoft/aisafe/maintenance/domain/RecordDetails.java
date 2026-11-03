@@ -9,11 +9,6 @@ import lombok.NoArgsConstructor;
 
 import java.time.LocalDate;
 
-/**
- * Value Object: dados indicados ao criar um registo (US115) — descrição, data de início e duração
- * prevista. Um registo representa uma manutenção que já começou (a aeronave fica indisponível),
- * por isso a data de início não pode ser futura.
- */
 @Embeddable
 @Getter
 @EqualsAndHashCode

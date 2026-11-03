@@ -8,10 +8,6 @@ import jakarta.validation.constraints.Size;
 
 import java.time.LocalDate;
 
-/**
- * US115 (registos): matrícula, template ("maintenance type"), descrição, data de início, duração
- * prevista (minutos) e, opcionalmente, o componente (US217). A checklist vem do template.
- */
 public record CreateMaintenanceRecordDTO(
         @NotBlank(message = "The aircraft registration is required") String aircraftRegistration,
         @NotBlank(message = "The template id is required") String templateId,

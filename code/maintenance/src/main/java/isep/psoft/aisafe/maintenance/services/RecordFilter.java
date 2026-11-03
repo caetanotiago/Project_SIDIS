@@ -6,13 +6,6 @@ import isep.psoft.aisafe.maintenance.domain.MaintenanceStatus;
 
 import java.time.LocalDate;
 
-/**
- * Value Object com os filtros de pesquisa de registos (US116, US218, US219). Filtros nulos não
- * restringem; os restantes combinam-se com AND. O mesmo filtro é aplicado aos dados locais e é
- * enviado às réplicas peer como query string ({@link #toUri()}).
- *
- * @param from/to intervalo (inclusivo) da data de início
- */
 public record RecordFilter(String aircraft, MaintenanceComponent component, MaintenanceStatus status,
                            LocalDate from, LocalDate to) {
 
@@ -51,7 +44,6 @@ public record RecordFilter(String aircraft, MaintenanceComponent component, Main
                 && (to == null || !start.isAfter(to));
     }
 
-    /** URI (codificada) do endpoint de pesquisa não paginada, para enviar às réplicas peer. */
     public String toUri() {
         return MaintenanceReplicaQueries.uri(SEARCH_PATH,
                 "aircraft", aircraft, "component", component, "status", status, "from", from, "to", to);

@@ -2,12 +2,6 @@ package isep.psoft.aisafe.maintenance.domain.alerts;
 
 import java.time.LocalDate;
 
-/**
- * Read model (não persistido): uma aeronave atingiu o limite de um template periódico (US222).
- *
- * @param limit   intervalo do template (horas ou dias)
- * @param current horas de voo ou dias decorridos desde a última conclusão
- */
 public record MaintenanceAlert(
         String aircraftRegistration,
         String aircraftModel,

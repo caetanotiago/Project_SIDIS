@@ -1,6 +1,5 @@
 package isep.psoft.aisafe.maintenance.domain;
 
-/** Tipo de template (US115): inspeção, manutenção programada, revisão geral ou modificação. */
 public enum TemplateType {
     INSPECTION,
     SCHEDULED_MAINTENANCE,

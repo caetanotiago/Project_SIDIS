@@ -18,14 +18,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.Supplier;
 
-/**
- * Anti-Corruption Layer para o Aircraft Management (contratos B3a–B3d do Integration-Contracts).
- *
- * <p>Usa o {@link ReplicatedServiceClient} (round-robin + failover + retry + circuit breaker sobre as
- * 3 réplicas). O JWT do utilizador é reencaminhado pela biblioteca common. Tradução de erros:
- * 404 → {@link EntityNotFoundException}; outros 4xx → {@link ResponseStatusException} com o mesmo
- * estado e a mensagem do fornecedor; nenhuma réplica → RemoteServiceUnavailableException (503).
- */
 @Component
 public class AircraftClient {
 
@@ -41,7 +33,6 @@ public class AircraftClient {
         this.aircraftService = aircraftService;
     }
 
-    /** Página no formato PageDTO do Aircraft Management. */
     @JsonIgnoreProperties(ignoreUnknown = true)
     record RemotePage<T>(List<T> content, int totalPages) { }
 
@@ -50,19 +41,14 @@ public class AircraftClient {
 
     record StatusUpdate(String status) { }
 
-    /** Frota completa (B3d) + indicação de resposta parcial do Aircraft Management. */
     public record Fleet(List<AircraftSnapshot> aircraft, boolean partial) { }
 
-    /** Horas de voo por matrícula (B3d, US206) + indicação de resposta parcial. */
     public record FlightHours(Map<String, Double> hoursByRegistration, boolean partial) {
         public double of(String registration) {
             return hoursByRegistration.getOrDefault(registration.toUpperCase(), 0.0);
         }
     }
 
-    // ------------------------------------------------------------------ B3a
-
-    /** B3a: GET /api/aircrafts/{registrationNumber} — a aeronave existe e qual o seu modelo/estado. */
     public AircraftSnapshot getAircraft(String registrationNumber) {
         return translate(() -> aircraftService.call((rest, baseUrl) -> rest.get()
                         .uri(baseUrl + "/api/aircrafts/{reg}", registrationNumber)
@@ -71,9 +57,6 @@ public class AircraftClient {
                 "Aircraft not found: " + registrationNumber);
     }
 
-    // ------------------------------------------------------------------ B3b
-
-    /** B3b: PATCH /api/aircrafts/{registrationNumber}/status — idempotente (valor fixo). */
     public AircraftSnapshot updateStatus(String registrationNumber, String status) {
         return translate(() -> aircraftService.call((rest, baseUrl) -> rest.patch()
                         .uri(baseUrl + "/api/aircrafts/{reg}/status", registrationNumber)
@@ -83,9 +66,6 @@ public class AircraftClient {
                 "Aircraft not found: " + registrationNumber);
     }
 
-    // ------------------------------------------------------------------ B3c
-
-    /** B3c: GET /api/aircraft-models/{modelName} — 200 existe, 404 não existe. */
     public boolean modelExists(String modelName) {
         try {
             translate(() -> aircraftService.call((rest, baseUrl) -> rest.get()
@@ -99,9 +79,6 @@ public class AircraftClient {
         }
     }
 
-    // ------------------------------------------------------------------ B3d
-
-    /** B3d: GET /api/aircrafts?page=&size= até à última página. */
     public Fleet fleet() {
         List<AircraftSnapshot> all = new ArrayList<>();
         boolean partial = false;
@@ -121,7 +98,6 @@ public class AircraftClient {
         return new Fleet(all, partial);
     }
 
-    /** B3d: GET /api/aircrafts/operational-hours?page=&size= até à última página. */
     public FlightHours flightHours() {
         Map<String, Double> hours = new HashMap<>();
         boolean partial = false;
@@ -142,8 +118,6 @@ public class AircraftClient {
         } while (page < totalPages);
         return new FlightHours(hours, partial);
     }
-
-    // ------------------------------------------------------------------ internos
 
     private <T> ResponseEntity<RemotePage<T>> getPage(String path, int page,
                                                       ParameterizedTypeReference<RemotePage<T>> type) {
@@ -176,7 +150,7 @@ public class AircraftClient {
                 return String.valueOf(body.get("error"));
             }
         } catch (RuntimeException ignored) {
-            // corpo vazio ou não JSON
+
         }
         return e.getStatusText().isBlank() ? "request rejected (" + e.getStatusCode().value() + ")" : e.getStatusText();
     }

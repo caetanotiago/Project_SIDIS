@@ -2,10 +2,6 @@ package isep.psoft.aisafe.maintenance.dto;
 
 import java.util.List;
 
-/**
- * Página com formato estável (o mesmo do Aircraft Management). A página é cortada em memória DEPOIS
- * de juntar os dados de todas as réplicas (Integration-Contracts §5, "Pagination").
- */
 public record PageDTO<T>(List<T> content, int page, int size, long totalElements, int totalPages) {
 
     public static final int DEFAULT_SIZE = 20;

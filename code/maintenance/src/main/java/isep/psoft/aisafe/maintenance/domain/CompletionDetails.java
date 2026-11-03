@@ -10,11 +10,6 @@ import lombok.NoArgsConstructor;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 
-/**
- * Value Object: dados de conclusão de um registo (US119) — notas, custo (US220), duração real
- * (turnaround da US221 e horas da US117) e, opcionalmente, as horas de voo da aeronave nesse
- * momento (base do critério de horas da US222).
- */
 @Embeddable
 @Getter
 @EqualsAndHashCode
