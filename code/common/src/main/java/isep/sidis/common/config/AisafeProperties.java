@@ -37,6 +37,7 @@ public class AisafeProperties {
     private final CircuitBreaker circuitBreaker = new CircuitBreaker();
     private final Security security = new Security();
     private final Tls tls = new Tls();
+    private final Messaging messaging = new Messaging();
 
     public String getInstanceId() { return instanceId; }
     public void setInstanceId(String instanceId) { this.instanceId = instanceId; }
@@ -45,6 +46,7 @@ public class AisafeProperties {
     public CircuitBreaker getCircuitBreaker() { return circuitBreaker; }
     public Security getSecurity() { return security; }
     public Tls getTls() { return tls; }
+    public Messaging getMessaging() { return messaging; }
 
     /** Réplicas do MESMO microsserviço (lista estática de peers, sem incluir a própria instância). */
     public static class Peers {
@@ -112,6 +114,40 @@ public class AisafeProperties {
             public boolean isEnabled() { return enabled; }
             public void setEnabled(boolean enabled) { this.enabled = enabled; }
         }
+    }
+
+    /**
+     * AMQP messaging (RabbitMQ), see docs/Messaging-Conventions.md. Off unless the service declares
+     * {@code spring-boot-starter-amqp} and sets {@code aisafe.messaging.enabled=true}.
+     */
+    public static class Messaging {
+        /** Turns on the shared messaging beans (publisher, topology, retry/DLQ policy, idempotency). */
+        private boolean enabled = false;
+        /** Service name used in exchange and queue names; defaults to {@code spring.application.name}. */
+        private String serviceName;
+        /** Total delivery attempts of a failing message (first one included) before it goes to the DLQ. */
+        private int maxAttempts = 3;
+        /** Wait before the first retry; multiplied by {@code multiplier} after each retry, up to {@code maxInterval}. */
+        private Duration initialInterval = Duration.ofMillis(500);
+        private double multiplier = 2.0;
+        private Duration maxInterval = Duration.ofSeconds(5);
+        /** Maximum wait for the broker to confirm a published event (with publisher-confirm-type=simple). */
+        private Duration confirmTimeout = Duration.ofSeconds(5);
+
+        public boolean isEnabled() { return enabled; }
+        public void setEnabled(boolean enabled) { this.enabled = enabled; }
+        public String getServiceName() { return serviceName; }
+        public void setServiceName(String serviceName) { this.serviceName = serviceName; }
+        public int getMaxAttempts() { return maxAttempts; }
+        public void setMaxAttempts(int maxAttempts) { this.maxAttempts = maxAttempts; }
+        public Duration getInitialInterval() { return initialInterval; }
+        public void setInitialInterval(Duration initialInterval) { this.initialInterval = initialInterval; }
+        public double getMultiplier() { return multiplier; }
+        public void setMultiplier(double multiplier) { this.multiplier = multiplier; }
+        public Duration getMaxInterval() { return maxInterval; }
+        public void setMaxInterval(Duration maxInterval) { this.maxInterval = maxInterval; }
+        public Duration getConfirmTimeout() { return confirmTimeout; }
+        public void setConfirmTimeout(Duration confirmTimeout) { this.confirmTimeout = confirmTimeout; }
     }
 
     /** Truststore usado pelos clientes HTTP quando os serviços correm em HTTPS (perfil tls). */

@@ -38,6 +38,9 @@ logs/
 # ---- Segredos / ficheiros locais ----
 .env
 .env.*
+infra/.env
+# ...but the template with placeholder values is committed
+!infra/.env.example
 *.local.properties
 # Certificado TLS de desenvolvimento (chave privada): gerado por code/scripts/generate-dev-certs.*
 code/common/src/main/resources/tls/*.p12

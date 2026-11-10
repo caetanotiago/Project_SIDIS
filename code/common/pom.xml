@@ -64,6 +64,15 @@
             <optional>true</optional>
         </dependency>
 
+        <!-- AMQP messaging (isep.sidis.common.messaging). Optional on purpose: it is NOT transitive, so a
+             service only gets RabbitMQ (and its health indicator) when it declares
+             spring-boot-starter-amqp itself. See docs/Messaging-Conventions.md -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-amqp</artifactId>
+            <optional>true</optional>
+        </dependency>
+
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>

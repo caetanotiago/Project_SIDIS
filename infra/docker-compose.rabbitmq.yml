@@ -1,0 +1,39 @@
+# RabbitMQ message broker for AISafe (Assignment 2: inter-service communication over AMQP).
+#
+# Start (from the repository root):
+#   copy infra/.env.example to infra/.env and set your own credentials, then
+#   docker compose -f infra/docker-compose.rabbitmq.yml --env-file infra/.env up -d --wait
+# Management UI: http://localhost:15672 (log in with RABBITMQ_USER / RABBITMQ_PASSWORD)
+# Stop (data kept in the named volume):  docker compose -f infra/docker-compose.rabbitmq.yml --env-file infra/.env down
+# Stop and erase all broker data:        ... down -v
+#
+# The scripts code/scripts/start-all.* start this file automatically when the broker is not reachable.
+# Conventions (exchanges, queues, envelope): docs/Messaging-Conventions.md
+
+name: aisafe
+
+services:
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: aisafe-rabbitmq
+    # RabbitMQ stores its data under the node name (rabbit@<hostname>): a fixed hostname keeps the
+    # data in the volume usable after the container is recreated.
+    hostname: aisafe-rabbitmq
+    ports:
+      - "5672:5672"     # AMQP (services)
+      - "15672:15672"   # management UI and HTTP API
+    environment:
+      # No defaults on purpose: compose refuses to start if infra/.env does not define them.
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:?RABBITMQ_USER is not set - copy infra/.env.example to infra/.env}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:?RABBITMQ_PASSWORD is not set - copy infra/.env.example to infra/.env}
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+
+volumes:
+  rabbitmq-data:

@@ -1,6 +1,7 @@
 package isep.psoft.aisafe.flightroutes.services;
 
 import isep.psoft.aisafe.flightroutes.assemblers.FlightRouteAssembler;
+import isep.psoft.aisafe.flightroutes.command.RouteChanged;
 import isep.psoft.aisafe.flightroutes.domain.FlightRoute;
 import isep.psoft.aisafe.flightroutes.dto.FlightRouteDTO;
 import isep.psoft.aisafe.flightroutes.dto.UpdateRouteDTO;
@@ -8,6 +9,7 @@ import isep.psoft.aisafe.flightroutes.repositories.FlightRouteRepository;
 import isep.sidis.common.peers.PeerClient;
 import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpMethod;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -29,6 +31,7 @@ public class UpdateFlightRouteService {
     private final FlightRouteRepository routeRepository;
     private final PeerClient peerClient;
     private final FlightRouteAssembler assembler;
+    private final ApplicationEventPublisher events;
 
     @Transactional
     public FlightRouteDTO updateRoute(String id, UpdateRouteDTO dto) {
@@ -49,6 +52,10 @@ public class UpdateFlightRouteService {
             route.changeStatus(dto.getStatus());
         }
 
-        return assembler.toDTO(routeRepository.save(route));
+        FlightRoute saved = routeRepository.save(route);
+        // Only the owner replica gets here (others forward above), so each route has a single event producer.
+        // Published as RouteUpdated after the commit (only with messaging on; see RouteIntegrationEventPublisher)
+        events.publishEvent(RouteChanged.updated(saved));
+        return assembler.toDTO(saved);
     }
 }

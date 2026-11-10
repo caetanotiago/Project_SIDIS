@@ -2,6 +2,7 @@ package isep.psoft.aisafe.flightroutes.services;
 
 import isep.psoft.aisafe.flightroutes.clients.AirportClient;
 import isep.psoft.aisafe.flightroutes.clients.AirportSnapshot;
+import isep.psoft.aisafe.flightroutes.command.RouteChanged;
 import isep.psoft.aisafe.flightroutes.domain.FlightRoute;
 import isep.psoft.aisafe.flightroutes.dto.CreateRouteDTO;
 import isep.psoft.aisafe.flightroutes.factories.FlightRouteFactory;
@@ -9,6 +10,7 @@ import isep.psoft.aisafe.flightroutes.repositories.FlightRouteRepository;
 import isep.sidis.common.peers.PeerClient;
 import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -29,6 +31,7 @@ public class CreateFlightRouteService {
     private final FlightRouteFactory routeFactory;
     private final DistanceCalculatorService distanceCalculator;
     private final PeerClient peerClient;
+    private final ApplicationEventPublisher events;
 
     @Transactional
     public FlightRoute createRoute(CreateRouteDTO dto) {
@@ -55,7 +58,10 @@ public class CreateFlightRouteService {
                 dto.getMinRange(), dto.getMinCapacity(), dto.getEstimatedFlightTime()
         );
 
-        return routeRepository.save(newRoute);
+        FlightRoute saved = routeRepository.save(newRoute);
+        // Published as RouteCreated after the commit (only with messaging on; see RouteIntegrationEventPublisher)
+        events.publishEvent(RouteChanged.created(saved));
+        return saved;
     }
 
     // Mantém o 400 do monólito quando o aeroporto não existe.

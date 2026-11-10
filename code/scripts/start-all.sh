@@ -15,11 +15,15 @@ WAIT_SECONDS="${WAIT_SECONDS:-150}"
 case "$REPLICAS" in 1|2|3) ;; *) echo "replicas tem de ser 1, 2 ou 3 (recebido: $REPLICAS)" >&2; exit 1 ;; esac
 cd "$(dirname "$0")/.."
 . scripts/lib/dev-certs.sh
+. scripts/lib/rabbitmq.sh
 
 # Porta base de cada serviço; a réplica n usa base + 100*(n-1) (docs/2-containers/Ports.md)
 SERVICES="aircraftmanagement:8081 maintenance:8082 airports:8083 flightroutes:8084"
 
 assert_dev_certs "$EXTRA"
+# RabbitMQ must be reachable before any replica starts (started with docker compose if needed).
+# Exports infra/.env, so every replica inherits RABBITMQ_*. Skip with AISAFE_MESSAGING_ENABLED=false.
+assert_broker
 BUILD=""
 for entry in $SERVICES; do
   svc="${entry%%:*}"

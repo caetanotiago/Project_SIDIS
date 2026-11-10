@@ -1,11 +1,15 @@
 #!/usr/bin/env bash
 # Pára todas as réplicas arrancadas por start-all.sh (ou start-replicas.sh), a partir de code/logs/*.pid.
-# Uso (a partir de code/):  ./scripts/stop-all.sh
+# Uso (a partir de code/):  ./scripts/stop-all.sh [--broker]
+#   --broker  also stops the RabbitMQ container of infra/docker-compose.rabbitmq.yml (its data volume is kept)
 set -uo pipefail
 cd "$(dirname "$0")/.."
+. scripts/lib/rabbitmq.sh
+STOP_BROKER=0
+[ "${1:-}" = "--broker" ] && STOP_BROKER=1
 shopt -s nullglob
 files=(logs/*.pid)
-[ ${#files[@]} -gt 0 ] || { echo "Nada a parar (não há ficheiros logs/*.pid)."; exit 0; }
+[ ${#files[@]} -gt 0 ] || echo "Nada a parar (não há ficheiros logs/*.pid)."
 
 stop_pid() {
   local pid="$1"
@@ -33,3 +37,8 @@ for f in "${files[@]}"; do
   fi
   rm -f "$f"
 done
+if [ "$STOP_BROKER" -eq 1 ]; then
+  stop_broker
+else
+  echo "RabbitMQ left running (stop it too with: ./scripts/stop-all.sh --broker)."
+fi

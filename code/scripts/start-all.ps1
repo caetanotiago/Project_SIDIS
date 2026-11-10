@@ -14,6 +14,7 @@ param(
 )
 $ErrorActionPreference = "Stop"
 . (Join-Path $PSScriptRoot "lib\dev-certs.ps1")
+. (Join-Path $PSScriptRoot "lib\rabbitmq.ps1")
 $codeDir = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 Set-Location $codeDir
 
@@ -21,6 +22,9 @@ Set-Location $codeDir
 $services = [ordered]@{ "aircraftmanagement" = 8081; "maintenance" = 8082; "airports" = 8083; "flightroutes" = 8084 }
 
 Assert-DevCerts $Profiles
+# RabbitMQ must be reachable before any replica starts (started with docker compose if needed).
+# Loads infra\.env, so every replica inherits RABBITMQ_*. Skip with $env:AISAFE_MESSAGING_ENABLED="false".
+Assert-Broker
 $outdated = $services.Keys | Where-Object { Test-JarOutdated "$_\target\$_-0.0.1-SNAPSHOT.jar" $Profiles }
 if ($outdated) {
     Write-Host "A compilar (JARs em falta ou mais antigos do que os certificados: $($outdated -join ', '))..."

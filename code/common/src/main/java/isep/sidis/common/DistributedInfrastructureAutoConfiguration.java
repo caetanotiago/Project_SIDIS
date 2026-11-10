@@ -113,7 +113,7 @@ public class DistributedInfrastructureAutoConfiguration {
     }
 
     /** {@code aisafe.instance-id}, ou "nome-da-aplicação:porta" se não estiver definido. */
-    static String instanceId(AisafeProperties props, Environment env) {
+    public static String instanceId(AisafeProperties props, Environment env) {
         if (props.getInstanceId() != null && !"unknown".equals(props.getInstanceId())) {
             return props.getInstanceId();
         }

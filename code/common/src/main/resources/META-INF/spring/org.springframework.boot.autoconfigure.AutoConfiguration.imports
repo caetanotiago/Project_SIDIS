@@ -1,2 +1,3 @@
 isep.sidis.common.DistributedInfrastructureAutoConfiguration
 isep.sidis.common.security.JwtSecurityAutoConfiguration
+isep.sidis.common.messaging.EventMessagingAutoConfiguration
