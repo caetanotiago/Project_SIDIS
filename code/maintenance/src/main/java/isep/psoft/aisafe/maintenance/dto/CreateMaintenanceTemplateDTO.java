@@ -7,10 +7,6 @@ import jakarta.validation.constraints.Size;
 
 import java.util.List;
 
-/**
- * US115 (templates): nome, tipo (INSPECTION, SCHEDULED_MAINTENANCE, OVERHAUL, MODIFICATION), modelos
- * de aeronave a que se aplica, checklist e, opcionalmente, a periodicidade (US222).
- */
 public record CreateMaintenanceTemplateDTO(
         @NotBlank(message = "The template name is required") @Size(max = 200) String name,
         @NotBlank(message = "The template type is required") String type,

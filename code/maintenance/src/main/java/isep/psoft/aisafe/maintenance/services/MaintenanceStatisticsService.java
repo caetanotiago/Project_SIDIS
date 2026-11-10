@@ -23,14 +23,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
 
-/**
- * US117, US220, US221 e o resumo da US222.
- *
- * <p>Cada registo vive numa só réplica, por isso cada réplica calcula SOMAS e CONTAGENS sobre os
- * seus registos e a réplica que recebeu o pedido soma os resultados parciais dos peers (que chama
- * no MESMO endpoint). Médias e horas só são calculadas depois da soma — a média das médias de cada
- * réplica estaria errada.
- */
 @Service
 @RequiredArgsConstructor
 public class MaintenanceStatisticsService {
@@ -47,8 +39,6 @@ public class MaintenanceStatisticsService {
 
     private final MaintenanceRecordRepository repository;
     private final PeerClient peerClient;
-
-    // ------------------------------------------------------------------ US117
 
     public FleetMaintenanceHoursDTO maintenanceHours() {
         Map<String, AircraftHours> byAircraft = new TreeMap<>();
@@ -72,8 +62,6 @@ public class MaintenanceStatisticsService {
                         x.minutes() + y.minutes(), 0));
     }
 
-    // ------------------------------------------------------------------ US220
-
     public CostReportDTO costs(CostGrouping grouping) {
         Map<String, CostItem> items = new TreeMap<>();
         for (MaintenanceRecord r : repository.findByStatus(MaintenanceStatus.COMPLETED)) {
@@ -95,10 +83,8 @@ public class MaintenanceStatisticsService {
         acc.merge(i.key(), i, (x, y) -> new CostItem(x.key(), x.totalCost().add(y.totalCost()), x.records() + y.records()));
     }
 
-    // ------------------------------------------------------------------ US221
-
     public TurnaroundReportDTO turnaround() {
-        Map<String, long[]> byModel = new TreeMap<>(); // modelo → [registos concluídos, minutos]
+        Map<String, long[]> byModel = new TreeMap<>();
         for (MaintenanceRecord r : repository.findByStatus(MaintenanceStatus.COMPLETED)) {
             add(byModel, r.getAircraftModel(), 1, r.getCompletion().getActualDurationMinutes());
         }
@@ -117,9 +103,6 @@ public class MaintenanceStatisticsService {
         sums[1] += minutes;
     }
 
-    // ------------------------------------------------------------------ US222
-
-    /** Por (aeronave, template): última conclusão em todas as réplicas e se há um registo em curso. */
     public List<LastCompletionDTO> lastCompletions() {
         Map<String, LastCompletionDTO> merged = new TreeMap<>();
         for (MaintenanceRecord r : repository.findAll()) {

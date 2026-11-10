@@ -2,11 +2,6 @@ package isep.psoft.aisafe.maintenance.domain.alerts;
 
 import java.util.Optional;
 
-/**
- * Horas de voo desde a última conclusão = horas atuais − horas registadas nessa conclusão.
- * Se o template nunca foi feito na aeronave, ou as horas não foram registadas, contam todas as
- * horas atuais (critério conservador: alertar mais cedo em vez de mais tarde).
- */
 public class FlightHoursCriterion implements DueCriterion {
 
     @Override

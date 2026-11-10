@@ -33,12 +33,7 @@ import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 import java.net.URI;
 import java.util.List;
 
-/**
- * Aeroportos (WP#2A & WP#2B). Todos os GET devolvem os dados de TODAS as réplicas: a réplica que
- * recebe o pedido junta os seus dados com os dos peers (se algum peer não responder, a resposta
- * leva o header X-Partial-Response: true). Pedidos vindos de um peer (X-Peer-Hops) são respondidos
- * só com dados locais. Papéis por endpoint: AirportsAuthorizationRules.
- */
+
 @RestController
 @RequestMapping("/api/airports")
 @RequiredArgsConstructor

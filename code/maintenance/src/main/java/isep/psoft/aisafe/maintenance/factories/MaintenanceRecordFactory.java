@@ -10,10 +10,6 @@ import isep.psoft.aisafe.maintenance.dto.CreateMaintenanceRecordDTO;
 import isep.psoft.aisafe.maintenance.dto.MaintenanceTemplateDTO;
 import org.springframework.stereotype.Component;
 
-/**
- * Factory (Creator) da US115: cria o registo a partir da aeronave (B3a) e do template (de qualquer
- * réplica), copiando a checklist do template e guardando a referência ao template e o modelo da aeronave.
- */
 @Component
 public class MaintenanceRecordFactory {
 

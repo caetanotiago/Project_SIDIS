@@ -2,11 +2,6 @@ package isep.psoft.aisafe.airports.domain;
 
 import java.util.Locale;
 
-/**
- * Estado operacional de um aeroporto (US109: operational, closed, under maintenance).
- * Viaja em JSON como string em maiúsculas. Flight Routes só considera operacional o valor exato
- * "OPERATIONAL" (contrato B2).
- */
 public enum AirportStatus {
     OPERATIONAL,
     CLOSED,

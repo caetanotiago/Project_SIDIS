@@ -14,7 +14,6 @@ import org.springframework.stereotype.Service;
 
 import java.util.Optional;
 
-/** US217. Escrita só na réplica dona; se o registo não é local, o comando é encaminhado. */
 @Service
 @RequiredArgsConstructor
 public class CategorizeMaintenanceRecordService {
@@ -24,7 +23,7 @@ public class CategorizeMaintenanceRecordService {
     private final PeerClient peerClient;
 
     public MaintenanceRecordDTO categorize(String id, CategorizeRecordDTO dto) {
-        MaintenanceComponent component = MaintenanceComponent.parse(dto.component()); // 400 antes de encaminhar
+        MaintenanceComponent component = MaintenanceComponent.parse(dto.component());
         Optional<MaintenanceRecord> local = repository.findById(id);
         if (local.isEmpty()) {
             return peerClient.forwardToOwner(HttpMethod.PATCH,
@@ -35,6 +34,6 @@ public class CategorizeMaintenanceRecordService {
         }
         MaintenanceRecord record = local.get();
         record.categorize(component);
-        return assembler.toDTO(repository.saveAndFlush(record)); // @Version → 409
+        return assembler.toDTO(repository.saveAndFlush(record));
     }
 }

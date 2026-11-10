@@ -4,7 +4,6 @@ import isep.psoft.aisafe.maintenance.domain.alerts.MaintenanceAlert;
 
 import java.time.LocalDate;
 
-/** US222: aeronave em atraso para um template periódico. */
 public record MaintenanceAlertDTO(String aircraftRegistration, String aircraftModel, String templateId,
                                   String templateName, String trigger, double limit, double current,
                                   LocalDate lastCompletionDate, String message) {

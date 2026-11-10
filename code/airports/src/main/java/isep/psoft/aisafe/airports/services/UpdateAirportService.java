@@ -21,21 +21,7 @@ import java.util.function.Consumer;
 
 import static isep.psoft.aisafe.airports.services.AirportReplicaQueries.pathSegment;
 
-/**
- * Alterações a um aeroporto existente: US106a (certificar modelo), US109 (estado) e US208 (detalhes).
- *
- * <p>Single owner: a escrita é feita SEMPRE na réplica dona do aeroporto (a que o guarda). Se o
- * aeroporto não for local, o comando é encaminhado (unicast, um peer de cada vez) para a réplica que
- * o tem, com o mesmo método, caminho, corpo e JWT. Assim cada aeroporto tem uma única versão e não
- * há conflitos de escrita entre réplicas.
- *
- * <p>Concorrência dentro da réplica dona: {@code @Version} (optimistic locking). Dois pedidos que
- * alterem o mesmo aeroporto ao mesmo tempo → o segundo recebe 409. O saveAndFlush força a
- * verificação dentro do pedido, para o erro chegar ao cliente.
- *
- * <p>Erros: nenhuma réplica tem o aeroporto → 404; erro de negócio na dona (ex. 409) → propagado tal
- * como veio; nenhuma réplica responde → 503.
- */
+
 @Service
 @RequiredArgsConstructor
 public class UpdateAirportService {
@@ -67,11 +53,6 @@ public class UpdateAirportService {
                         dto.terminals(), dto.gates(), dto.services(), dto.photoUrls()));
     }
 
-    /**
-     * Aplica a alteração se o aeroporto for desta réplica; senão encaminha o MESMO pedido à réplica
-     * dona. Uma réplica que recebe o pedido de um peer (X-Peer-Hops) não volta a encaminhar: se não
-     * tiver o aeroporto responde 404 ("não é meu") e o PeerClient tenta o peer seguinte.
-     */
     private AirportDTO onOwner(String iataCode, HttpMethod method, String subPath, Object body,
                                Consumer<Airport> change) {
         String iata = IataCode.normalize(iataCode);

@@ -8,7 +8,6 @@ import java.util.Set;
 
 /**
  * US208 — atualização parcial dos detalhes do aeroporto: horário, contactos e instalações.
- * Campos ausentes (null) não são alterados; uma string vazia limpa o campo.
  */
 public record UpdateAirportDetailsDTO(
         String operationalHours,

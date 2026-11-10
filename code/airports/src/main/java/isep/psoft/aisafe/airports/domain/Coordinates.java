@@ -7,10 +7,6 @@ import lombok.EqualsAndHashCode;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
-/**
- * Value object: posição geográfica em graus decimais. Usada pelo Flight Routes para calcular a
- * distância das rotas (Haversine), por isso latitude e longitude são obrigatórias (contrato B2).
- */
 @Embeddable
 @Getter
 @EqualsAndHashCode

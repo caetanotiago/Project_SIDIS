@@ -15,14 +15,6 @@ import java.util.Optional;
 
 /**
  * US210 — estatística dos aeroportos com mais rotas.
- *
- * <p>Divisão de responsabilidades (contrato B5): as rotas pertencem ao Flight Routes, que só fornece
- * as contagens em bruto por IATA (já somadas sobre as suas réplicas). O ranking, o corte top-N e os
- * detalhes dos aeroportos são do Airports.
- *
- * <p>Os detalhes de cada aeroporto do top-N são obtidos com a consulta por IATA (local ou numa réplica
- * peer). Não se usa a pesquisa de todos os aeroportos porque essa é só para ATCC (US108) e este
- * pedido é feito por um Backoffice Operator, cujo JWT é reencaminhado aos peers.
  */
 @Service
 @RequiredArgsConstructor

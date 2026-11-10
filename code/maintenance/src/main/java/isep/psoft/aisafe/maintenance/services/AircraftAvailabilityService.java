@@ -9,12 +9,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
-/**
- * Pure Fabrication: protocolo entre a Maintenance e o estado da aeronave no Aircraft Management
- * (B3b). O estado da aeronave é a única fonte de verdade da disponibilidade — o Flight Routes só
- * agenda voos para aeronaves AVAILABLE, por isso "aircraft under maintenance cannot be assigned to
- * flights" é garantido aqui.
- */
 @Service
 @RequiredArgsConstructor
 public class AircraftAvailabilityService {
@@ -24,11 +18,6 @@ public class AircraftAvailabilityService {
     private final AircraftClient aircraftClient;
     private final MaintenanceReplicaQueries replicas;
 
-    /**
-     * US115: aeronave → UNDER_MAINTENANCE. Chamado DEPOIS do saveAndFlush do registo e ANTES do
-     * commit: se falhar, a exceção faz rollback do registo; se o commit falhar depois disto, é
-     * enviado um PATCH de compensação com o estado anterior.
-     */
     public void markUnderMaintenance(AircraftSnapshot aircraft) {
         String previous = aircraft.status();
         aircraftClient.updateStatus(aircraft.registrationNumber(), AircraftSnapshot.UNDER_MAINTENANCE);
@@ -37,13 +26,6 @@ public class AircraftAvailabilityService {
         }
     }
 
-    /**
-     * US119: aeronave → AVAILABLE, só se não houver outro registo dela em curso em NENHUMA réplica e
-     * todas as réplicas tiverem respondido. Caso contrário (ou se o Aircraft Management falhar) a
-     * aeronave fica UNDER_MAINTENANCE — o lado seguro — e o ATCC pode alterá-la com a US105.
-     *
-     * @return true se a aeronave foi libertada
-     */
     public boolean releaseIfNoOtherOngoing(String registration, String completedRecordId) {
         MaintenanceReplicaQueries.RecordSearch ongoing = replicas.searchRecordsWithStatus(RecordFilter.ongoingOf(registration));
         boolean otherOngoing = ongoing.records().stream().anyMatch(r -> !r.getId().equals(completedRecordId));

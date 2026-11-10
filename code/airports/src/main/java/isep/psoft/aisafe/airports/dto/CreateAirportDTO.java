@@ -14,7 +14,6 @@ import java.util.List;
 import java.util.Set;
 
 /**
- * Pedido de registo de um aeroporto.
  * US106: IATA, nome, cidade, país, fuso horário, coordenadas e pistas (obrigatórios).
  * US207: instalações e fotos (opcionais). Região e contactos (US208) também podem vir já no registo.
  */

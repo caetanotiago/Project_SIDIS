@@ -26,14 +26,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 
-/**
- * Agregado Airport (WP#2). A identidade é o código IATA — o mesmo identificador com que os
- * outros microsserviços o referenciam — e não um id técnico.
- *
- * <p>Distribuição: cada aeroporto é guardado na réplica que recebeu o registo (réplica dona).
- * As alterações são sempre executadas nessa réplica; {@link Version} deteta escritas concorrentes
- * dentro dela (409).
- */
+
 @Entity
 @Table(name = "airport")
 @Getter

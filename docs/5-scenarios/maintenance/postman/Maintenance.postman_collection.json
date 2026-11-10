@@ -1619,7 +1619,7 @@
       "name": "9 - Replica failure (stop replica 2 first)",
       "item": [
         {
-          "name": "Ongoing from replica 1 -> 200 partial",
+          "name": "US116 records of CS-TUA from replica 1 -> 200 partial",
           "request": {
             "method": "GET",
             "header": [

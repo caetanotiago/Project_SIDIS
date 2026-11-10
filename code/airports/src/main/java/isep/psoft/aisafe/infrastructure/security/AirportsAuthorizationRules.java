@@ -6,15 +6,7 @@ import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AuthorizeHttpRequestsConfigurer;
 import org.springframework.stereotype.Component;
 
-/**
- * Controlo de acessos (RBAC) dos endpoints do Airports, com os papéis do enunciado do PSOFT (WP#2).
- * O resto (filtro JWT, X-Service-Key, auditoria, 401, swagger/h2/health públicos e o
- * anyRequest().authenticated() final) vem da biblioteca common — por isso aqui NÃO se usa anyRequest().
- *
- * <p>A ordem importa: a primeira regra que corresponde ao pedido é a aplicada, por isso os caminhos
- * fixos (/statistics, /grouped) vêm antes de /{iataCode}. Os pedidos entre réplicas levam o JWT do
- * utilizador original, por isso os peers aplicam exatamente as mesmas regras.
- */
+
 @Component
 public class AirportsAuthorizationRules implements AuthorizationRules {
 

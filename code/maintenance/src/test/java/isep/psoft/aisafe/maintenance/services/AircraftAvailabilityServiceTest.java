@@ -36,7 +36,7 @@ class AircraftAvailabilityServiceTest {
 
     @Test
     void releasesWhenNoOtherRecordIsOngoingInAnyReplica() {
-        ongoing(true, record("rec-1")); // o próprio (por segurança é ignorado)
+        ongoing(true, record("rec-1"));
 
         assertTrue(service.releaseIfNoOtherOngoing("CS-TUA", "rec-1"));
         verify(aircraftClient).updateStatus("CS-TUA", "AVAILABLE");

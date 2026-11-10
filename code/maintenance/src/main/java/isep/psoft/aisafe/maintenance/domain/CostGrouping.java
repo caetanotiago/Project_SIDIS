@@ -2,10 +2,6 @@ package isep.psoft.aisafe.maintenance.domain;
 
 import java.util.function.Function;
 
-/**
- * Strategy (US220): critério de agrupamento do relatório de custos. Um novo critério é uma nova
- * constante, sem alterar o serviço (Protected Variation).
- */
 public enum CostGrouping {
     AIRCRAFT(MaintenanceRecord::getAircraftRegistration),
     MODEL(MaintenanceRecord::getAircraftModel);

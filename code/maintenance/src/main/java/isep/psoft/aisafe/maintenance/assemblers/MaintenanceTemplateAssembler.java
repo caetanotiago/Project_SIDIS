@@ -10,7 +10,6 @@ import java.util.List;
 import static org.springframework.hateoas.server.mvc.WebMvcLinkBuilder.linkTo;
 import static org.springframework.hateoas.server.mvc.WebMvcLinkBuilder.methodOn;
 
-/** Domain → DTO + links HATEOAS (também para templates vindos de peers). */
 @Component
 public class MaintenanceTemplateAssembler {
 

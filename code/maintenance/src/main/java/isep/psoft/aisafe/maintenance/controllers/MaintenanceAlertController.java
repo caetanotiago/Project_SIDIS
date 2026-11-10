@@ -12,7 +12,6 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
 
-/** /api/maintenance-alerts — US222 (verificação disparada manualmente pelo ATCC). */
 @RestController
 @RequestMapping("/api/maintenance-alerts")
 @RequiredArgsConstructor

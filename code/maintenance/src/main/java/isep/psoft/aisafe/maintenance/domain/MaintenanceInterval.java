@@ -7,10 +7,6 @@ import lombok.EqualsAndHashCode;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
-/**
- * Value Object: periodicidade de um template (US222, conversa 016 do fórum PSOFT) — de N em N horas
- * de voo e/ou de N em N dias de calendário. Um template sem intervalo não é periódico.
- */
 @Embeddable
 @Getter
 @EqualsAndHashCode
@@ -37,7 +33,6 @@ public class MaintenanceInterval {
         this.calendarDays = calendarDays;
     }
 
-    /** Intervalo opcional: sem horas nem dias → null (template não periódico). */
     public static MaintenanceInterval ofOptional(Integer flightHours, Integer calendarDays) {
         return flightHours == null && calendarDays == null ? null : new MaintenanceInterval(flightHours, calendarDays);
     }

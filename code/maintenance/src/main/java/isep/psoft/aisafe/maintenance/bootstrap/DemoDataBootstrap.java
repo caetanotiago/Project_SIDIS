@@ -23,17 +23,6 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 
-/**
- * Dados de demonstração (perfil {@code demo}). Cada réplica carrega registos DIFERENTES (definidos no
- * seu application-instanceN.properties), para demonstrar a agregação e o encaminhamento P2P.
- * São gravados diretamente, sem chamar o Aircraft Management (o estado das aeronaves de demo já
- * está coerente: CS-TUB é carregado UNDER_MAINTENANCE no Aircraft Management).
- *
- * <pre>
- * matrícula:modelo:template:início:minutosPrevistos:componente[:dataConclusão:custo:minutosReais[:horasDeVoo]]
- * CS-TUA:A320:A-Check Inspection:2026-05-10:480:AIRFRAME:2026-05-11:12500:600:1400
- * </pre>
- */
 @Component
 @Order(2)
 @ConditionalOnProperty(prefix = "maintenance.demo", name = "enabled", havingValue = "true")

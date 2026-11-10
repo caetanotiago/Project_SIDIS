@@ -16,10 +16,6 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
 
-/**
- * Estatísticas e relatórios (US117, US220, US221). Pedido de um cliente: soma de todas as réplicas;
- * pedido de um peer: só o resultado parcial desta réplica.
- */
 @RestController
 @RequestMapping("/api/maintenance-records")
 @RequiredArgsConstructor

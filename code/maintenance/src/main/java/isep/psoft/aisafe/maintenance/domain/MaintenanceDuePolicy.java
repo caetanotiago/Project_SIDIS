@@ -9,10 +9,6 @@ import isep.psoft.aisafe.maintenance.domain.alerts.MaintenanceAlert;
 import java.util.List;
 import java.util.Optional;
 
-/**
- * Domain Service (US222): aplica os critérios de atraso (Strategy) a um par aeronave × template
- * periódico e devolve um alerta por critério atingido.
- */
 public class MaintenanceDuePolicy {
 
     private final List<DueCriterion> criteria;
@@ -21,7 +17,6 @@ public class MaintenanceDuePolicy {
         this.criteria = List.copyOf(criteria);
     }
 
-    /** Política por omissão: horas de voo e dias de calendário (conversa 016 do fórum PSOFT). */
     public static MaintenanceDuePolicy standard() {
         return new MaintenanceDuePolicy(List.of(new FlightHoursCriterion(), new CalendarDaysCriterion()));
     }

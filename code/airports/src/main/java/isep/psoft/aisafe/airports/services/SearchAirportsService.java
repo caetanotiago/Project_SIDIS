@@ -23,7 +23,6 @@ public class SearchAirportsService {
 
     /**
      * US107 — detalhes pelo IATA: local, senão encaminhado aos peers (o primeiro 200 ganha).
-     * Nenhuma réplica o tem → 404. Também é o endpoint do contrato B2 usado pelo Flight Routes.
      */
     @Transactional(readOnly = true)
     public AirportDTO getByIata(String iataCode) {
@@ -34,7 +33,6 @@ public class SearchAirportsService {
 
     /**
      * US108 — pesquisa por cidade, país e/ou nome (sem filtros = todos os aeroportos).
-     * Os peers recebem os mesmos filtros e respondem só com os seus dados locais.
      */
     @Transactional(readOnly = true)
     public List<AirportDTO> search(String city, String country, String name) {

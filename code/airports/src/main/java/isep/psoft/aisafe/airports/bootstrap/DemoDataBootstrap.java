@@ -20,21 +20,6 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
-/**
- * Dados de demonstração (perfil {@code demo}). Cada réplica carrega um conjunto DIFERENTE de aeroportos
- * (lista em {@code aisafe.bootstrap.airports} no seu application-instanceN.properties), para demonstrar
- * que os dados estão particionados pelas réplicas e que o encaminhamento peer-to-peer os encontra.
- *
- * <p>São os aeroportos usados pelas rotas de demonstração do Flight Routes (OPO, LIS, MAD, CDG, LHR,
- * FNC), por isso a US110/US212 e a US210 funcionam de ponta a ponta com os dois perfis demo ativos.
- *
- * <pre>
- * aisafe.bootstrap.airports=OPO,LIS
- * </pre>
- *
- * Os aeroportos são gravados diretamente no repositório local, sem consultar os peers (no arranque
- * os peers podem ainda não estar disponíveis).
- */
 @Component
 @ConditionalOnProperty(prefix = "aisafe.bootstrap", name = "enabled", havingValue = "true")
 @RequiredArgsConstructor

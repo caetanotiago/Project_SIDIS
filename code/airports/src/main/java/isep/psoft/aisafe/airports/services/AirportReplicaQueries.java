@@ -18,19 +18,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
-/**
- * Consultas de aeroportos sobre TODAS as réplicas do Airports (peer-to-peer query resolution).
- *
- * <p>Cada réplica guarda só os aeroportos registados nela. Para responder a um GET:
- * <ol>
- *   <li>lê os dados locais;</li>
- *   <li>pede o MESMO endpoint às réplicas peer, em paralelo (via {@link PeerClient}); estas
- *       respondem só com os seus dados locais (header X-Peer-Hops), por isso não há ciclos;</li>
- *   <li>junta os resultados, eliminando duplicados pelo código IATA (a cópia local tem prioridade).</li>
- * </ol>
- * Se um peer não responder, o resultado é o que se conseguiu juntar e a resposta HTTP leva
- * {@code X-Partial-Response: true} (disponibilidade em vez de erro — AP).
- */
+
 @Component
 @RequiredArgsConstructor
 public class AirportReplicaQueries {

@@ -5,7 +5,6 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import java.math.BigDecimal;
 import java.util.List;
 
-/** US220: custos dos registos concluídos, por aeronave (AIRCRAFT) ou por modelo (MODEL). */
 @JsonIgnoreProperties(ignoreUnknown = true)
 public record CostReportDTO(String groupBy, BigDecimal totalCost, long records, List<CostItem> items) {
 

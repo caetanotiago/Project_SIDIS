@@ -9,11 +9,6 @@ import lombok.EqualsAndHashCode;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
-/**
- * Value Object: referência, por identidade, ao template usado num registo ("maintenance type" da
- * US115) + cópia do nome e do tipo. O template pode estar guardado noutra réplica, por isso não
- * existe associação JPA.
- */
 @Embeddable
 @Getter
 @EqualsAndHashCode

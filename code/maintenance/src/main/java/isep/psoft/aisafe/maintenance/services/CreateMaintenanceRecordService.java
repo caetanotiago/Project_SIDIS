@@ -12,10 +12,6 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-/**
- * US115 (registos). Ordem: aeronave (B3a) → template (qualquer réplica) → aplicabilidade → registo
- * gravado e flushed → aeronave UNDER_MAINTENANCE (B3b) → commit. Se o B3b falhar nada fica gravado.
- */
 @Service
 @RequiredArgsConstructor
 public class CreateMaintenanceRecordService {

@@ -10,10 +10,6 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 
-/**
- * Representação de um registo de manutenção; também é o formato trocado entre réplicas (tolerant
- * reader). Os campos de conclusão só aparecem depois da US119.
- */
 @JsonIgnoreProperties(ignoreUnknown = true)
 @JsonInclude(JsonInclude.Include.NON_NULL)
 @Getter

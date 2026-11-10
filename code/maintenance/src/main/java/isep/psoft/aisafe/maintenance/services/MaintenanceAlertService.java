@@ -24,11 +24,6 @@ import java.util.Map;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
-/**
- * US222: aeronaves em atraso para manutenção programada (horas de voo ou dias de calendário).
- * Verificação disparada manualmente pelo utilizador (conversa 016) e calculada a pedido com os dados
- * de todas as réplicas e do Aircraft Management; os alertas não são guardados.
- */
 @Service
 @RequiredArgsConstructor
 public class MaintenanceAlertService {
@@ -40,7 +35,6 @@ public class MaintenanceAlertService {
     private final MaintenanceStatisticsService statistics;
     private final MaintenanceDuePolicy policy = MaintenanceDuePolicy.standard();
 
-    /** Alertas + se algum dos dados usados pode estar incompleto. */
     public record AlertResult(List<MaintenanceAlertDTO> alerts, boolean partial) { }
 
     public AlertResult checkFleet() {
@@ -64,7 +58,7 @@ public class MaintenanceAlertService {
                 }
                 LastCompletionDTO previous = last.get(LastCompletionDTO.key(aircraft.registrationNumber(), template.getId()));
                 if (previous != null && previous.ongoing()) {
-                    continue; // já está a ser feita
+                    continue;
                 }
                 DueContext context = new DueContext(aircraft.registrationNumber(), aircraft.modelName(),
                         aircraft.manufacturingDate(), template.getId(), template.getName(),
@@ -81,11 +75,6 @@ public class MaintenanceAlertService {
         return new AlertResult(alerts, fleet.partial() || hours.partial());
     }
 
-    /**
-     * Degradação graciosa: as horas de voo vêm do Flight Routes através do Aircraft Management (US206).
-     * Se não estiverem disponíveis, os alertas por dias de calendário continuam a ser calculados e a
-     * resposta é marcada como parcial, em vez de falhar toda a verificação.
-     */
     private FlightHours flightHoursOrNone() {
         try {
             return aircraftClient.flightHours();

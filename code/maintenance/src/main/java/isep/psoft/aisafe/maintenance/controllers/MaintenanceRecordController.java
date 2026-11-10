@@ -29,13 +29,11 @@ import java.net.URI;
 import java.time.LocalDate;
 import java.util.List;
 
-/** /api/maintenance-records — US115 (registos), US116, US119, US217, US218, US219. */
 @RestController
 @RequestMapping("/api/maintenance-records")
 @RequiredArgsConstructor
 public class MaintenanceRecordController {
 
-    /** Header da resposta da US119: a aeronave voltou (true) ou não (false) a AVAILABLE. */
     public static final String AIRCRAFT_RELEASED = "X-Aircraft-Released";
 
     private final CreateMaintenanceRecordService createService;
@@ -87,7 +85,6 @@ public class MaintenanceRecordController {
         return ResponseEntity.ok(viewService.ongoing(page, size));
     }
 
-    // Pesquisa não paginada: usada pelas réplicas peer para agregar US116/US218/US219 e pela US119.
     @GetMapping("/search")
     @Operation(summary = "Records matching the filters, not paginated (all replicas; used for peer aggregation)")
     public ResponseEntity<List<MaintenanceRecordDTO>> searchAll(

@@ -4,10 +4,6 @@ import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
 import java.util.Optional;
 
-/**
- * Dias de calendário desde a última conclusão; se o template nunca foi feito na aeronave, desde a
- * data de fabrico.
- */
 public class CalendarDaysCriterion implements DueCriterion {
 
     @Override

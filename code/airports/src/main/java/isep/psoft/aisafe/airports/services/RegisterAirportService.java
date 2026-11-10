@@ -11,12 +11,6 @@ import org.springframework.transaction.annotation.Transactional;
 
 /**
  * US106 / US207 — registar um aeroporto. Fica guardado na réplica que recebeu o pedido
- * (partição pela réplica de escrita; esta réplica passa a ser a dona do aeroporto).
- *
- * <p>Unicidade do IATA: verificada localmente e nas réplicas peer que respondam. Se um peer estiver
- * em baixo o registo continua (prioridade à disponibilidade). Consequência aceite (AP): durante uma
- * partição de rede, ou com dois registos verdadeiramente simultâneos em réplicas diferentes, o mesmo
- * IATA pode ficar registado em duas réplicas. Nas leituras, a cópia da réplica que responde ganha.
  */
 @Service
 @RequiredArgsConstructor
