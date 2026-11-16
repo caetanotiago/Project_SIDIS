@@ -12,14 +12,7 @@ import java.util.Date;
 import java.util.List;
 import java.util.Optional;
 
-/**
- * Emite e valida os JWT de todos os microsserviços. Todos partilham o mesmo jwt.secret.
- * Os roles vão no próprio token (claim "roles"), para que cada serviço autorize sem
- * consultar a tabela de utilizadores.
- */
 public class JwtTokenProvider {
-
-    // Claim com as authorities do utilizador (ex.: ["ROLE_ATCC"]).
     public static final String ROLES_CLAIM = "roles";
 
     private final SecretKey key;
@@ -30,7 +23,6 @@ public class JwtTokenProvider {
         this.expirationMs = expirationMs;
     }
 
-    // Usado pelo serviço que faz o login (POST /auth/login).
     public String generateToken(String username, Collection<String> roles) {
         return Jwts.builder()
                 .subject(username)
@@ -41,7 +33,6 @@ public class JwtTokenProvider {
                 .compact();
     }
 
-    // Token inválido ou expirado → Optional.empty()
     public Optional<Claims> parseClaims(String token) {
         try {
             return Optional.of(Jwts.parser()

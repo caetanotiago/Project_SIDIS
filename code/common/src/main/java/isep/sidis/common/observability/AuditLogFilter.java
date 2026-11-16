@@ -15,16 +15,7 @@ import org.springframework.web.filter.OncePerRequestFilter;
 import java.io.IOException;
 import java.util.stream.Collectors;
 
-/**
- * Audit log (Access Control and Audit): uma linha por pedido à API com quem (utilizador e roles do
- * JWT), o quê (método e caminho), o resultado (status HTTP), de onde (cliente, ou réplica/serviço
- * chamador) e o correlation id. Escreve no logger {@code AUDIT}, que pode ir para um ficheiro próprio.
- *
- * <p>Corre dentro da SecurityFilterChain, logo depois do SecurityContextHolderFilter: quando o pedido
- * termina o utilizador autenticado ainda está no contexto e o status (incluindo 401/403) é o final.
- */
 public class AuditLogFilter extends OncePerRequestFilter {
-
     private static final Logger audit = LoggerFactory.getLogger("AUDIT");
 
     @Override
@@ -59,7 +50,6 @@ public class AuditLogFilter extends OncePerRequestFilter {
         }
     }
 
-    // Remove quebras de linha de valores controlados pelo cliente (log injection).
     private static String sanitize(String value) {
         return value == null ? null : value.replaceAll("[\\r\\n]", "_");
     }

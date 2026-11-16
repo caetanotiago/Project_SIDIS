@@ -13,14 +13,7 @@ import org.springframework.web.filter.OncePerRequestFilter;
 import java.io.IOException;
 import java.util.List;
 
-/**
- * Autenticação stateless: o utilizador e os roles vêm do próprio JWT, sem consultar
- * a tabela de utilizadores.
- * Não é um @Component de propósito: só é registado dentro da SecurityFilterChain
- * (JwtSecurityAutoConfiguration). Como bean, o Boot registava-o também no servlet container.
- */
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
-
     private final JwtTokenProvider jwtTokenProvider;
 
     public JwtAuthenticationFilter(JwtTokenProvider jwtTokenProvider) {

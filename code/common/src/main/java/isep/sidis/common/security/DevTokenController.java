@@ -9,20 +9,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-/**
- * POST /auth/dev-token — emite um JWT para testes/demonstração (Postman, Swagger).
- * SÓ é registado com {@code aisafe.security.dev-token.enabled=true}; nunca ativar em produção.
- * Substitui-se pelo login real (POST /auth/login) quando o serviço de utilizadores existir.
- *
- * <pre>
- * POST /auth/dev-token
- * {"username": "atcc1", "roles": ["ATCC"]}
- * </pre>
- */
 @RestController
 public class DevTokenController {
-
-    /** Roles do sistema (PSOFT §9). */
     public static final Set<String> ROLES = Set.of(
             "ADMIN", "BACKOFFICE_OPERATOR", "ATCC", "MAINTENANCE_TECHNICIAN", "MAINTENANCE_SUPERVISOR");
 

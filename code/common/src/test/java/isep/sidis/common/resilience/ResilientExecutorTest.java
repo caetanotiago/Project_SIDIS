@@ -12,7 +12,6 @@ import java.util.concurrent.atomic.AtomicInteger;
 import static org.junit.jupiter.api.Assertions.*;
 
 class ResilientExecutorTest {
-
     private final CircuitBreakerRegistry registry =
             new CircuitBreakerRegistry(2, Duration.ofMinutes(1), Clock.systemUTC());
     private final ResilientExecutor executor = new ResilientExecutor(registry, 2, Duration.ofMillis(1));
@@ -29,7 +28,7 @@ class ResilientExecutorTest {
         });
 
         assertEquals("ok", result);
-        assertEquals(3, calls.get()); // 1 tentativa + 2 retries
+        assertEquals(3, calls.get());
         assertEquals(CircuitBreaker.State.CLOSED, registry.get("peer").getState());
     }
 
@@ -56,7 +55,7 @@ class ResilientExecutorTest {
         }));
 
         assertEquals(1, calls.get());
-        assertEquals(0, registry.get("peer").getConsecutiveFailures()); // o destino respondeu
+        assertEquals(0, registry.get("peer").getConsecutiveFailures());
     }
 
     @Test

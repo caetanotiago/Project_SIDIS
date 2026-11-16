@@ -34,13 +34,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-/**
- * Testa o encaminhamento peer-to-peer contra servidores HTTP reais (réplicas falsas).
- *
- * @author Diogo Fernandes - 1240632
- */
 class PeerClientTest {
-
     private final List<HttpServer> servers = new ArrayList<>();
     private final Map<String, String> lastHeaders = new ConcurrentHashMap<>();
 
@@ -50,7 +44,6 @@ class PeerClientTest {
         RequestContextHolder.resetRequestAttributes();
     }
 
-    /** Réplica falsa que responde a {@code path} com {@code status}/{@code body}. */
     private String fakePeer(String path, int status, String body, long delayMs) throws IOException {
         HttpServer server = HttpServer.create(new InetSocketAddress("localhost", 0), 0);
         server.createContext("/", exchange -> {
@@ -73,7 +66,7 @@ class PeerClientTest {
 
     private static String deadPeer() throws IOException {
         try (ServerSocket s = new ServerSocket(0)) {
-            return "http://localhost:" + s.getLocalPort(); // porta livre: ninguém a escutar
+            return "http://localhost:" + s.getLocalPort();
         }
     }
 
@@ -149,7 +142,7 @@ class PeerClientTest {
     @Test
     void requestsFromAnotherReplicaAreNeverForwardedAgain() throws IOException {
         String peer = fakePeer("/api/routes/r1", 200, "{\"id\":\"r1\"}", 0);
-        bindRequest("1"); // o pedido em curso já veio de um peer
+        bindRequest("1");
 
         PeerClient client = client(List.of(peer));
 

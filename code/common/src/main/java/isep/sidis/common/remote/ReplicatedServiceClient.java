@@ -9,24 +9,7 @@ import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BiFunction;
 
-/**
- * Cliente de OUTRO microsserviço que tem várias réplicas (ex.: Airports em 8083/8183/8283).
- *
- * <p>Load balancing round-robin: cada chamada começa numa réplica diferente. Se essa réplica tiver
- * uma falha transitória (rede, 5xx, circuito aberto) tenta a seguinte (failover), cada uma com
- * retry + circuit breaker ({@link ResilientExecutor}). Respostas 4xx são devolvidas ao chamador
- * sem failover, porque a réplica respondeu. Se nenhuma réplica responder lança
- * {@link RemoteServiceUnavailableException} (→ 503).
- *
- * <pre>
- * AirportResponse a = airports.call((rest, baseUrl) -> rest.get()
- *         .uri(baseUrl + "/api/airports/{iata}", iata)
- *         .retrieve()
- *         .body(AirportResponse.class));
- * </pre>
- */
 public class ReplicatedServiceClient {
-
     private static final Logger log = LoggerFactory.getLogger(ReplicatedServiceClient.class);
 
     private final String serviceName;

@@ -21,9 +21,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
-/** The publisher fills the envelope and the AMQP message metadata (no broker: RabbitTemplate is mocked). */
 class EventPublisherTest {
-
     private static final Instant NOW = Instant.parse("2026-11-10T14:00:00Z");
 
     private final RabbitTemplate template = mock(RabbitTemplate.class);

@@ -11,18 +11,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
 
-/**
- * Headers a enviar numa chamada a outro serviço/réplica, calculados a partir do pedido em curso:
- * <ul>
- *   <li>{@code Authorization} — o JWT do utilizador, para o destino aplicar o mesmo controlo de acessos;</li>
- *   <li>{@code X-Correlation-Id} — para seguir o pedido nos logs de todos os serviços;</li>
- *   <li>{@code X-Service-Key} e {@code X-Caller-Instance} — identidade do serviço chamador.</li>
- * </ul>
- * Tem de ser chamado na thread do pedido HTTP (usa RequestContextHolder/MDC); o PeerClient
- * captura-os antes de lançar as chamadas em paralelo.
- */
 public class OutboundHeaders {
-
     private final String serviceKey;
     private final String instanceId;
 

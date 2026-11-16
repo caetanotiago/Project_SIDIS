@@ -9,12 +9,7 @@ import org.springframework.security.web.SecurityFilterChain;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/**
- * As AuthorizationRules de um serviço não podem chamar anyRequest() (a common acrescenta-o):
- * o arranque tem de falhar com uma mensagem que diga qual é a classe.
- */
 class AuthorizationRulesGuardTest {
-
     private final WebApplicationContextRunner runner = new WebApplicationContextRunner()
             .withConfiguration(AutoConfigurations.of(JwtSecurityAutoConfiguration.class))
             .withPropertyValues("jwt.secret=test-secret-with-at-least-thirty-two-bytes-1234567890");

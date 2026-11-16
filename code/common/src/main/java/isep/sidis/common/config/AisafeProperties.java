@@ -6,30 +6,8 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 
-/**
- * Configuração distribuída partilhada por todos os microsserviços (prefixo {@code aisafe}).
- * Os valores por omissão servem para desenvolvimento local; cada instância define pelo menos
- * {@code aisafe.peers.urls} e {@code aisafe.security.service-key}.
- *
- * <pre>
- * aisafe.instance-id=flightroutes-1
- * aisafe.peers.urls=http://localhost:8184,http://localhost:8284
- * aisafe.http.connect-timeout=1s
- * aisafe.http.read-timeout=3s
- * aisafe.http.max-retries=2
- * aisafe.http.initial-backoff=100ms
- * aisafe.http.aggregation-timeout=5s
- * aisafe.circuit-breaker.failure-threshold=3
- * aisafe.circuit-breaker.open-duration=10s
- * aisafe.security.service-key=...
- * aisafe.security.dev-token.enabled=true
- * aisafe.tls.trust-store=classpath:tls/aisafe-dev-truststore.p12
- * </pre>
- */
 @ConfigurationProperties(prefix = "aisafe")
 public class AisafeProperties {
-
-    /** Identificador desta réplica nos logs e na auditoria (ex.: flightroutes-1). */
     private String instanceId = "unknown";
 
     private final Peers peers = new Peers();
@@ -48,7 +26,6 @@ public class AisafeProperties {
     public Tls getTls() { return tls; }
     public Messaging getMessaging() { return messaging; }
 
-    /** Réplicas do MESMO microsserviço (lista estática de peers, sem incluir a própria instância). */
     public static class Peers {
         private List<String> urls = new ArrayList<>();
 
@@ -56,15 +33,11 @@ public class AisafeProperties {
         public void setUrls(List<String> urls) { this.urls = urls; }
     }
 
-    /** Timeouts e retry de todas as chamadas HTTP entre serviços/réplicas. */
     public static class Http {
         private Duration connectTimeout = Duration.ofSeconds(1);
         private Duration readTimeout = Duration.ofSeconds(3);
-        /** Tentativas extra após a primeira falha transitória (0 = sem retry). */
         private int maxRetries = 2;
-        /** Espera antes do 1.º retry; duplica a cada tentativa (exponential backoff). */
         private Duration initialBackoff = Duration.ofMillis(100);
-        /** Tempo máximo à espera das respostas de todos os peers numa agregação. */
         private Duration aggregationTimeout = Duration.ofSeconds(5);
 
         public Duration getConnectTimeout() { return connectTimeout; }
@@ -80,9 +53,7 @@ public class AisafeProperties {
     }
 
     public static class CircuitBreaker {
-        /** Falhas consecutivas até o circuito abrir. */
         private int failureThreshold = 3;
-        /** Tempo em que o destino deixa de ser chamado antes de nova tentativa (HALF_OPEN). */
         private Duration openDuration = Duration.ofSeconds(10);
 
         public int getFailureThreshold() { return failureThreshold; }
@@ -92,12 +63,7 @@ public class AisafeProperties {
     }
 
     public static class Security {
-        /** Segredo partilhado que identifica os serviços AISafe entre si (header X-Service-Key). */
         private String serviceKey = "";
-        /**
-         * Caminhos (padrões Ant, ex.: {@code /api/routes/statistics/**}) que só outros serviços AISafe podem
-         * chamar: sem {@code X-Service-Key} válida → 401, mesmo com um JWT válido. Por omissão, nenhum.
-         */
         private List<String> serviceOnlyPaths = new ArrayList<>();
         private final DevToken devToken = new DevToken();
 
@@ -107,7 +73,6 @@ public class AisafeProperties {
         public void setServiceOnlyPaths(List<String> serviceOnlyPaths) { this.serviceOnlyPaths = serviceOnlyPaths; }
         public DevToken getDevToken() { return devToken; }
 
-        /** POST /auth/dev-token — só para desenvolvimento/demonstração. */
         public static class DevToken {
             private boolean enabled = false;
 
@@ -116,22 +81,13 @@ public class AisafeProperties {
         }
     }
 
-    /**
-     * AMQP messaging (RabbitMQ), see docs/Messaging-Conventions.md. Off unless the service declares
-     * {@code spring-boot-starter-amqp} and sets {@code aisafe.messaging.enabled=true}.
-     */
     public static class Messaging {
-        /** Turns on the shared messaging beans (publisher, topology, retry/DLQ policy, idempotency). */
         private boolean enabled = false;
-        /** Service name used in exchange and queue names; defaults to {@code spring.application.name}. */
         private String serviceName;
-        /** Total delivery attempts of a failing message (first one included) before it goes to the DLQ. */
         private int maxAttempts = 3;
-        /** Wait before the first retry; multiplied by {@code multiplier} after each retry, up to {@code maxInterval}. */
         private Duration initialInterval = Duration.ofMillis(500);
         private double multiplier = 2.0;
         private Duration maxInterval = Duration.ofSeconds(5);
-        /** Maximum wait for the broker to confirm a published event (with publisher-confirm-type=simple). */
         private Duration confirmTimeout = Duration.ofSeconds(5);
 
         public boolean isEnabled() { return enabled; }
@@ -150,7 +106,6 @@ public class AisafeProperties {
         public void setConfirmTimeout(Duration confirmTimeout) { this.confirmTimeout = confirmTimeout; }
     }
 
-    /** Truststore usado pelos clientes HTTP quando os serviços correm em HTTPS (perfil tls). */
     public static class Tls {
         private String trustStore;
         private String trustStorePassword;

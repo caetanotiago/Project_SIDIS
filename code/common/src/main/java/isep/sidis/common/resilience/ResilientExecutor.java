@@ -8,15 +8,7 @@ import org.springframework.web.client.ResourceAccessException;
 import java.time.Duration;
 import java.util.function.Supplier;
 
-/**
- * Executa uma chamada remota com circuit breaker + retry com exponential backoff.
- *
- * <p>Só as falhas <b>transitórias</b> contam (rede: timeout/ligação recusada, ou 5xx do destino):
- * são repetidas e, esgotadas as tentativas, registadas no circuit breaker. Uma resposta 4xx
- * (ex.: 404) significa que o destino está vivo — conta como sucesso e é propagada sem retry.
- */
 public class ResilientExecutor {
-
     private static final Logger log = LoggerFactory.getLogger(ResilientExecutor.class);
 
     private final CircuitBreakerRegistry breakers;
@@ -43,7 +35,7 @@ public class ResilientExecutor {
                 return result;
             } catch (RuntimeException e) {
                 if (!isTransient(e)) {
-                    breaker.recordSuccess(); // o destino respondeu (ex.: 404/409)
+                    breaker.recordSuccess();
                     throw e;
                 }
                 if (attempt >= maxRetries) {
@@ -60,7 +52,6 @@ public class ResilientExecutor {
         }
     }
 
-    /** Falhas que justificam retry/failover para outra réplica. */
     public static boolean isTransient(Throwable e) {
         return e instanceof ResourceAccessException
                 || e instanceof HttpServerErrorException

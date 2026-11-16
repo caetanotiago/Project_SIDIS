@@ -12,19 +12,13 @@ import java.io.InputStream;
 import java.net.http.HttpClient;
 import java.security.KeyStore;
 
-/**
- * Cria a fábrica de pedidos HTTP usada em todas as chamadas entre serviços:
- * connect/read timeouts (nenhuma chamada fica pendurada indefinidamente) e, no perfil tls,
- * um truststore com o certificado dos serviços (encriptação em trânsito).
- */
 public final class HttpClientFactory {
-
     private HttpClientFactory() {
     }
 
     public static ClientHttpRequestFactory create(AisafeProperties props, ResourceLoader resourceLoader) {
         HttpClient.Builder builder = HttpClient.newBuilder()
-                // HTTP/1.1: evita o upgrade h2c em http:// (o Tomcat não o aceita por omissão)
+
                 .version(HttpClient.Version.HTTP_1_1)
                 .connectTimeout(props.getHttp().getConnectTimeout());
 

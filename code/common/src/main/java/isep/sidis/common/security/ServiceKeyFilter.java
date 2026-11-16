@@ -18,21 +18,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.List;
 
-/**
- * Inter-service authentication. Os serviços AISafe partilham um segredo ({@code aisafe.security.service-key})
- * enviado no header {@code X-Service-Key}:
- * <ul>
- *   <li>um pedido peer-to-peer ({@code X-Peer-Hops}) TEM de trazer a chave válida — caso contrário
- *       qualquer cliente podia fingir ser uma réplica e obter só dados locais / contornar o encaminhamento;</li>
- *   <li>um pedido a um caminho só para serviços ({@code aisafe.security.service-only-paths}) TEM de trazer
- *       a chave válida — são endpoints que só outros serviços AISafe consomem (ex.: estatísticas em bruto);</li>
- *   <li>se um pedido trouxer a chave, ela tem de estar correta;</li>
- *   <li>{@code X-Peer-Hops} acima do máximo é rejeitado (proteção contra ciclos).</li>
- * </ul>
- * A autorização do utilizador continua a ser feita pelo JWT (reencaminhado pela réplica chamadora).
- */
 public class ServiceKeyFilter extends OncePerRequestFilter {
-
     private static final Logger log = LoggerFactory.getLogger(ServiceKeyFilter.class);
 
     private final byte[] expectedKey;
@@ -44,7 +30,7 @@ public class ServiceKeyFilter extends OncePerRequestFilter {
 
     public ServiceKeyFilter(String serviceKey, List<String> serviceOnlyPaths) {
         this.expectedKey = serviceKey == null ? new byte[0] : serviceKey.getBytes(StandardCharsets.UTF_8);
-        // Padrão inválido → exceção no arranque (melhor do que um endpoint desprotegido sem aviso)
+
         this.serviceOnlyPaths = serviceOnlyPaths == null ? List.of()
                 : serviceOnlyPaths.stream().map(String::trim).filter(p -> !p.isEmpty())
                         .map(PathPatternParser.defaultInstance::parse).toList();
@@ -88,15 +74,13 @@ public class ServiceKeyFilter extends OncePerRequestFilter {
         if (serviceOnlyPaths.isEmpty()) {
             return false;
         }
-        // Caminho sem context path; o PathContainer descodifica os segmentos (%xx) e ignora ";params",
-        // por isso variantes codificadas do mesmo caminho também são apanhadas
+
         String path = request.getRequestURI().substring(request.getContextPath().length());
         PathContainer container = PathContainer.parsePath(path);
         return serviceOnlyPaths.stream().anyMatch(p -> p.matches(container));
     }
 
     private boolean matches(String key) {
-        // Comparação em tempo constante (não revela o prefixo correto por timing)
         return expectedKey.length > 0
                 && MessageDigest.isEqual(expectedKey, key.getBytes(StandardCharsets.UTF_8));
     }

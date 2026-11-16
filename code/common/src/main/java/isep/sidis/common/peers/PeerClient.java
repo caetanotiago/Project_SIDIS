@@ -32,29 +32,7 @@ import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Supplier;
 
-/**
- * Comunicação peer-to-peer entre as réplicas do MESMO microsserviço (Strategy 2 — Instance Replication).
- *
- * <p>Cada réplica tem a sua base de dados, por isso os dados ficam particionados pela réplica que
- * recebeu a escrita. Quando um GET chega a uma réplica:
- * <ol>
- *   <li>a réplica responde com os dados locais;</li>
- *   <li>se lhe faltarem dados, consulta os peers <b>em paralelo</b> (unicast HTTP, com timeout,
- *       retry e circuit breaker por peer);</li>
- *   <li>agrega as respostas e devolve ao cliente uma resposta única.</li>
- * </ol>
- *
- * <p>Os pedidos enviados levam {@code X-Peer-Hops: 1}: a réplica que os recebe responde só com os
- * seus dados locais e não volta a encaminhar (sem forwarding circular). Levam também o JWT do
- * utilizador (mesmo controlo de acessos), o correlation id e a {@code X-Service-Key}.
- *
- * <p>Queries agregadas respondem com os dados disponíveis e assinalam peers indisponíveis com
- * {@code X-Partial-Response: true}. Commands to an owner fail with 503 when no peer is reachable.
- *
- * @author Diogo Fernandes - 1240632
- */
 public class PeerClient implements AutoCloseable {
-
     private static final Logger log = LoggerFactory.getLogger(PeerClient.class);
 
     private final List<String> peers;
@@ -78,26 +56,16 @@ public class PeerClient implements AutoCloseable {
         return peers;
     }
 
-    /** {@code true} se o pedido em curso foi enviado por outra réplica (deve ser respondido só localmente). */
     public boolean isPeerRequest() {
         return OutboundHeaders.currentRequest()
                 .map(r -> r.getHeader(AisafeHeaders.PEER_HOPS) != null)
                 .orElse(false);
     }
 
-    /** {@code true} se este pedido deve ser propagado aos peers. */
     public boolean shouldForward() {
         return !peers.isEmpty() && !isPeerRequest();
     }
 
-    // ------------------------------------------------------------------ GET: primeira resposta
-
-    /**
-     * Pede o recurso a todos os peers em paralelo e devolve a primeira resposta 200.
-     * 404 num peer significa "não tenho"; vazio se nenhum o tiver (ou se não se deve encaminhar).
-     *
-     * @param uri caminho + query já codificados (ex.: "/api/routes/abc")
-     */
     public <T> Optional<T> findFirst(String uri, Class<T> type) {
         return findFirst(uri, ParameterizedTypeReference.forType(type));
     }
@@ -118,7 +86,7 @@ public class PeerClient implements AutoCloseable {
                     .supplyAsync(withMdc(() -> loggedGet(peer, uri, type, headers)), pool)
                     .whenComplete((result, error) -> {
                         if (error != null) {
-                            failed.incrementAndGet(); // já registado em loggedGet
+                            failed.incrementAndGet();
                         } else if (result.isPresent()) {
                             first.complete(result);
                         }
@@ -135,13 +103,6 @@ public class PeerClient implements AutoCloseable {
         return result;
     }
 
-    // ------------------------------------------------------------------ GET: agregação
-
-    /**
-     * Pede o mesmo recurso a todos os peers em paralelo e devolve todas as respostas 200
-     * (o chamador agrega-as com os dados locais). Peers que falhem são contados em
-     * {@link PeerResult#failedPeers()} e marcados na resposta HTTP.
-     */
     public <T> PeerResult<T> collect(String uri, ParameterizedTypeReference<T> type) {
         if (!shouldForward()) {
             return PeerResult.empty();
@@ -154,7 +115,7 @@ public class PeerClient implements AutoCloseable {
             futures.add(CompletableFuture
                     .supplyAsync(withMdc(() -> loggedGet(peer, uri, type, headers)), pool)
                     .orTimeout(aggregationTimeout.toMillis(), TimeUnit.MILLISECONDS)
-                    .exceptionally(error -> null)); // null = falhou (Optional.empty = 404)
+                    .exceptionally(error -> null));
         }
 
         List<T> responses = new ArrayList<>();
@@ -173,20 +134,12 @@ public class PeerClient implements AutoCloseable {
         return new PeerResult<>(responses, failed, peers.size());
     }
 
-    /** Atalho para endpoints que devolvem listas: junta as listas de todos os peers. */
     public <T> List<T> collectList(String uri, ParameterizedTypeReference<List<T>> type) {
         List<T> all = new ArrayList<>();
         collect(uri, type).responses().forEach(all::addAll);
         return all;
     }
 
-    // ------------------------------------------------------------------ Comandos: réplica dona
-
-    /**
-     * Envia um comando (ex.: PATCH) à réplica que é dona do recurso. Os peers são tentados um a um
-     * (unicast); 404 = "não é meu", passa ao seguinte. A resposta do dono (sucesso ou erro 4xx de
-     * negócio, ex.: 409) é devolvida/propagada tal como veio.
-     */
     public <T> Optional<T> forwardToOwner(HttpMethod method, String uri, Object body, Class<T> type) {
         if (!shouldForward()) {
             return Optional.empty();
@@ -205,7 +158,6 @@ public class PeerClient implements AutoCloseable {
                     return result;
                 }
             } catch (HttpClientErrorException e) {
-                // O dono respondeu com um erro de negócio (400/409/422...): propaga-o ao cliente
                 throw new ResponseStatusException(HttpStatus.valueOf(e.getStatusCode().value()), errorMessage(e), e);
             } catch (RuntimeException e) {
                 failed++;
@@ -222,9 +174,6 @@ public class PeerClient implements AutoCloseable {
         return Optional.empty();
     }
 
-    // ------------------------------------------------------------------ internos
-
-    // Como get(), mas regista a falha na thread da chamada (com o correlation id no MDC).
     private <T> Optional<T> loggedGet(String peer, String uri, ParameterizedTypeReference<T> type,
                                       Map<String, String> headers) {
         try {
@@ -256,11 +205,10 @@ public class PeerClient implements AutoCloseable {
         try {
             return Optional.ofNullable(spec.retrieve().body(type));
         } catch (HttpClientErrorException.NotFound e) {
-            return Optional.empty(); // a réplica respondeu: não tem o recurso
+            return Optional.empty();
         }
     }
 
-    /** Copia o MDC (correlation id, instância) para a thread que faz a chamada ao peer. */
     private static <T> Supplier<T> withMdc(Supplier<T> task) {
         Map<String, String> context = MDC.getCopyOfContextMap();
         return () -> {
@@ -309,7 +257,6 @@ public class PeerClient implements AutoCloseable {
         }
     }
 
-    /** Marca a resposta HTTP em curso como parcial (alguns peers não responderam). */
     private static void markPartial(int unavailablePeers) {
         if (RequestContextHolder.getRequestAttributes() instanceof ServletRequestAttributes attrs) {
             HttpServletResponse response = attrs.getResponse();
@@ -327,7 +274,6 @@ public class PeerClient implements AutoCloseable {
                 return String.valueOf(body.get("error"));
             }
         } catch (RuntimeException ignored) {
-            // corpo não é JSON: usa-se o texto
         }
         String text = e.getResponseBodyAsString();
         return text.isBlank() ? e.getStatusText() : text;

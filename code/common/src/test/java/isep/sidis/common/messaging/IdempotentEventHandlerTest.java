@@ -9,7 +9,6 @@ import java.util.concurrent.atomic.AtomicInteger;
 import static org.junit.jupiter.api.Assertions.*;
 
 class IdempotentEventHandlerTest {
-
     private final InMemoryProcessedEventStore store = new InMemoryProcessedEventStore();
     private final IdempotentEventHandler idempotent = new IdempotentEventHandler(store);
 

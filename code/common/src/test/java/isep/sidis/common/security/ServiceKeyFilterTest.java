@@ -13,13 +13,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/**
- * Tests peer request authentication using the shared service key.
- *
- * @author Diogo Fernandes - 1240632
- */
 class ServiceKeyFilterTest {
-
     private final ServiceKeyFilter filter = new ServiceKeyFilter("shared-secret");
 
     @Test
@@ -59,8 +53,6 @@ class ServiceKeyFilterTest {
         assertTrue(chainCalled.get());
     }
 
-    // ---- caminhos só para serviços (aisafe.security.service-only-paths)
-
     private final ServiceKeyFilter serviceOnlyFilter = new ServiceKeyFilter("shared-secret",
             List.of("/api/routes/statistics/**", " /api/routes/compatible "));
 
@@ -97,7 +89,7 @@ class ServiceKeyFilterTest {
 
         serviceOnlyFilter.doFilterInternal(request, new MockHttpServletResponse(), chain(chainCalled));
 
-        assertTrue(chainCalled.get()); // o JWT e os roles são verificados a seguir
+        assertTrue(chainCalled.get());
     }
 
     @Test

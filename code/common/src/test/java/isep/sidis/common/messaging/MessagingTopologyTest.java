@@ -11,9 +11,7 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-/** Naming rules and the broker objects declared for one consuming instance. */
 class MessagingTopologyTest {
-
     @Test
     void namesFollowTheConvention() {
         assertEquals("aisafe.flightroutes.events", MessagingNames.eventsExchange("flightroutes"));

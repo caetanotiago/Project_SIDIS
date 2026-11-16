@@ -7,13 +7,7 @@ import org.springframework.http.client.ClientHttpResponse;
 
 import java.io.IOException;
 
-/**
- * Interceptor do RestClient usado para chamar OUTROS microsserviços: acrescenta o JWT do utilizador,
- * o correlation id e a identidade do serviço (ver {@link OutboundHeaders}). Não sobrepõe headers
- * que o pedido já traga (ex.: o PeerClient define-os explicitamente).
- */
 public class InterServiceHeadersInterceptor implements ClientHttpRequestInterceptor {
-
     private final OutboundHeaders outboundHeaders;
 
     public InterServiceHeadersInterceptor(OutboundHeaders outboundHeaders) {

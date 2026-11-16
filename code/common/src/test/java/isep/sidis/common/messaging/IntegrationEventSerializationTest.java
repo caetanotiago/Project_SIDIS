@@ -14,9 +14,7 @@ import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-/** Wire format of the envelope: what any consumer, in any service, will receive. */
 class IntegrationEventSerializationTest {
-
     record SamplePayload(String id, double distance, Integer minCapacity) { }
 
     private static final Instant WHEN = Instant.parse("2026-11-10T14:03:21.512Z");
@@ -50,7 +48,7 @@ class IntegrationEventSerializationTest {
     @Test
     void consumerGetsATypedPayloadFromTheListenerParameterType() {
         Message message = converter.toMessage(sample(), new MessageProperties());
-        // What @RabbitListener does with a parameter of type IntegrationEvent<SamplePayload>
+
         message.getMessageProperties().setInferredArgumentType(
                 ResolvableType.forClassWithGenerics(IntegrationEvent.class, SamplePayload.class).getType());
 

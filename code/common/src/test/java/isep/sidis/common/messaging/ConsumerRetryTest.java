@@ -17,9 +17,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.mock;
 
-/** The listener advice: bounded attempts, then reject without requeue (= the broker dead-letters the message). */
 class ConsumerRetryTest {
-
     @Test
     void aFailingListenerRunsMaxAttemptsTimesAndIsThenRejectedWithoutRequeue() {
         MethodInterceptor retry = ConsumerRetry.interceptor(3, Duration.ofMillis(1), 1.0, Duration.ofMillis(1));
@@ -64,13 +62,11 @@ class ConsumerRetryTest {
                 () -> ConsumerRetry.interceptor(0, Duration.ZERO, 1.0, Duration.ZERO));
     }
 
-    /** The same decision the listener container takes: even with requeue on by default, this one is not requeued. */
     private static void assertGoesToTheDeadLetterQueue(Throwable thrown) {
         assertFalse(ContainerUtils.shouldRequeue(true, thrown, LogFactory.getLog(ConsumerRetryTest.class)),
                 "retries exhausted: the message must be rejected without requeue, not " + thrown);
     }
 
-    /** Same arguments the listener container passes to its advice chain: (channel, message). */
     private static MethodInvocation listenerCall(Runnable listener) {
         Object[] args = { mock(Channel.class), new Message("{}".getBytes(), new MessageProperties()) };
         return new MethodInvocation() {

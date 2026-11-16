@@ -10,8 +10,6 @@ import java.time.ZoneOffset;
 import static org.junit.jupiter.api.Assertions.*;
 
 class CircuitBreakerTest {
-
-    /** Relógio controlado pelo teste. */
     static class MutableClock extends Clock {
         Instant now = Instant.parse("2026-10-01T10:00:00Z");
 
@@ -68,7 +66,7 @@ class CircuitBreakerTest {
         cb.recordFailure();
         cb.recordFailure();
         clock.advance(Duration.ofSeconds(5));
-        assertTrue(cb.allowRequest()); // HALF_OPEN
+        assertTrue(cb.allowRequest());
 
         cb.recordFailure();
         assertEquals(CircuitBreaker.State.OPEN, cb.getState());

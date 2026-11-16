@@ -27,21 +27,10 @@ import org.springframework.web.client.RestClient;
 
 import java.time.Clock;
 
-/**
- * Infraestrutura distribuída partilhada (auto-configurada em todos os microsserviços):
- * <ul>
- *   <li>{@link PeerClient} — encaminhamento/agregação de pedidos entre réplicas do mesmo serviço;</li>
- *   <li>{@link ReplicatedServiceClientFactory} — clientes de outros serviços com load balancing e failover;</li>
- *   <li>{@link ResilientExecutor} — retry com exponential backoff + circuit breaker;</li>
- *   <li>RestClient com timeouts, TLS opcional e headers propagados (JWT, correlation id, service key);</li>
- *   <li>{@link CorrelationIdFilter} e health indicator dos peers.</li>
- * </ul>
- */
 @AutoConfiguration
 @ConditionalOnWebApplication(type = ConditionalOnWebApplication.Type.SERVLET)
 @EnableConfigurationProperties(AisafeProperties.class)
 public class DistributedInfrastructureAutoConfiguration {
-
     public static final String INTER_SERVICE_REST_CLIENT = "interServiceRestClient";
 
     @Bean
@@ -63,14 +52,12 @@ public class DistributedInfrastructureAutoConfiguration {
         return new OutboundHeaders(props.getSecurity().getServiceKey(), instanceId(props, env));
     }
 
-    /** RestClient para chamadas entre serviços: timeouts, TLS e headers propagados. */
     @Bean(name = INTER_SERVICE_REST_CLIENT)
     @ConditionalOnMissingBean(name = INTER_SERVICE_REST_CLIENT)
     public RestClient interServiceRestClient(ObjectProvider<RestClient.Builder> builder,
                                              OutboundHeaders outboundHeaders,
                                              AisafeProperties props,
                                              ResourceLoader resourceLoader) {
-        // Usa o builder do Boot (mesmo Jackson da aplicação) quando existe
         RestClient.Builder b = builder.getIfAvailable(RestClient::builder).clone();
         return b.requestFactory(HttpClientFactory.create(props, resourceLoader))
                 .requestInterceptor(new InterServiceHeadersInterceptor(outboundHeaders))
@@ -97,7 +84,7 @@ public class DistributedInfrastructureAutoConfiguration {
     public FilterRegistrationBean<CorrelationIdFilter> correlationIdFilter(AisafeProperties props, Environment env) {
         FilterRegistrationBean<CorrelationIdFilter> registration =
                 new FilterRegistrationBean<>(new CorrelationIdFilter(instanceId(props, env)));
-        registration.setOrder(Ordered.HIGHEST_PRECEDENCE); // antes da segurança: tudo fica com correlation id
+        registration.setOrder(Ordered.HIGHEST_PRECEDENCE);
         registration.addUrlPatterns("/*");
         return registration;
     }
@@ -105,14 +92,12 @@ public class DistributedInfrastructureAutoConfiguration {
     @Configuration(proxyBeanMethods = false)
     @ConditionalOnClass(name = "org.springframework.boot.health.contributor.HealthIndicator")
     static class HealthConfiguration {
-
         @Bean(name = "peers")
         public PeersHealthIndicator peersHealthIndicator(PeerClient peerClient, CircuitBreakerRegistry registry) {
             return new PeersHealthIndicator(peerClient, registry);
         }
     }
 
-    /** {@code aisafe.instance-id}, ou "nome-da-aplicação:porta" se não estiver definido. */
     public static String instanceId(AisafeProperties props, Environment env) {
         if (props.getInstanceId() != null && !"unknown".equals(props.getInstanceId())) {
             return props.getInstanceId();

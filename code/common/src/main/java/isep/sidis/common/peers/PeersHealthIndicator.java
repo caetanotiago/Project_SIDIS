@@ -8,13 +8,7 @@ import org.springframework.boot.health.contributor.HealthIndicator;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
-/**
- * Componente "peers" do /actuator/health: estado do circuit breaker de cada réplica peer e de cada
- * serviço remoto já contactado. Fica sempre UP — um peer em baixo não torna ESTA réplica indisponível
- * (é precisamente isso que a replicação garante); serve para monitorização.
- */
 public class PeersHealthIndicator implements HealthIndicator {
-
     private final PeerClient peerClient;
     private final CircuitBreakerRegistry breakers;
 

@@ -4,13 +4,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
 
-/**
- * Thread-safe, bounded {@link ProcessedEventStore}: keeps the ids of the last {@code capacity} events
- * (oldest forgotten first). Lost on restart, so handlers must still be idempotent by themselves
- * (e.g. upsert by id instead of insert).
- */
 public class InMemoryProcessedEventStore implements ProcessedEventStore {
-
     public static final int DEFAULT_CAPACITY = 10_000;
 
     private final Map<UUID, String> processed;
