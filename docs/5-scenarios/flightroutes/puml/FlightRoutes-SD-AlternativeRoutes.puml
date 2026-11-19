@@ -6,8 +6,8 @@ participant ": FlightRouteController" as Ctrl <<Controller>>
 participant ": SearchAlternativeRoutesService" as Service <<Service>>
 participant ": AirportClient" as ApClient <<ACL>>
 participant "Airports\n(replicas)" as AP
-participant ": RouteReplicaQueries" as Routes
-participant "Peer replicas" as Peers
+participant "routes : ReplicatedRouteRepository" as Routes <<read model>>
+
 participant "strategy : RouteSearchStrategy\n(MinStopsRouteSearch)" as Strategy <<Strategy>>
 participant ": ItineraryAssembler" as Assembler <<Component>>
 
@@ -24,12 +24,9 @@ loop origin and destination
     ApClient --> Service : true (false -> 404)
 end
 
-Service -> Routes : activeNetwork()
+Service -> Routes : findAllActive()
 activate Routes
-Routes -> Routes : local findAllActive()
-Routes -> Peers : GET /api/routes/active (parallel)
-Peers --> Routes : their active routes
-Routes --> Service : the whole Network (List<RouteSummary>)
+Routes --> Service : the whole Network (toSummary())
 deactivate Routes
 
 Service -> Strategy : search(network, origin, dest)
@@ -38,7 +35,7 @@ note right of Strategy
   BFS over the graph IATA -> outgoing routes;
   returns every itinerary with the minimum
   number of stops (no cycles). Legs may be
-  stored in different replicas.
+  owned by different replicas.
 end note
 Strategy --> Service : List<Itinerary>
 deactivate Strategy

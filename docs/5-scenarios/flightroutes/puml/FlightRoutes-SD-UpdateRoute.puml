@@ -4,11 +4,12 @@ title US112 — Update / deactivate a route (command executed by the owner repli
 actor "ATCC /\nBackoffice Operator" as User
 
 participant "flightroutes-1\n: FlightRouteController" as Ctrl <<Controller>>
-participant ": UpdateFlightRouteService" as Service <<Service>>
-participant "routeRepo : FlightRouteRepository" as RouteRepo <<Repository>>
+participant ": UpdateFlightRouteService" as Service <<command>>
+participant "routeRepo : FlightRouteRepository" as RouteRepo <<write model>>
 participant "route : FlightRoute" as Route <<Entity>>
 participant ": PeerClient" as Peers
 participant "flightroutes-2 / -3" as Owner
+participant ": FlightRoutesEventEmitter" as Emitter
 participant ": FlightRouteAssembler" as Assembler <<Component>>
 
 activate User
@@ -44,8 +45,10 @@ alt route stored in this replica
         Route --> Service
         deactivate Route
     end
-    Service -> RouteRepo : save(route)
+    Service -> RouteRepo : saveAndFlush(route)
     note right of RouteRepo : @Version check\n(overlapping update -> 409;\nthe client sends no version)
+    Service -> Emitter : routeUpdated(savedRoute)
+    note right of Emitter : RouteUpdated (full state + history + new version):\nlocal read model now, RabbitMQ after the commit,\nevery other replica converges (S1)
     Service -> Assembler : toDTO(savedRoute)
     Assembler --> Service : FlightRouteDTO
 else route not stored here
@@ -67,6 +70,7 @@ deactivate User
 
 note over User, Assembler
   A route is only ever written by its owner replica, so there is a single version of each
-  route (no write conflicts between replicas). No owner found → 404.
+  route and a single producer of its events, so they arrive in order. No owner found → 404;
+  owner down → 503. Deactivation = RouteUpdated with status INACTIVE (no RouteDeleted).
 end note
 @enduml

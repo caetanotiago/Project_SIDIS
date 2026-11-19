@@ -21,22 +21,25 @@ package "Presentation" {
     }
     class FlightRouteAssembler <<Component>> {
         + toDTO(route | summary) : FlightRouteDTO
-        + toSummary(dto) : RouteSummary
         + toDTOWithUsageList(usages)
         + toHistoryDTOList(history)
     }
-    class ItineraryAssembler <<Component>> {
-        + toDTOList(itineraries)
-    }
 }
 
-package "Application" {
+package "command (write side)" {
     class CreateFlightRouteService <<Service>> {
         + createRoute(dto) : FlightRoute
     }
     class UpdateFlightRouteService <<Service>> {
         + updateRoute(id, dto) : FlightRouteDTO
     }
+    class FlightRoutesEventEmitter <<Component>> {
+        + routeCreated(route)
+        + routeUpdated(route)
+    }
+}
+
+package "query (read side)" {
     class "SearchFlightRoutesService\nGetRouteHistoryService\nViewRoutesByAirportService\nCountRoutesByAirportService\nCalculateNetworkDistanceService" as QueryServices <<Service>>
     class ListActiveRoutesService <<Service>> {
         + listActiveRoutes(sortBy) : List<RouteUsage>
@@ -44,14 +47,26 @@ package "Application" {
     class SearchAlternativeRoutesService <<Service>> {
         + searchAlternatives(origin, dest) : List<Itinerary>
     }
-    class RouteReplicaQueries <<Component>> {
-        + findById(id) : Optional<RouteSummary>
-        + withPeers(local, peerUri) : List<RouteSummary>
-        + activeNetwork() : List<RouteSummary>
-    }
     class ScheduledFlightStatisticsService <<Service>> {
         + usageByRoute() : Map<String, Long>
     }
+    class ReplicatedRoute <<Read Model>> <<Entity>> {
+        - sourceVersion : Long
+        - ownerInstance : String
+        - lastEventId : String
+        + toSummary() : RouteSummary
+    }
+    class ReplicatedRouteHistory <<Embeddable>>
+    interface ReplicatedRouteRepository <<Repository>> {
+        + findAllActive()
+        + findCompatibleRoutes(range, capacity)
+        + existsByOriginAndDestination(o, d)
+        + countByOrigin() / countByDestination()
+    }
+    ReplicatedRoute *-- "0..*" ReplicatedRouteHistory
+}
+
+package "services.strategy" {
     interface RouteSortStrategy <<Strategy>> {
         + key() : String
         + sort(routes) : List<RouteUsage>
@@ -79,12 +94,12 @@ package "Domain" {
         + changeStatus(newState)
         + toSummary() : RouteSummary
     }
-    class RouteSummary <<Read Model>>
-    class Itinerary <<Read Model>>
-    class RouteUsage <<Read Model>>
+    class RouteSummary <<View>>
+    class Itinerary <<View>>
+    class RouteUsage <<View>>
 }
 
-package "Persistence" {
+package "Persistence (write model)" {
     interface FlightRouteRepository <<Repository>>
 }
 
@@ -94,10 +109,7 @@ package "Integration" {
         + exists(iata) : boolean
     }
     class "PeerClient\n(common)" as PeerClient <<Peer-to-peer>> {
-        + findFirst(uri, type)
-        + collect / collectList(uri, type)
         + forwardToOwner(method, uri, body, type)
-        + isPeerRequest() : boolean
     }
     class "ReplicatedServiceClient\n(common)" as Replicated <<Load balancing + failover>>
     AirportClient --> Replicated
@@ -109,29 +121,28 @@ FlightRouteController --> QueryServices
 FlightRouteController --> ListActiveRoutesService
 FlightRouteController --> SearchAlternativeRoutesService
 FlightRouteController --> FlightRouteAssembler
-FlightRouteController --> ItineraryAssembler
 
+CreateFlightRouteService --> ReplicatedRouteRepository : duplicate check
 CreateFlightRouteService --> AirportClient
 CreateFlightRouteService --> DistanceCalculatorService
 CreateFlightRouteService --> FlightRouteFactory
-CreateFlightRouteService --> FlightRouteRepository
-CreateFlightRouteService --> PeerClient : duplicate check
+CreateFlightRouteService --> FlightRouteRepository : saveAndFlush
+CreateFlightRouteService --> FlightRoutesEventEmitter : RouteCreated
 UpdateFlightRouteService --> FlightRouteRepository
-UpdateFlightRouteService --> PeerClient : forwardToOwner
+UpdateFlightRouteService --> PeerClient : not the owner
 UpdateFlightRouteService ..> FlightRoute : updateDetails / changeStatus
-QueryServices --> RouteReplicaQueries
-QueryServices --> FlightRouteRepository
-QueryServices --> AirportClient
-QueryServices --> PeerClient
-ListActiveRoutesService --> RouteReplicaQueries
+UpdateFlightRouteService --> FlightRoutesEventEmitter : RouteUpdated
+
+QueryServices --> ReplicatedRouteRepository
+QueryServices --> AirportClient : airport exists
+ListActiveRoutesService --> ReplicatedRouteRepository
 ListActiveRoutesService --> ScheduledFlightStatisticsService
 ListActiveRoutesService --> "1..*" RouteSortStrategy
-SearchAlternativeRoutesService --> RouteReplicaQueries
+SearchAlternativeRoutesService --> ReplicatedRouteRepository
 SearchAlternativeRoutesService --> AirportClient
 SearchAlternativeRoutesService --> RouteSearchStrategy
-RouteReplicaQueries --> FlightRouteRepository
-RouteReplicaQueries --> PeerClient
-RouteReplicaQueries ..> RouteSummary : creates
+ReplicatedRouteRepository ..> ReplicatedRoute : persists
+ReplicatedRoute ..> RouteSummary : creates
 
 FlightRouteFactory ..> FlightRoute : creates
 FlightRouteRepository ..> FlightRoute : persists

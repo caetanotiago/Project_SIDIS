@@ -1,7 +1,7 @@
 package isep.psoft.aisafe.flightroutes.assemblers;
 
 import isep.psoft.aisafe.flightroutes.domain.FlightRoute;
-import isep.psoft.aisafe.flightroutes.domain.RouteHistory;
+import isep.psoft.aisafe.flightroutes.query.ReplicatedRouteHistory;
 import isep.psoft.aisafe.flightroutes.domain.RouteSummary;
 import isep.psoft.aisafe.flightroutes.domain.RouteUsage;
 import isep.psoft.aisafe.flightroutes.dto.FlightRouteDTO;
@@ -34,13 +34,13 @@ public class FlightRouteAssembler {
         return routes.stream().map(this::toDTO).toList();
     }
 
-    /** DTO recebido de uma réplica peer → vista de leitura. */
+    /** DTO (e.g. returned by the owner replica of a forwarded command) -> read view. */
     public RouteSummary toSummary(FlightRouteDTO dto) {
         return new RouteSummary(dto.getId(), dto.getOriginIATA(), dto.getDestIATA(), dto.getDistance(),
                 dto.getMinRange(), dto.getMinCapacity(), dto.getEstimatedFlightTime(), dto.getStatus());
     }
 
-    // US214 - inclui a contagem de utilização (popularidade) no DTO
+    // US214 - includes the usage count (popularity) in the DTO
     public FlightRouteDTO toDTOWithUsage(RouteUsage routeUsage) {
         FlightRouteDTO dto = toDTO(routeUsage.route());
         dto.setUsageCount(routeUsage.usageCount());
@@ -51,7 +51,7 @@ public class FlightRouteAssembler {
         return usages.stream().map(this::toDTOWithUsage).toList();
     }
 
-    public RouteHistoryDTO toHistoryDTO(RouteHistory history) {
+    public RouteHistoryDTO toHistoryDTO(ReplicatedRouteHistory history) {
         RouteHistoryDTO dto = new RouteHistoryDTO();
         dto.setChangeDate(history.getChangeDate().toString());
         dto.setDescription(history.getDescription());
@@ -66,7 +66,7 @@ public class FlightRouteAssembler {
         return dto;
     }
 
-    public List<RouteHistoryDTO> toHistoryDTOList(List<RouteHistory> historyLog) {
+    public List<RouteHistoryDTO> toHistoryDTOList(List<ReplicatedRouteHistory> historyLog) {
         return historyLog.stream().map(this::toHistoryDTO).toList();
     }
 }

@@ -1,6 +1,6 @@
 # RabbitMQ helpers shared by start-all.ps1 and stop-all.ps1 (dot-source: . "$PSScriptRoot\lib\rabbitmq.ps1").
 # Broker definition: infra\docker-compose.rabbitmq.yml; credentials: infra\.env (copy of infra\.env.example).
-# Conventions: docs\Messaging-Conventions.md
+# Event contracts: docs\2-containers\Integration-Contracts.md (section 9); start and run: docs\README.md
 
 $script:RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..\..")).Path
 $script:BrokerComposeFile = Join-Path $script:RepoRoot "infra\docker-compose.rabbitmq.yml"

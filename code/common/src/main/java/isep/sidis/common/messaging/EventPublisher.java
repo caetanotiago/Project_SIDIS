@@ -33,9 +33,23 @@ public class EventPublisher {
         this.confirmTimeout = confirmTimeout;
     }
 
+    /** Builds a new envelope (fresh eventId, now) and publishes it. */
     public <T> IntegrationEvent<T> publish(String eventType, String routingKey, String aggregateId, T payload) {
         IntegrationEvent<T> event = IntegrationEvent.create(eventType, clock.instant(), sourceService,
                 sourceInstance, aggregateId, payload);
+        return publish(event, routingKey);
+    }
+
+    /**
+     * Publishes an envelope built earlier (e.g. applied to the producer's own read model inside the write
+     * transaction and published after the commit), keeping its eventId so consumers can deduplicate it.
+     * It must come from this service: its sourceService is the exchange it goes to.
+     */
+    public <T> IntegrationEvent<T> publish(IntegrationEvent<T> event, String routingKey) {
+        if (!sourceService.equals(event.sourceService())) {
+            throw new IllegalArgumentException("Event from " + event.sourceService() + " cannot be published by "
+                    + sourceService + " (exchange " + exchange + ")");
+        }
         MessagePostProcessor metadata = message -> {
             var props = message.getMessageProperties();
             props.setMessageId(event.eventId().toString());
@@ -59,7 +73,7 @@ public class EventPublisher {
         } else {
             rabbitTemplate.convertAndSend(exchange, routingKey, event, metadata);
         }
-        log.info("Published {} {} for {} to {} ({})", event.eventType(), event.eventId(), aggregateId, exchange, routingKey);
+        log.info("Published {} {} for {} to {} ({})", event.eventType(), event.eventId(), event.aggregateId(), exchange, routingKey);
         return event;
     }
 

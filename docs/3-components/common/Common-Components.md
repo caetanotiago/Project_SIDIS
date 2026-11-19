@@ -1,6 +1,6 @@
 # C4 Level 3 — common library: Components
 
-> The `common` library is **not a container**: it is embedded in every service container and auto-configured by Spring Boot (`META-INF/spring/...AutoConfiguration.imports`). It gives every service the same security, peer forwarding and resilience behaviour ([L2 §3](../../2-containers/Containers.md#3-distribution-design-decisions)).
+> The `common` library is **not a container**: it is embedded in every service container and auto-configured by Spring Boot (`META-INF/spring/...AutoConfiguration.imports`). It gives every service the same security, peer forwarding, resilience and messaging behaviour ([L2 §3](../../2-containers/Containers.md#3-distribution-design-decisions)).
 > Lower level: [L4 Code](../../4-code/common/Common-Code.md)
 
 ![C4-L3-Common-Components](svg/C4-L3-Common-Components.svg)
@@ -18,8 +18,9 @@
 | **ReplicatedServiceClient** | `remote.ReplicatedServiceClient(Factory)`, `RemoteServiceUnavailableException` | Round-robin + failover over the replicas of another service; `503` if none answers | `factory.create("Airports", urls)` |
 | **ResilientExecutor** | `resilience.ResilientExecutor`, `CircuitBreaker`, `CircuitBreakerRegistry` | Retry with exponential backoff; circuit breaker per target | used by the two clients above |
 | **Inter-service RestClient** | `http.HttpClientFactory`, `InterServiceHeadersInterceptor`, `OutboundHeaders`, `AisafeHeaders` | Timeouts, TLS truststore, propagation of JWT / correlation id; adds `X-Service-Key` to **every** inter-service and peer call | bean `interServiceRestClient` (used by `PeerClient` and every `ReplicatedServiceClient`) |
+| **Messaging (AMQP)** | `messaging.EventPublisher`, `IntegrationEvent`, `MessagingNames`, `MessagingTopology`, `EventSubscription`, `EventMessagingAutoConfiguration`, `EventMessageConverters`, `ConsumerRetry`, `IdempotentEventHandler`, `ProcessedEventStore` (+ `InMemoryProcessedEventStore`) | Event envelope; exchange `aisafe.<service>.events`; queue per consuming instance `<instanceId>.<sourceService>` + DLQ `<queue>.dlq` on `aisafe.dlx`; publisher confirms; ack after processing, bounded retry with back-off, then dead-letter; duplicate detection by eventId. Only active with `aisafe.messaging.enabled=true` | add `spring-boot-starter-amqp`, the configuration block and `EventSubscription` beans ([Integration-Contracts §9.5](../../2-containers/Integration-Contracts.md#95-how-to-publish-and-consume-events)); inject `EventPublisher`; optionally replace `ProcessedEventStore` with a JPA one |
 | **PeersHealthIndicator** | `peers.PeersHealthIndicator` | `peers` component of `/actuator/health` with the circuit state of each target | automatic |
-| **Configuration** | `config.AisafeProperties` | All `aisafe.*` properties (peers, timeouts, retry, circuit breaker, security — `service-key`, `service-only-paths`, `dev-token.enabled` —, TLS) | `application*.properties` |
+| **Configuration** | `config.AisafeProperties` | All `aisafe.*` properties (peers, timeouts, retry, circuit breaker, security — `service-key`, `service-only-paths`, `dev-token.enabled` —, TLS, messaging — `enabled`, `max-attempts`, back-off, `confirm-timeout`) | `application*.properties` |
 
 ## Request pipeline (order of the filters)
 

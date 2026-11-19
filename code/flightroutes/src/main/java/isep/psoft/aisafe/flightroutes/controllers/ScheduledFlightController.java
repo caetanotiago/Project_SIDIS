@@ -5,10 +5,10 @@ import isep.psoft.aisafe.flightroutes.domain.ScheduledFlight;
 import isep.psoft.aisafe.flightroutes.dto.AircraftOperationalHoursDTO;
 import isep.psoft.aisafe.flightroutes.dto.CreateScheduledFlightDTO;
 import isep.psoft.aisafe.flightroutes.dto.ScheduledFlightDTO;
-import isep.psoft.aisafe.flightroutes.services.CalculateOperationalHoursService;
-import isep.psoft.aisafe.flightroutes.services.CreateScheduledFlightService;
-import isep.psoft.aisafe.flightroutes.services.ScheduledFlightStatisticsService;
-import isep.psoft.aisafe.flightroutes.services.ViewScheduledFlightsByAircraftService;
+import isep.psoft.aisafe.flightroutes.query.CalculateOperationalHoursService;
+import isep.psoft.aisafe.flightroutes.command.CreateScheduledFlightService;
+import isep.psoft.aisafe.flightroutes.query.ScheduledFlightStatisticsService;
+import isep.psoft.aisafe.flightroutes.query.ViewScheduledFlightsByAircraftService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -31,7 +31,8 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Voos agendados (WP#3B). Os GET juntam os voos de todas as réplicas (ver FlightRouteController).
+ * Scheduled flights (WP#3B). POST is a command on this replica's write model; every GET is a query on this
+ * replica's flight read model, which holds the flights of every replica (see FlightRouteController).
  */
 @RestController
 @RequestMapping("/api/scheduled-flights")
@@ -45,7 +46,7 @@ public class ScheduledFlightController {
     private final ScheduledFlightStatisticsService statisticsService;
     private final ScheduledFlightAssembler assembler;
 
-    // US212 - Criar voo agendado (fica guardado nesta réplica)
+    // US212 (command): create a scheduled flight (stored in, and owned by, this replica)
     @PostMapping
     @Operation(summary = "US212 — Assign an aircraft to a route for a date/time (create a scheduled flight)")
     public ResponseEntity<ScheduledFlightDTO> createScheduledFlight(
@@ -59,15 +60,14 @@ public class ScheduledFlightController {
         return ResponseEntity.created(location).body(body);
     }
 
-    // US206 - Horas operacionais por aeronave (chamado pelo microsserviço Aircraft Management)
+    // US206 (query, B4a provider): operational hours per aircraft
     @GetMapping("/operational-hours")
     @Operation(summary = "US206 — Total operational hours per aircraft, from its scheduled flights")
     public ResponseEntity<Page<AircraftOperationalHoursDTO>> getOperationalHours(@ParameterObject Pageable pageable) {
         return ResponseEntity.ok(operationalHoursService.calculateOperationalHours(pageable));
     }
 
-    // Pesquisa (não paginada) dos voos de uma aeronave, opcionalmente numa data/hora.
-    // Usada também pelas réplicas peer para agregar US213 e verificar conflitos de US212.
+    // (query) Non-paginated search of the flights of an aircraft, optionally at a date/time.
     @GetMapping("/search")
     @Operation(summary = "Scheduled flights of an aircraft, optionally at a given date/time (all replicas)")
     public ResponseEntity<List<ScheduledFlightDTO>> searchScheduledFlights(
@@ -77,28 +77,28 @@ public class ScheduledFlightController {
         return ResponseEntity.ok(viewService.search(aircraft, date, time));
     }
 
-    // US214 (popularidade) - nº de voos por rota, em todas as réplicas
+    // US214 (query, popularity): number of flights per route
     @GetMapping("/statistics/usage-by-route")
     @Operation(summary = "Number of scheduled flights per route id (all replicas)")
     public ResponseEntity<Map<String, Long>> usageByRoute() {
         return ResponseEntity.ok(statisticsService.usageByRoute());
     }
 
-    // US206 - minutos de voo por aeronave, em todas as réplicas
+    // US206 (query, B4b provider): flight minutes per aircraft (called by Aircraft Management)
     @GetMapping("/statistics/minutes-by-aircraft")
     @Operation(summary = "Scheduled flight minutes per aircraft registration (all replicas)")
     public ResponseEntity<Map<String, Long>> minutesByAircraft() {
         return ResponseEntity.ok(statisticsService.minutesByAircraft());
     }
 
-    // Detalhe (suporta self-link do HATEOAS); local ou numa réplica peer
+    // (query) Details (target of the HATEOAS self link), from the local read model
     @GetMapping("/{id}")
     @Operation(summary = "Get the details of a scheduled flight by its id")
     public ResponseEntity<ScheduledFlightDTO> getScheduledFlightById(@PathVariable String id) {
         return ResponseEntity.ok(viewService.getById(id));
     }
 
-    // US213 - Ver voos agendados de uma aeronave (paginado)
+    // US213 (query): scheduled flights of an aircraft (paginated)
     @GetMapping
     @Operation(summary = "US213 — View all scheduled flights for a specific aircraft (paginated, all replicas)")
     public ResponseEntity<PagedModel<ScheduledFlightDTO>> getScheduledFlightsByAircraft(

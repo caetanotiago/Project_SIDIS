@@ -1,0 +1,58 @@
+@startuml FlightRoutes-SD-WriteEventProjection
+autonumber
+title Write → event → projection on every replica (US110; the same for US112 and US212)
+actor "ATCC" as ATCC
+
+box "flightroutes-1 (receives the command: owner)" #F8F9FA
+participant ": CreateFlightRouteService" as Cmd <<command>>
+participant "writeRepo : FlightRouteRepository" as Write <<write model>>
+participant ": FlightRoutesEventEmitter" as Emitter
+participant ": FlightRoutesEventRouter\n→ RouteProjection" as Proj1 <<projection>>
+participant "REPLICATED_ROUTE\n(flightroutes-1)" as RM1 <<read model>>
+participant ": IntegrationEventRelay\n→ RabbitIntegrationEventTransport" as Relay
+end box
+queue "RabbitMQ\naisafe.flightroutes.events" as MQ
+box "flightroutes-2 (and -3)" #F1F3F5
+participant ": FlightRoutesEventsListener" as L2
+participant ": FlightRoutesEventRouter\n→ RouteProjection" as Proj2 <<projection>>
+participant "REPLICATED_ROUTE\n(flightroutes-2)" as RM2 <<read model>>
+end box
+
+ATCC -> Cmd : POST /api/routes
+activate Cmd
+== write transaction (flightroutes-1) ==
+Cmd -> Write : saveAndFlush(route)
+note right of Write : version = 0 (final after flush)
+Cmd -> Emitter : routeCreated(route)
+activate Emitter
+Emitter -> Emitter : event = IntegrationEvent.create(\n"RouteCreated", sourceInstance = flightroutes-1,\npayload = full state + history + version)
+Emitter -> Proj1 : apply(event)
+Proj1 -> RM1 : upsert row + PROCESSED_EVENT(eventId)
+Emitter -> Emitter : publishEvent(OutgoingIntegrationEvent("route.created", event))
+deactivate Emitter
+== commit ==
+Cmd --> ATCC : 201 Created (fr1 already answers GET /api/routes/{id}: read-your-writes)
+deactivate Cmd
+
+Relay -> MQ : publish(event, "route.created")\npersistent, publisher confirm
+note right of Relay
+  AFTER_COMMIT only. Broker down → logged
+  "could not be published (event lost)";
+  the HTTP request already succeeded.
+end note
+
+MQ -> L2 : deliver to queue flightroutes-2.flightroutes
+activate L2
+L2 -> Proj2 : apply(IntegrationEvent<JsonNode>)
+Proj2 -> Proj2 : eventId already processed? (no)\nstored version newer? (no)
+Proj2 -> RM2 : upsert row (owner = flightroutes-1) + PROCESSED_EVENT
+L2 --> MQ : ack (after commit)
+deactivate L2
+note over L2, RM2
+  Exception → retried 3× with back-off → <queue>.dlq.
+  Replica down → the event waits in its durable queue.
+end note
+
+MQ -> Proj1 : deliver to flightroutes-1.flightroutes (own event)
+Proj1 -> Proj1 : eventId already processed → skipped (duplicate)
+@enduml

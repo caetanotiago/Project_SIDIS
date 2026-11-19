@@ -1,0 +1,104 @@
+@startuml FlightRoutes-CD-Events
+!pragma layout smetana
+skinparam classAttributeIconSize 0
+skinparam packageStyle rectangle
+hide empty members
+
+package "command" {
+    class FlightRoutesEventEmitter <<Component>> {
+        + routeCreated(route) : IntegrationEvent
+        + routeUpdated(route) : IntegrationEvent
+        + scheduledFlightCreated(flight) : IntegrationEvent
+        - emit(type, routingKey, aggregateId, payload)
+    }
+    class OutgoingIntegrationEvent <<Spring event>> {
+        routingKey : String
+        event : IntegrationEvent<?>
+    }
+    class IntegrationEventRelay <<Component>> {
+        + afterCommit(outgoing) <<@TransactionalEventListener AFTER_COMMIT>>
+    }
+    interface IntegrationEventTransport {
+        + send(outgoing)
+    }
+}
+
+package "events (published language)" {
+    class RouteEvents <<constants>> {
+        ROUTE_CREATED, ROUTE_UPDATED
+        route.created, route.updated
+    }
+    class ScheduledFlightEvents <<constants>> {
+        SCHEDULED_FLIGHT_CREATED, SCHEDULED_FLIGHT_STATUS_CHANGED
+        scheduled-flight.created, scheduled-flight.status-changed
+    }
+    class RouteEventPayload <<record>> {
+        routeId, originIata, destinationIata, distance
+        minRange, minCapacity, estimatedFlightTime, status
+        version, history : List<HistoryEntry>
+        + of(route : FlightRoute)
+    }
+    class ScheduledFlightEventPayload <<record>> {
+        flightId, aircraftRegistration, routeId
+        originIata, destinationIata, estimatedFlightTime
+        date, time, status, version
+        + of(flight : ScheduledFlight)
+    }
+}
+
+package "query" {
+    class FlightRoutesEventsListener <<@RabbitListener>> {
+        + on(event : IntegrationEvent<JsonNode>)
+    }
+    class FlightRoutesEventRouter <<Component>> {
+        + apply(event : IntegrationEvent<?>) : boolean
+        ~ withPayload(event, type)
+    }
+    class RouteProjection <<Service>> {
+        + apply(event) : boolean <<@Transactional>>
+    }
+    class ScheduledFlightProjection <<Service>> {
+        + apply(event) : boolean <<@Transactional>>
+    }
+}
+
+package "infrastructure.messaging" {
+    class RabbitIntegrationEventTransport <<Component>>
+    class FlightRoutesMessagingConfiguration <<Configuration>> {
+        + flightRoutesEventsSubscription(topology) : EventSubscription
+    }
+    class JpaProcessedEventStore <<Component>>
+}
+
+package "common" {
+    class EventPublisher {
+        + publish(event, routingKey)
+    }
+    class "IntegrationEvent<T>" as IntegrationEvent <<record>>
+    class IdempotentEventHandler
+    interface ProcessedEventStore
+    class MessagingTopology {
+        + subscribe(source, patterns...) : EventSubscription
+    }
+}
+
+FlightRoutesEventEmitter ..> IntegrationEvent : creates (one eventId)
+FlightRoutesEventEmitter --> FlightRoutesEventRouter : apply own event\n(same transaction)
+FlightRoutesEventEmitter ..> OutgoingIntegrationEvent : publishEvent
+OutgoingIntegrationEvent ..> IntegrationEventRelay : after commit
+IntegrationEventRelay --> "0..*" IntegrationEventTransport
+IntegrationEventTransport <|.. RabbitIntegrationEventTransport
+RabbitIntegrationEventTransport --> EventPublisher
+FlightRoutesEventsListener --> FlightRoutesEventRouter
+FlightRoutesEventRouter --> RouteProjection
+FlightRoutesEventRouter --> ScheduledFlightProjection
+RouteProjection --> IdempotentEventHandler
+ScheduledFlightProjection --> IdempotentEventHandler
+IdempotentEventHandler --> ProcessedEventStore
+ProcessedEventStore <|.. JpaProcessedEventStore
+FlightRoutesMessagingConfiguration --> MessagingTopology
+RouteProjection ..> RouteEventPayload
+ScheduledFlightProjection ..> ScheduledFlightEventPayload
+FlightRoutesEventEmitter ..> RouteEvents
+FlightRoutesEventEmitter ..> ScheduledFlightEvents
+@enduml

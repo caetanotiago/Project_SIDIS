@@ -4,7 +4,7 @@ import isep.sidis.common.messaging.MessagingNames;
 
 /**
  * Public contract of the route events published by Flight Routes on {@code aisafe.flightroutes.events}
- * (docs/Messaging-Conventions.md). Every event carries a {@link RouteEventPayload}.
+ * (docs/2-containers/Integration-Contracts.md, section 9.3). Every event carries a {@link RouteEventPayload}.
  *
  * <table>
  *   <caption>Route events</caption>
@@ -12,9 +12,10 @@ import isep.sidis.common.messaging.MessagingNames;
  *   <tr><td>{@code RouteCreated}</td><td>{@code route.created}</td><td>US110, after the route is stored</td></tr>
  *   <tr><td>{@code RouteUpdated}</td><td>{@code route.updated}</td>
  *       <td>US112 (details or ACTIVE/INACTIVE), on the owner replica, after the update is stored</td></tr>
- *   <tr><td>{@code RouteDeleted}</td><td>{@code route.deleted}</td>
- *       <td>reserved: the REST API has no route deletion today; consumers already handle it</td></tr>
  * </table>
+ *
+ * <p>There is no {@code RouteDeleted}: routes are never deleted. Deactivating a route (US112) is a
+ * {@code RouteUpdated} whose payload has {@code status = "INACTIVE"}.
  */
 public final class RouteEvents {
 
@@ -25,11 +26,9 @@ public final class RouteEvents {
 
     public static final String ROUTE_CREATED = "RouteCreated";
     public static final String ROUTE_UPDATED = "RouteUpdated";
-    public static final String ROUTE_DELETED = "RouteDeleted";
 
     public static final String CREATED_KEY = MessagingNames.routingKey(AGGREGATE, "created");
     public static final String UPDATED_KEY = MessagingNames.routingKey(AGGREGATE, "updated");
-    public static final String DELETED_KEY = MessagingNames.routingKey(AGGREGATE, "deleted");
 
     /** Binding pattern that matches every route event. */
     public static final String ALL_ROUTE_EVENTS = AGGREGATE + ".*";

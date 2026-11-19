@@ -3,16 +3,16 @@ autonumber
 actor "ATCC" as ATCC
 
 participant ": ScheduledFlightController" as Ctrl <<Controller>>
-participant ": CreateScheduledFlightService" as Service <<Service>>
+participant ": CreateScheduledFlightService" as Service <<command>>
 participant ": AircraftClient" as AcClient <<ACL>>
 participant "Aircraft Management\n(replicas)" as AM
-participant ": RouteReplicaQueries" as Routes
+participant "routes : ReplicatedRouteRepository" as Routes <<read model>>
 participant ": AirportClient" as ApClient <<ACL>>
 participant "Airports\n(replicas)" as AP
-participant ": ViewScheduledFlights\nByAircraftService" as Flights
-participant "Peer replicas" as Peers
+participant "flights : ReplicatedScheduled\nFlightRepository" as Flights <<read model>>
 participant ": ScheduledFlightFactory" as Factory <<Factory>>
-participant "sfRepo : ScheduledFlightRepository" as SfRepo <<Repository>>
+participant "sfRepo : ScheduledFlightRepository" as SfRepo <<write model>>
+participant ": FlightRoutesEventEmitter" as Emitter
 
 activate ATCC
 ATCC -> Ctrl : POST /api/scheduled-flights (CreateScheduledFlightDTO)
@@ -28,12 +28,13 @@ AcClient -> AM : GET /api/aircraft-models/{model}
 AM --> AcClient : AircraftModelDTO
 AcClient --> Service : AircraftSnapshot
 deactivate AcClient
+note right of AcClient : B1 (HTTP) until Aircraft Management\npublishes events; then KNOWN_AIRCRAFT
 
 Service -> Routes : findById(routeID)
 activate Routes
-note right of Routes : local repository, else\nGET /api/routes/{id} on the peers
-Routes --> Service : RouteSummary (404 if none)
+Routes --> Service : ReplicatedRoute → RouteSummary (404 if unknown)
 deactivate Routes
+note right of Routes : routes of every replica,\nno peer call
 
 Service -> Service : route.isActive() (409)\nroute.isMetBy(range, capacity) (422)\naircraft.isAvailable() (409)
 
@@ -44,12 +45,9 @@ loop origin and destination
     ApClient --> Service : AirportSnapshot (isOperational, else 409)
 end
 
-Service -> Flights : search(reg, date, time)
+Service -> Flights : findConflicting(reg, date, time)
 activate Flights
-Flights -> Flights : local findConflicting(...)
-Flights -> Peers : GET /api/scheduled-flights/search?aircraft=&date=&time=
-Peers --> Flights : flights at that slot
-Flights --> Service : conflicts (any → 409)
+Flights --> Service : flights of that aircraft at that slot,\nin every replica (any → 409)
 deactivate Flights
 
 Service -> Factory : create(registration, route, new FlightSchedule(date, time))
@@ -57,8 +55,10 @@ activate Factory
 Factory --> Service : flight (RouteReference = routeId + route snapshot,\nstatus = SCHEDULED)
 deactivate Factory
 
-Service -> SfRepo : save(flight)
-SfRepo --> Service : savedFlight (stored in THIS replica)
+Service -> SfRepo : saveAndFlush(flight)
+SfRepo --> Service : savedFlight (owned by THIS replica)
+Service -> Emitter : scheduledFlightCreated(savedFlight)
+note right of Emitter : ScheduledFlightCreated: local read model now,\nevery replica after the commit (S1)
 Service --> Ctrl : savedFlight
 deactivate Service
 

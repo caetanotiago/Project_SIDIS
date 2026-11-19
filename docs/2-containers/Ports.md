@@ -7,7 +7,8 @@ The last digit identifies the service, the hundreds digit identifies the replica
 | Aircraft Management | `aircraftmanagement` | WP#1 | 8081 | 8181 | 8281 | `aircraftManagementdb-N` |
 | Maintenance | `maintenance` | WP#4 | 8082 | 8182 | 8282 | `maintenancedb-N` |
 | Airports | `airports` | WP#2 | 8083 | 8183 | 8283 | `airportsdb-N` |
-| Flight Routes | `flightroutes` | WP#3 | 8084 | 8184 | 8284 | `flightRoutesdb-N` |
+| Flight Routes | `flightroutes` | WP#3 | 8084 | 8184 | 8284 | `flightRoutesdb-N`, **file** `code/data/flightRoutesdb-N.mv.db` (the others are in memory) |
+| RabbitMQ (broker, Docker) | `infra/` | — | AMQP 5672, management UI 15672 | — | — | volume `aisafe_rabbitmq-data`; one queue per consuming replica (`<instanceId>.<sourceService>`) |
 
 ## Configuration
 
@@ -33,6 +34,8 @@ Calls to **other** services list all their replicas (round-robin + failover):
 ```properties
 services.airports.urls=${aisafe.scheme}://localhost:8083,${aisafe.scheme}://localhost:8183,${aisafe.scheme}://localhost:8283
 ```
+
+Flight Routes uses `spring.datasource.url=jdbc:h2:file:./data/flightRoutesdb-N` (relative to the working directory, `code/` when started by the scripts; tests use an in-memory database). The broker address and credentials come from `infra/.env` (`RABBITMQ_HOST`, `RABBITMQ_PORT`, `RABBITMQ_USER`, `RABBITMQ_PASSWORD`).
 
 Start a replica with `--spring.profiles.active=instanceN` (or `scripts/run-instance.*`); start everything with `scripts/start-all.*` and stop it with `scripts/stop-all.*` ([Containers §4](Containers.md#4-deployment)). Without a profile a service starts as replica 1.
 Spring Boot defaults to port 8080: without these properties only the first service to start would boot (`Port 8080 was already in use`).

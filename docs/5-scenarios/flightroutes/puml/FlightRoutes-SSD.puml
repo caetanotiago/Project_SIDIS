@@ -97,7 +97,7 @@ note over BO, SYS
   Every request carries "Authorization: Bearer <JWT>".
   Requests from other components forward the end user's JWT (+ X-Service-Key).
   The three queries above are service-only: without X-Service-Key they get 401.
-  "System" = any of the 3 replicas: every GET answers with the data of all replicas
-  (X-Partial-Response: true when a replica did not answer).
+  "System" = any of the 3 replicas: every GET answers from its local read models, which hold the data of all replicas
+  (eventually consistent; no peer call, so no partial responses).
 end note
 @enduml

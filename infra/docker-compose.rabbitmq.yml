@@ -8,7 +8,7 @@
 # Stop and erase all broker data:        ... down -v
 #
 # The scripts code/scripts/start-all.* start this file automatically when the broker is not reachable.
-# Conventions (exchanges, queues, envelope): docs/Messaging-Conventions.md
+# Exchanges, queues, envelope: docs/2-containers/Integration-Contracts.md (section 9); start and run: docs/README.md
 
 name: aisafe
 

@@ -8,13 +8,13 @@
 
 **AISafe Flight Management System** supports the daily operation of an airline: its fleet, the airports it operates in, the routes it flies, the flights it schedules and the maintenance of its aircraft.
 
-It was originally a monolith (PSOFT). In SIDIS it is redesigned as a distributed system that keeps working when parts of it fail; how it is split is shown in [Level 2](../2-containers/Containers.md).
+It was originally a monolith (PSOFT). In SIDIS it is redesigned as a distributed system that keeps working when parts of it fail; how it is split is shown in [Level 2](../2-containers/Containers.md). Every person still uses AISafe through its **REST API** (JSON over HTTPS); since Assignment 2 the parts of AISafe also exchange **events** through a message broker (RabbitMQ) and each replica keeps its own database, but that is internal to the system and appears only from Level 2 on.
 
 ## People (users)
 
 | Person | What they do with AISafe |
 |---|---|
-| **Administrator** | Would manage users and their roles. The role exists, but user management is not part of Assignment 1: no AISafe function uses it yet. |
+| **Administrator** | Would manage users and their roles. The role exists, but user management is not part of Assignments 1 and 2: no AISafe function uses it yet. |
 | **Backoffice Operator** | Registers and updates airports (including their status and certified aircraft models) and aircraft models; updates and deactivates routes; consults statistics such as the busiest airports and the most utilised aircraft models. |
 | **Air Traffic Control Coordinator (ATCC)** | Registers aircraft and changes their status; looks up and searches airports; defines flight routes, assigns aircraft to routes at a date/time, and queries the route network (popular routes, network distance, alternative itineraries, routes compatible with an aircraft, operational hours); follows maintenance hours and costs of the fleet and checks which aircraft are due for maintenance. |
 | **Maintenance Technician / Supervisor** | Defines maintenance templates, records and completes the maintenance of the aircraft (taking them out of service while it lasts), and follows ongoing maintenance and turnaround times. |
@@ -23,7 +23,7 @@ Every person authenticates and is given a **role**; each role can only use the f
 
 ## External systems
 
-AISafe does not depend on external software systems in this assignment. Users are identified with tokens issued for the AISafe roles (in development, by a test endpoint; a real identity provider is future work).
+AISafe does not depend on external software systems in these assignments (the message broker is part of AISafe: a container of Level 2). Users are identified with tokens issued for the AISafe roles (in development, by a test endpoint; a real identity provider is future work).
 
 ## Main relationships
 

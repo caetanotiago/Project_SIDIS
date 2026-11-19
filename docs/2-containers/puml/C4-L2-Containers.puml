@@ -1,7 +1,10 @@
 @startuml C4-L2-Containers
 !include <C4/C4_Container>
 LAYOUT_TOP_DOWN()
-title AISafe — Containers (C4 Level 2)
+title AISafe — Containers (C4 Level 2, Assignment 2)
+
+AddRelTag("amqp", $lineColor="#d9480f", $textColor="#d9480f", $lineStyle=DashedLine())
+AddRelTag("planned", $lineColor="#868e96", $textColor="#868e96", $lineStyle=DottedLine())
 
 Person(backoffice, "Backoffice Operator")
 Person(atcc, "ATCC")
@@ -11,38 +14,45 @@ System_Boundary(aisafe, "AISafe Flight Management System") {
     Container(am, "Aircraft Management Service", "Java 21, Spring Boot — 3 replicas :8081/:8181/:8281", "Aircraft models and aircraft, operational status (WP#1).")
     Container(mt, "Maintenance Service", "Java 21, Spring Boot — 3 replicas :8082/:8182/:8282", "Maintenance templates, records, reports and alerts (WP#4).")
     Container(ap, "Airports Service", "Java 21, Spring Boot — 3 replicas :8083/:8183/:8283", "Airports, runways and certification data (WP#2).")
-    Container(fr, "Flight Routes Service", "Java 21, Spring Boot — 3 replicas :8084/:8184/:8284", "Flight routes, route history, scheduled flights and network queries (WP#3).")
+    Container(fr, "Flight Routes Service", "Java 21, Spring Boot, Spring AMQP — 3 replicas :8084/:8184/:8284", "Flight routes, history, scheduled flights, network queries (WP#3). CQRS: commands on the owner's write model, queries on local read models built from events.")
+
+    ContainerQueue(mq, "Message broker", "RabbitMQ 3 (Docker) — AMQP :5672", "Topic exchange per producer (aisafe.<service>.events), one durable queue per consuming replica (<instanceId>.<source>), dead-letter queues.")
 
     ContainerDb(amdb, "aircraftManagementdb-1..3", "H2 in-memory", "One database per replica")
     ContainerDb(mtdb, "maintenancedb-1..3", "H2 in-memory", "One database per replica")
     ContainerDb(apdb, "airportsdb-1..3", "H2 in-memory", "One database per replica")
-    ContainerDb(frdb, "flightRoutesdb-1..3", "H2 in-memory", "One database per replica")
+    ContainerDb(frdb, "flightRoutesdb-1..3", "H2 file (code/data/)", "One database per replica: write model (owned rows) + read models (all replicas) + processed event ids")
 }
 
-' Users (roles as in each service's AuthorizationRules)
-Rel(backoffice, am, "Registers aircraft models (US101); US204 top models; reads fleet", "JSON/HTTPS + JWT")
-Rel(backoffice, ap, "Registers and updates airports, status, certifications; US210 busiest airports", "JSON/HTTPS + JWT")
-Rel(backoffice, fr, "Updates / deactivates routes (US112)", "JSON/HTTPS + JWT")
-Rel(atcc, am, "Registers aircraft (US102), status (US105); US203, US204, US206", "JSON/HTTPS + JWT")
-Rel(atcc, ap, "Airport details, search, grouping (US107, US108, US211); certifications", "JSON/HTTPS + JWT")
-Rel(atcc, fr, "Routes, scheduled flights, network queries", "JSON/HTTPS + JWT")
-Rel(atcc, mt, "US117, US220, US222 alerts", "JSON/HTTPS + JWT")
-Rel(maint, mt, "Templates, records, categorisation, ongoing records, turnaround report", "JSON/HTTPS + JWT")
-Rel(maint, am, "Reads aircraft and models; status (US105)", "JSON/HTTPS + JWT")
+' Users: REST is kept for every external client (roles as in each service's AuthorizationRules)
+Rel(backoffice, am, "Registers aircraft models (US101); US204 top models; reads fleet", "REST, JSON/HTTPS + JWT")
+Rel(backoffice, ap, "Registers and updates airports, status, certifications; US210 busiest airports", "REST, JSON/HTTPS + JWT")
+Rel(backoffice, fr, "Updates / deactivates routes (US112)", "REST, JSON/HTTPS + JWT")
+Rel(atcc, am, "Registers aircraft (US102), status (US105); US203, US204, US206", "REST, JSON/HTTPS + JWT")
+Rel(atcc, ap, "Airport details, search, grouping (US107, US108, US211); certifications", "REST, JSON/HTTPS + JWT")
+Rel(atcc, fr, "Routes, scheduled flights, network queries", "REST, JSON/HTTPS + JWT")
+Rel(atcc, mt, "US117, US220, US222 alerts", "REST, JSON/HTTPS + JWT")
+Rel(maint, mt, "Templates, records, categorisation, ongoing records, turnaround report", "REST, JSON/HTTPS + JWT")
+Rel(maint, am, "Reads aircraft and models; status (US105)", "REST, JSON/HTTPS + JWT")
 
-' Service-to-service calls (all with the user's JWT and X-Service-Key; round-robin + failover)
-Rel(fr, ap, "B2: GET /api/airports/{iata} — coordinates and status", "JSON/HTTPS")
-Rel(fr, am, "B1: GET /api/aircrafts/{reg}, GET /api/aircraft-models/{model}", "JSON/HTTPS")
-Rel(am, fr, "B4b: GET …/statistics/minutes-by-aircraft (US204, US206); B6: GET /api/routes/compatible (US203)", "JSON/HTTPS, service-only")
-Rel(ap, fr, "B5: GET /api/routes/statistics/count-by-airport (US210)", "JSON/HTTPS, service-only")
-Rel(mt, am, "B3: GET /api/aircrafts/{reg}, PATCH …/{reg}/status, GET /api/aircraft-models/{model}, GET /api/aircrafts + /operational-hours (paged)", "JSON/HTTPS")
+' Remaining synchronous bridges (user's JWT + X-Service-Key; round-robin + failover)
+Rel(fr, ap, "B2: GET /api/airports/{iata} (until Airports publishes events)", "JSON/HTTPS")
+Rel(fr, am, "B1: GET aircraft / model (until Aircraft Management publishes events)", "JSON/HTTPS")
+Rel(am, fr, "B4b minutes-by-aircraft; B6 compatible routes (answered from read models)", "JSON/HTTPS, service-only")
+Rel(ap, fr, "B5: routes per airport (answered from read model)", "JSON/HTTPS, service-only")
+Rel(mt, am, "B3: aircraft, models, fleet + hours; PATCH status (command)", "JSON/HTTPS")
+Rel(fr, fr, "Commands forwarded to the replica that owns the entity", "JSON/HTTPS, X-Peer-Hops + X-Service-Key")
 
-Rel(fr, fr, "Peer forwarding / aggregation between replicas (the same in every service)", "JSON/HTTPS, X-Peer-Hops + X-Service-Key")
+' Events (Assignment 2)
+Rel(fr, mq, "Publishes RouteCreated, RouteUpdated, ScheduledFlightCreated (after commit)", "AMQP", $tags="amqp")
+Rel(mq, fr, "Delivers every Flight Routes event to every replica's queue → read models", "AMQP", $tags="amqp")
+Rel(am, mq, "AircraftRegistered, AircraftStatusChanged, AircraftModelCreated (to implement)", "AMQP", $tags="planned")
+Rel(ap, mq, "AirportCreated, AirportUpdated, AirportStatusChanged (to implement)", "AMQP", $tags="planned")
 
 Rel(am, amdb, "Reads/writes", "JPA/JDBC")
 Rel(mt, mtdb, "Reads/writes", "JPA/JDBC")
 Rel(ap, apdb, "Reads/writes", "JPA/JDBC")
-Rel(fr, frdb, "Reads/writes", "JPA/JDBC")
+Rel(fr, frdb, "Writes owned rows; projects events; reads read models", "JPA/JDBC")
 
 SHOW_LEGEND()
 @enduml

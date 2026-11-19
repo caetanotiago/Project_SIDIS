@@ -13,7 +13,7 @@ public class MessagingTopology {
 
     public EventSubscription subscribe(String sourceService, String... routingKeyPatterns) {
         return new EventSubscription(
-                MessagingNames.consumerQueue(consumerService, instanceId, sourceService),
+                MessagingNames.consumerQueue(instanceId, sourceService),
                 MessagingNames.eventsExchange(sourceService),
                 List.of(routingKeyPatterns));
     }

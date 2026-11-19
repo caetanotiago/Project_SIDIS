@@ -1,23 +1,32 @@
 package isep.psoft.aisafe.flightroutes.query;
 
+import isep.psoft.aisafe.flightroutes.domain.RouteSummary;
 import isep.psoft.aisafe.flightroutes.events.RouteEventPayload;
+import jakarta.persistence.CollectionTable;
 import jakarta.persistence.Column;
+import jakarta.persistence.ElementCollection;
 import jakarta.persistence.Entity;
+import jakarta.persistence.FetchType;
 import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.OrderColumn;
 import jakarta.persistence.Table;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
- * Read-side copy of a route, built ONLY from route events (table {@code REPLICATED_ROUTE} in this replica's own
- * database). Every replica ends up with every route here, whichever replica stored it (eventual consistency).
+ * READ MODEL of a route (table {@code REPLICATED_ROUTE} in this replica's own database), built ONLY from route
+ * events. Every replica holds every route here, whichever replica owns it, so every GET of routes is answered
+ * locally (CQRS query side). The write model ({@code FlightRoute}) stays partitioned: each route is stored and
+ * updated only by its owner replica.
  *
- * <p>It is deliberately a separate table from the write model ({@code FlightRoute}): the write model stays
- * partitioned by owner replica, so the existing HTTP forwarding, the ownership rule and the summed statistics
- * (B5 count-by-airport) keep working unchanged. This table is the seed of the CQRS read model.
+ * <p>On the owner replica the row is written in the same transaction as the write model (read-your-writes); on the
+ * other replicas it is written when the event arrives (eventual consistency).
  */
 @Entity
 @Table(name = "REPLICATED_ROUTE")
@@ -50,6 +59,12 @@ public class ReplicatedRoute {
     private String lastEventId;
     private Instant lastEventAt;
 
+    /** US111: the route history, replaced as a whole by every event (oldest first). */
+    @ElementCollection(fetch = FetchType.EAGER)
+    @CollectionTable(name = "REPLICATED_ROUTE_HISTORY", joinColumns = @JoinColumn(name = "ROUTE_ID"))
+    @OrderColumn(name = "POSITION")
+    private List<ReplicatedRouteHistory> history = new ArrayList<>();
+
     ReplicatedRoute(String id) {
         this.id = id;
     }
@@ -71,5 +86,12 @@ public class ReplicatedRoute {
         this.ownerInstance = ownerInstance;
         this.lastEventId = eventId;
         this.lastEventAt = eventAt;
+        this.history.clear();
+        p.history().forEach(h -> this.history.add(ReplicatedRouteHistory.of(h)));
+    }
+
+    public RouteSummary toSummary() {
+        return new RouteSummary(id, originIata, destinationIata, distance, minRange, minCapacity,
+                estimatedFlightTime, status);
     }
 }

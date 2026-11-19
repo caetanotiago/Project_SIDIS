@@ -66,7 +66,7 @@
 
         <!-- AMQP messaging (isep.sidis.common.messaging). Optional on purpose: it is NOT transitive, so a
              service only gets RabbitMQ (and its health indicator) when it declares
-             spring-boot-starter-amqp itself. See docs/Messaging-Conventions.md -->
+             spring-boot-starter-amqp itself. See docs/2-containers/Integration-Contracts.md, section 9.5 -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-amqp</artifactId>

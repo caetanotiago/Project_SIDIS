@@ -4,6 +4,8 @@ This is the reference for the REST calls **between** AISafe services. If you imp
 
 Every statement about existing code was taken from the code and has a **Source** line. All bridges are implemented on both sides, except B4a, which has no consumer. The decisions are closed (section 7); what the code does not do is listed in **Known limitations** (section 8).
 
+**Assignment 2.** The REST contracts below are unchanged for external clients and still in force between services. What changed, and the asynchronous **event contracts** (envelope, exchanges, routing keys and queues, the event catalogue, how to publish and consume, and the Assignment 2 status of every bridge) are in [section 9](#9-assignment-2--event-contracts). Reliability, consistency and the known limitations of messaging are in [Containers §3.3–3.6](Containers.md#33-consistency-model-cap).
+
 > FR = `code/flightroutes/src/main/java/isep/psoft/aisafe` · COMMON = `code/common/src/main/java/isep/sidis/common`
 
 ---
@@ -16,6 +18,15 @@ Every statement about existing code was taken from the code and has a **Source**
 | `IMPLEMENTED (provider only)` | The provider endpoint exists in code; no other service calls it. |
 | `CONSUMER-ONLY` | The consumer exists in code; the **provider must implement exactly this contract**. |
 | `PROPOSED` | Agreed design; nothing implemented on either side. |
+
+Assignment 2 status of a bridge (section 9):
+
+| Status | Meaning |
+|---|---|
+| `EVENT-BASED` | The consumer no longer calls the provider: it reads a local read model fed by the provider's events. |
+| `HTTP (waiting for <service> events)` | Still a synchronous call; the consumer side of the event-based version is ready, the provider does not publish the events yet. |
+| `HTTP (provider uses read model)` | Still a synchronous call, but the provider answers from its own CQRS read model (no peer aggregation, never partial). |
+| `HTTP (kept)` | Deliberately kept synchronous (justification in section 9.3). |
 
 Requirements that originate in the work order or assignment (US105, US106a, US115, US119, US204, US222) are identified as assignment requirements; bridge status indicates which consumer/provider sides are implemented.
 
@@ -177,19 +188,19 @@ Source: `COMMON/security/ServiceKeyFilter.java`, `COMMON/config/AisafeProperties
 
 ## 3. Bridge catalogue
 
-| ID | Consumer → Provider | Purpose (US) | Endpoint | Status |
-|---|---|---|---|---|
-| B1a | Flight Routes → Aircraft Management | Aircraft status, capacity and model (US212, US213) | `GET /api/aircrafts/{registrationNumber}` | `IMPLEMENTED` |
-| B1b | Flight Routes → Aircraft Management | Maximum range of the aircraft model (US212) | `GET /api/aircraft-models/{modelName}` | `IMPLEMENTED` |
-| B2 | Flight Routes → Airports | Coordinates, existence, operational status (US110, US209, US212, US216) | `GET /api/airports/{iataCode}` | `IMPLEMENTED` |
-| B3a | Maintenance → Aircraft Management | Aircraft exists and its model, for template applicability (US115, US116) | reuse B1a (`GET /api/aircrafts/{registrationNumber}`) | `IMPLEMENTED` |
-| B3b | Maintenance → Aircraft Management | Set the status to `UNDER_MAINTENANCE` / back to `AVAILABLE` (US115, US119) | `PATCH /api/aircrafts/{registrationNumber}/status` (US105) | `IMPLEMENTED` |
-| B3c | Maintenance → Aircraft Management | Applicable models of a template exist (US115 templates) | reuse B1b (`GET /api/aircraft-models/{modelName}`) | `IMPLEMENTED` |
-| B3d | Maintenance → Aircraft Management | Fleet and flight hours per aircraft (US222) | `GET /api/aircrafts?page=&size=` (US104), `GET /api/aircrafts/operational-hours?page=&size=` (US206) | `IMPLEMENTED` |
-| B4a | (none) → Flight Routes | Paged operational hours per aircraft | `GET /api/scheduled-flights/operational-hours` (service-only) | `IMPLEMENTED (provider only)`: no service calls it; Aircraft Management computes US206 from B4b |
-| B4b | Aircraft Management → Flight Routes | Flight minutes per aircraft: US204 (top models) and US206 (operational hours) | `GET /api/scheduled-flights/statistics/minutes-by-aircraft` (service-only) | `IMPLEMENTED` |
-| B5 | Airports → Flight Routes | Number of routes per airport (US210) | `GET /api/routes/statistics/count-by-airport` (service-only) | `IMPLEMENTED` |
-| B6 | Aircraft Management → Flight Routes | Active routes compatible with an aircraft (US203) | `GET /api/routes/compatible?range=&capacity=` (service-only) | `IMPLEMENTED` |
+| ID | Consumer → Provider | Purpose (US) | Endpoint | Status | Assignment 2 (section 9) |
+|---|---|---|---|---|---|
+| B1a | Flight Routes → Aircraft Management | Aircraft status, capacity and model (US212, US213) | `GET /api/aircrafts/{registrationNumber}` | `IMPLEMENTED` | `HTTP (waiting for Aircraft Management events)` |
+| B1b | Flight Routes → Aircraft Management | Maximum range of the aircraft model (US212) | `GET /api/aircraft-models/{modelName}` | `IMPLEMENTED` | `HTTP (waiting for Aircraft Management events)` |
+| B2 | Flight Routes → Airports | Coordinates, existence, operational status (US110, US209, US212, US216) | `GET /api/airports/{iataCode}` | `IMPLEMENTED` | `HTTP (waiting for Airports events)` |
+| B3a | Maintenance → Aircraft Management | Aircraft exists and its model, for template applicability (US115, US116) | reuse B1a (`GET /api/aircrafts/{registrationNumber}`) | `IMPLEMENTED` | `HTTP (waiting for Aircraft Management events)` |
+| B3b | Maintenance → Aircraft Management | Set the status to `UNDER_MAINTENANCE` / back to `AVAILABLE` (US115, US119) | `PATCH /api/aircrafts/{registrationNumber}/status` (US105) | `IMPLEMENTED` | `HTTP (kept)`: a command |
+| B3c | Maintenance → Aircraft Management | Applicable models of a template exist (US115 templates) | reuse B1b (`GET /api/aircraft-models/{modelName}`) | `IMPLEMENTED` | `HTTP (waiting for Aircraft Management events)` |
+| B3d | Maintenance → Aircraft Management | Fleet and flight hours per aircraft (US222) | `GET /api/aircrafts?page=&size=` (US104), `GET /api/aircrafts/operational-hours?page=&size=` (US206) | `IMPLEMENTED` | `HTTP (waiting for Aircraft Management events)` |
+| B4a | (none) → Flight Routes | Paged operational hours per aircraft | `GET /api/scheduled-flights/operational-hours` (service-only) | `IMPLEMENTED (provider only)`: no service calls it; Aircraft Management computes US206 from B4b | `HTTP (provider uses read model)` |
+| B4b | Aircraft Management → Flight Routes | Flight minutes per aircraft: US204 (top models) and US206 (operational hours) | `GET /api/scheduled-flights/statistics/minutes-by-aircraft` (service-only) | `IMPLEMENTED` | `HTTP (provider uses read model)`; `EVENT-BASED` possible now |
+| B5 | Airports → Flight Routes | Number of routes per airport (US210) | `GET /api/routes/statistics/count-by-airport` (service-only) | `IMPLEMENTED` | `HTTP (provider uses read model)`; `EVENT-BASED` possible now |
+| B6 | Aircraft Management → Flight Routes | Active routes compatible with an aircraft (US203) | `GET /api/routes/compatible?range=&capacity=` (service-only) | `IMPLEMENTED` | `HTTP (provider uses read model)`; `EVENT-BASED` possible now |
 
 **Design rule:** Aircraft Management's aircraft `status` is the **single source of truth for availability**. Maintenance changes it through B3b. **Flight Routes never calls Maintenance**; it only reads the status through B1a.
 
@@ -271,7 +282,7 @@ US212 then applies its own rules to the data:
 | Use case | Service | Call | What it does with the result |
 |---|---|---|---|
 | US110 create route | `CreateFlightRouteService` | `getAirport` (origin and destination) | `iataCode`, `latitude`, `longitude` (distance) |
-| US209 routes by airport | `ViewRoutesByAirportService` | `exists` (only on the replica that received the client request, not on peer requests) | existence |
+| US209 routes by airport | `ViewRoutesByAirportService` | `exists` | existence |
 | US212 create scheduled flight | `CreateScheduledFlightService` | `getAirport` (origin and destination) | `status` |
 | US216 alternative routes | `SearchAlternativeRoutesService` | `exists` (origin and destination) | existence |
 
@@ -427,15 +438,15 @@ No service calls this endpoint: Aircraft Management computes US206 from B4b and 
 
 | Status | When |
 |---|---|
-| 200 | always, when authorised. The result may be incomplete (see below) |
+| 200 | always, when authorised |
 | 401 | missing or invalid JWT, or **no `X-Service-Key`** (service-only, section 2.8) |
 | 403 | the user's role is not allowed (below) |
 
 - **Roles (Q4):** B4b (`minutes-by-aircraft`) allows **`ATCC` and `BACKOFFICE_OPERATOR`**, so US204 works for both roles that Aircraft Management allows on `top-utilized`. B4a and the rest of `GET /api/scheduled-flights/**` are `ATCC` only, which matches US206 (`GET /api/aircrafts/operational-hours` is `ATCC` only in Aircraft Management).
-- **Partial results:** the receiving Flight Routes replica adds its own figures to the figures of every peer (`PeerClient.collect`). If a peer doesn't answer within `aggregation-timeout`, the result is still 200 but **incomplete**, with `X-Partial-Response: true` and `X-Unavailable-Peers: <n>`. Aircraft Management reads the header (`.retrieve().toEntity(...)`) and sets `X-Partial-Response: true` on its own US204/US206 response.
+- **Replica behaviour (Assignment 2):** the receiving Flight Routes replica answers from its own flight read model (`REPLICATED_SCHEDULED_FLIGHT`), which holds the flights of every replica. No peer is called, so the answer is never partial and Flight Routes no longer sends `X-Partial-Response` here; it may be slightly stale (eventual consistency, a flight created on another replica a few milliseconds ago). Aircraft Management still reads the header (`.retrieve().toEntity(...)`) and simply never finds it.
 - **Consumer failure handling:** the same as B1 (retry, then failover, then 503). A 401/403 from Flight Routes becomes the same status with `{"error": "Flight Routes rejected the request."}`.
 
-**Source:** `code/aircraftmanagement/.../clients/FlightRoutesClient.java`, `services/CalculateOperationalHoursService.java`, `services/TopUtilizedModelsService.java`, `FR/flightroutes/controllers/ScheduledFlightController.java`, `FR/flightroutes/services/CalculateOperationalHoursService.java`, `FR/flightroutes/services/ScheduledFlightStatisticsService.java`, `FR/flightroutes/repositories/ScheduledFlightRepository.java` (`sumMinutesByAircraft`), `FR/flightroutes/dto/AircraftOperationalHoursDTO.java`, `FR/flightroutes/services/Pages.java`, `FR/infrastructure/security/FlightRoutesAuthorizationRules.java`, `COMMON/peers/PeerClient.java`, `ReplicaCollaborationTest.java` (operational hours aggregated across replicas)
+**Source:** `code/aircraftmanagement/.../clients/FlightRoutesClient.java`, `services/CalculateOperationalHoursService.java`, `services/TopUtilizedModelsService.java`, `FR/flightroutes/controllers/ScheduledFlightController.java`, `FR/flightroutes/query/CalculateOperationalHoursService.java`, `FR/flightroutes/query/ScheduledFlightStatisticsService.java`, `FR/flightroutes/query/ReplicatedScheduledFlightRepository.java` (`sumMinutesByAircraft`), `FR/flightroutes/dto/AircraftOperationalHoursDTO.java`, `FR/flightroutes/query/Pages.java`, `FR/infrastructure/security/FlightRoutesAuthorizationRules.java`, `ReplicaCollaborationTest.java` (operational hours of flights owned by another replica)
 
 ---
 
@@ -464,15 +475,15 @@ No service calls this endpoint: Aircraft Management computes US206 from B4b and 
 
 | Status | When |
 |---|---|
-| 200 | authorised (possibly partial: `X-Partial-Response: true`) |
+| 200 | authorised |
 | 401 | missing or invalid JWT, or **no `X-Service-Key`** (service-only, section 2.8) |
 | 403 | the role is not `BACKOFFICE_OPERATOR` |
 
 - **Required role:** **`BACKOFFICE_OPERATOR`** (explicit rule), the same role Airports requires on `GET /api/airports/statistics/**`.
-- **Replica behaviour:** aggregated (`PeerClient.collect`), as in B4. Airports' `FlightRoutesClient` reads only the body, so a partial count from Flight Routes is **not** flagged in the US210 response (known limitation, section 8).
+- **Replica behaviour (Assignment 2):** answered from the route read model of the receiving replica (`REPLICATED_ROUTE`, routes of every replica), as in B4: never partial, possibly slightly stale.
 - **Consumer failure handling:** retry, failover, then 503; a 401/403 from Flight Routes becomes the same status with `{"error": "Flight Routes rejected the request."}`.
 
-**Source:** `FR/flightroutes/controllers/FlightRouteController.java`, `FR/flightroutes/services/CountRoutesByAirportService.java`, `FR/flightroutes/repositories/FlightRouteRepository.java`, `FR/infrastructure/security/FlightRoutesAuthorizationRules.java` (rule plus the `US210 — GET /api/airports/statistics/busiest (Airports)` comment)
+**Source:** `FR/flightroutes/controllers/FlightRouteController.java`, `FR/flightroutes/query/CountRoutesByAirportService.java`, `FR/flightroutes/query/ReplicatedRouteRepository.java`, `FR/infrastructure/security/FlightRoutesAuthorizationRules.java` (rule plus the `US210 — GET /api/airports/statistics/busiest (Airports)` comment)
 
 ---
 
@@ -499,25 +510,29 @@ This bridge was not in the work order; it is included because it exists in code 
 
 - **Roles:** `ATCC`, `MAINTENANCE_SUPERVISOR` or `MAINTENANCE_TECHNICIAN` on the provider; in practice only `ATCC`, because the consumer endpoint is `ATCC` only.
 - **Service-only:** without `X-Service-Key` → 401 (section 2.8).
-- **Replica behaviour:** aggregated, possibly partial.
+- **Replica behaviour (Assignment 2):** answered from the route read model of the receiving replica, as in B4: never partial, possibly slightly stale.
 
-**Source:** `FR/flightroutes/controllers/FlightRouteController.java`, `FR/flightroutes/services/SearchFlightRoutesService.java`, `FR/flightroutes/repositories/FlightRouteRepository.java` (`findCompatibleRoutes`), `FR/flightroutes/dto/FlightRouteDTO.java`, `FR/infrastructure/security/FlightRoutesAuthorizationRules.java`
+**Source:** `FR/flightroutes/controllers/FlightRouteController.java`, `FR/flightroutes/query/SearchFlightRoutesService.java`, `FR/flightroutes/query/ReplicatedRouteRepository.java` (`findCompatibleRoutes`), `FR/flightroutes/dto/FlightRouteDTO.java`, `FR/infrastructure/security/FlightRoutesAuthorizationRules.java`
 
 ---
 
 ## 5. Intra-service peer protocol (replicas of the same service)
 
-Every service runs 3 replicas, and **each replica has its own database**. Data is partitioned by the replica that received the write. Every service must behave as below, **reusing `common`**; do not write your own HTTP code. The auto-configuration provides `PeerClient`, `ReplicatedServiceClientFactory`, `ResilientExecutor`, the filters and the security chain, so you only need to inject the beans.
+Every service runs 3 replicas, and **each replica has its own database**. Data is partitioned by the replica that received the write. Every service must behave as below, **reusing `common`**; do not write your own HTTP code.
+
+> **Assignment 2.** This table is the Assignment 1 protocol. Aircraft Management, Airports and Maintenance still use all of it. **Flight Routes keeps only the write rows** (create on the receiving replica, forward writes to the owner): its reads come from CQRS read models fed by events, so it no longer uses `findFirst`, `collect`/`collectList`, `isPeerRequest` or `X-Partial-Response` ([Flight Routes L3 §6](../3-components/flightroutes/FlightRoutes-Components.md#6-cqrs-flow-write--event--projection-on-every-replica)). Its uniqueness check (US110) runs on its read model.
+
+The auto-configuration provides The auto-configuration provides `PeerClient`, `ReplicatedServiceClientFactory`, `ResilientExecutor`, the filters and the security chain, so you only need to inject the beans.
 
 | Situation | What to do | `common` API | Reference implementation |
 |---|---|---|---|
-| **GET by ID** | Look locally; if not found, ask the peers in parallel and use the first 200 (a 404 from a peer means "not mine"). Throw `EntityNotFoundException` if no replica has it | `peerClient.findFirst(uri, Type.class)` | `RouteReplicaQueries.findById`, `ViewScheduledFlightsByAircraftService.getById` |
-| **GET collection / search** | Local results, plus the same GET on every peer, merged **by ID** (no duplicates) | `peerClient.collectList(uri, new ParameterizedTypeReference<List<T>>(){})` or `collect(...)` | `RouteReplicaQueries.withPeers`, `ViewScheduledFlightsByAircraftService.search` |
-| **Counts / sums** | Local partial values plus the peers' partial values, summed (valid because each entity lives in one replica) | `peerClient.collect(uri, MAP_TYPE).responses()` | `CountRoutesByAirportService`, `ScheduledFlightStatisticsService` |
-| **Pagination** | Merge everything first, then cut the page in memory | — | `Pages.of` (Flight Routes) |
-| **Write to an existing entity** (PATCH/PUT/DELETE) | If it is local, update locally (`@Version` → 409 on a clash). Otherwise **forward the command to the owner**: peers are tried one by one, a 404 means "not mine", and a business 4xx from the owner (400/409/422) is propagated with its status and message | `peerClient.forwardToOwner(HttpMethod.PATCH, uri, body, Type.class)` | `UpdateFlightRouteService` |
-| **Create** | Store it in the replica that received the POST (IDs are UUIDs). Uniqueness checks query the peers and are **best-effort**: if a peer is down, creation continues | `collectList` | `CreateFlightRouteService` |
-| **Validate a remote entity once** | Only on the replica that received the client's request, not again on peer requests | `peerClient.isPeerRequest()` | `ViewRoutesByAirportService` |
+| **GET by ID** | Look locally; if not found, ask the peers in parallel and use the first 200 (a 404 from a peer means "not mine"). Throw `EntityNotFoundException` if no replica has it | `peerClient.findFirst(uri, Type.class)` | `AirportReplicaQueries`, `AircraftReplicaQueries` |
+| **GET collection / search** | Local results, plus the same GET on every peer, merged **by ID** (no duplicates) | `peerClient.collectList(uri, new ParameterizedTypeReference<List<T>>(){})` or `collect(...)` | `AirportReplicaQueries`, `MaintenanceReplicaQueries` |
+| **Counts / sums** | Local partial values plus the peers' partial values, summed (valid because each entity lives in one replica) | `peerClient.collect(uri, MAP_TYPE).responses()` | `MaintenanceReplicaQueries` |
+| **Pagination** | Merge everything first, then cut the page in memory | — | `Pages.of` (Flight Routes, `query` package) |
+| **Write to an existing entity** (PATCH/PUT/DELETE) | If it is local, update locally (`@Version` → 409 on a clash). Otherwise **forward the command to the owner**: peers are tried one by one, a 404 means "not mine", and a business 4xx from the owner (400/409/422) is propagated with its status and message | `peerClient.forwardToOwner(HttpMethod.PATCH, uri, body, Type.class)` | `command/UpdateFlightRouteService` (Flight Routes), `UpdateAircraftStatusService`, `UpdateAirportService` |
+| **Create** | Store it in the replica that received the POST (IDs are UUIDs). Uniqueness checks query the peers and are **best-effort**: if a peer is down, creation continues | `collectList` (Flight Routes: its read model) | `command/CreateFlightRouteService` |
+| **Validate a remote entity once** | Only on the replica that received the client's request, not again on peer requests | `peerClient.isPeerRequest()` | `AirportReplicaQueries`, `CompleteMaintenanceRecordService` |
 
 **Ownership rule:** a replica **owns** an entity if and only if the entity is in its local database. That is the replica that received the creating POST, and no other replica has a copy.
 
@@ -525,10 +540,10 @@ Every service runs 3 replicas, and **each replica has its own database**. Data i
 - Peer calls carry `X-Peer-Hops: 1`, the user's JWT, `X-Service-Key` and `X-Correlation-Id`.
 - A replica receiving `X-Peer-Hops` answers **with local data only** (`shouldForward()` is false), so no request travels A → B → A.
 - When a peer fails or times out (`aisafe.http.aggregation-timeout`), the response gets `X-Partial-Response: true` and `X-Unavailable-Peers: n`. The request does **not** fail.
-- Always build `uri` with encoded path segments and query values. See `RouteReplicaQueries.uri(...)` and `RouteReplicaQueries.pathSegment(...)` in Flight Routes; copy them if you need them.
+- Always build `uri` with encoded path segments and query values (`UriComponentsBuilder` / `UriUtils.encodePathSegment`, as in `command/UpdateFlightRouteService`).
 - Configure `aisafe.peers.urls` per instance profile (`application-instance{1,2,3}.properties`), listing the **other two** replicas.
 
-**Source:** `COMMON/peers/PeerClient.java`, `COMMON/peers/PeerResult.java`, `COMMON/DistributedInfrastructureAutoConfiguration.java`, `COMMON/http/AisafeHeaders.java`, `FR/flightroutes/services/RouteReplicaQueries.java`, `FR/flightroutes/services/UpdateFlightRouteService.java`, `FR/flightroutes/services/CreateFlightRouteService.java`, `FR/flightroutes/services/ViewRoutesByAirportService.java`, `FR/flightroutes/services/Pages.java`, `code/*/src/main/resources/application-instance*.properties`
+**Source:** `COMMON/peers/PeerClient.java`, `COMMON/peers/PeerResult.java`, `COMMON/DistributedInfrastructureAutoConfiguration.java`, `COMMON/http/AisafeHeaders.java`, `FR/flightroutes/command/UpdateFlightRouteService.java`, `FR/flightroutes/command/CreateFlightRouteService.java`, `FR/flightroutes/query/Pages.java`, `code/*/src/main/resources/application-instance*.properties`
 
 ---
 
@@ -562,7 +577,7 @@ Every question that was open is now closed. Each entry records the outcome **as 
   - **Flight Routes:** `POST /api/routes`, `GET /api/routes/**`, `POST /api/scheduled-flights` and `GET /api/scheduled-flights/**` `ATCC`; `PATCH /api/routes/*` `ATCC`, `BACKOFFICE_OPERATOR`; `GET /api/routes/statistics/count-by-airport` (B5) `BACKOFFICE_OPERATOR`; `GET /api/routes/compatible` (B6) `ATCC`, `MAINTENANCE_SUPERVISOR`, `MAINTENANCE_TECHNICIAN`; **`GET /api/scheduled-flights/statistics/minutes-by-aircraft` (B4b) `ATCC`, `BACKOFFICE_OPERATOR`**, so US204 also works for the Backoffice Operator.
   - **Maintenance** *(decided by Maintenance)*: US115/US119/US217 `MAINTENANCE_TECHNICIAN`; US116/US218 technician and supervisor; US219/US221 `MAINTENANCE_SUPERVISOR`; US117/US220/US222 `ATCC` — see [Maintenance L3 §3](../3-components/maintenance/Maintenance-Components.md#3-provided-interfaces-rest-api).
 - **Q5. "Most utilised" (US204).** Flight time: the minutes from B4b summed per model. No flights-by-aircraft endpoint exists.
-- **Q6. INACTIVE routes in US210.** Counted. `count-by-airport` has no status filter (`FlightRouteRepository.countByOrigin`/`countByDestination`).
+- **Q6. INACTIVE routes in US210.** Counted. `count-by-airport` has no status filter (`ReplicatedRouteRepository.countByOrigin`/`countByDestination`).
 - **Q7. B3b transitions and ordering.** `IN_FLIGHT` → `UNDER_MAINTENANCE`/`INACTIVE` is rejected with 409 (`Aircraft.changeStatus`); the server-side `@Version` check is enough (no `If-Match`). US115: Maintenance flushes its record, then calls B3b, then commits, and sends a compensating PATCH if the transaction rolls back after B3b. US119: the record is completed first and the release is a separate step (section B3b).
 - **Q8. Page formats.** Each service keeps its own format (section 2.6): Aircraft Management and Maintenance return `PageDTO` (`content`, `page`, `size`, `totalElements`, `totalPages`); Flight Routes returns a HAL `PagedModel` for US213 and the Spring Data `Page` JSON (`direct` mode) for B4a. Because B4a has no consumer, no service depends on the `direct` format; the only cross-service page consumer (Maintenance, B3d) reads Aircraft Management's `PageDTO`.
 - **Q9. Units of range.** Kilometres. Route distances are Haversine distances with an Earth radius of 6371 km (`DistanceCalculatorService`), and `minRange`/`maximumRange` are compared directly in the same unit.
@@ -576,7 +591,304 @@ What the contracts or the decisions above promise, but the code does not do (or 
 - **Certifications not checked in US212 (Q3).** A flight can be scheduled to or from an airport that is not certified for the aircraft model.
 - **No stale-version detection in the API.** Entities have `@Version` and a write clash returns 409, but no update endpoint accepts a version: `PATCH /api/routes/{id}` (Flight Routes), `PATCH /api/aircrafts/{reg}/status` (Aircraft Management), `PATCH /api/airports/{iata}` (Airports) and the Maintenance record commands take no `version`, `ETag` or `If-Match`, and only Maintenance returns `version` in its DTO. A client that updates from stale data is not told (last writer wins). A 409 only happens when two updates overlap on the owner replica (demonstrated by folder 8 of the Flight Routes Postman collection).
 - **Registrations are not normalised by Flight Routes.** Aircraft Management looks registrations up exactly (case-sensitive), so a lower-case registration typed in US212/US213 gives 404, while Maintenance normalises it.
-- **Partial counts in US210 are not flagged.** Airports reads only the body of B5, so `X-Partial-Response` from Flight Routes is lost.
+- **B4, B5 and B6 may be slightly stale (Assignment 2).** Flight Routes answers them from its read models: never partial, but a route or flight created on another Flight Routes replica appears only when its event arrives (milliseconds; longer if that replica's event was lost, see [Containers §3.6](Containers.md#36-known-limitations-of-messaging)). The Assignment 1 limitation "partial counts in US210 are not flagged" no longer applies.
 - **B4a has no consumer** and still uses the Spring Data `direct` page JSON, which Spring does not guarantee to keep stable.
-- **Cross-replica uniqueness is best-effort** (AP, see [Containers §3.3](Containers.md#33-consistency-model-cap)): during a partition two replicas can accept the same route, airport or aircraft.
+- **Cross-replica uniqueness is best-effort** (AP, see [Containers §3.3](Containers.md#33-consistency-model-cap)): during a partition two replicas can accept the same route, airport or aircraft. In Flight Routes the check runs on the read model, so two replicas can also accept the same route inside the eventual-consistency window.
 - **Development defaults.** `POST /auth/dev-token` is enabled by default (`AISAFE_DEV_TOKEN`, default `true`) and `application.properties` contains default values for `jwt.secret` and `aisafe.security.service-key`; they must be overridden by environment variables outside development.
+
+---
+
+## 9. Assignment 2 — event contracts
+
+External clients keep using the REST endpoints of sections 3–4; events are used **between services and between replicas** of a service, through RabbitMQ. Everything below is implemented in the shared library (`code/common`, package `isep.sidis.common.messaging`); Flight Routes is the working example (`code/flightroutes`, packages `command` and `query`). **Copy it; do not write your own AMQP code.** Starting the broker: [docs/README.md, "How to build and run"](../README.md#how-to-build-and-run). Reliability, consistency, the topic-exchange decision and the known limitations of messaging: [Containers §3.3–3.6](Containers.md#33-consistency-model-cap).
+
+### 9.1 Event envelope
+
+Every message body is an `IntegrationEvent<T>` (Java record in `common`), serialised as JSON:
+
+| Field | Type | Meaning |
+|---|---|---|
+| `eventId` | UUID string | Unique id of this event. Consumers use it to **ignore duplicates** |
+| `eventType` | string | What happened, in past tense, PascalCase: `RouteCreated`, `AircraftStatusChanged` |
+| `timestamp` | ISO-8601 string, UTC | When the event was created, e.g. `2026-11-10T14:03:21.512Z` |
+| `sourceService` | string | Producing service = its `spring.application.name`, e.g. `flightroutes` |
+| `sourceInstance` | string | Producing replica = its `aisafe.instance-id`, e.g. `flightroutes-1` |
+| `aggregateId` | string | Id of the entity the event is about: route id, registration, IATA code, ... |
+| `payload` | object | Event data. Defined and documented by the producer |
+
+```json
+{
+  "eventId": "5b0f6c1e-2a4b-4f7e-9d6a-1c2b3d4e5f60",
+  "eventType": "RouteCreated",
+  "timestamp": "2026-11-10T14:03:21.512Z",
+  "sourceService": "flightroutes",
+  "sourceInstance": "flightroutes-1",
+  "aggregateId": "8c1d2f9e-4b7a-4e43-9f0e-2d6a1b3c5e77",
+  "payload": {
+    "routeId": "8c1d2f9e-4b7a-4e43-9f0e-2d6a1b3c5e77",
+    "originIata": "OPO", "destinationIata": "LIS",
+    "distance": 274.0, "minRange": 400.0, "minCapacity": 120, "estimatedFlightTime": 55,
+    "status": "ACTIVE", "version": 0,
+    "history": [ { "changeDate": "2026-11-10T14:03:21.4", "description": "Route created.",
+                   "newMinRange": 400.0, "newMinCapacity": 120, "newEstimatedFlightTime": 55, "newStatus": "ACTIVE" } ]
+  }
+}
+```
+
+Rules:
+- **You never fill the envelope fields by hand.** `EventPublisher.publish(type, key, id, payload)` builds it. A producer that must apply its own event before publishing it (Flight Routes, see [its L3 §6](../3-components/flightroutes/FlightRoutes-Components.md#6-cqrs-flow-write--event--projection-on-every-replica)) builds it with `IntegrationEvent.create(...)` and publishes that same instance with `EventPublisher.publish(event, routingKey)`, so the `eventId` stays the same.
+- **Payloads carry state, not just ids** ("state-carrying events"): put in the payload everything a consumer needs, so it never has to call you back over HTTP. Every payload carries the entity's `@Version` as `version`.
+- **Tolerant reader:** consumers ignore fields they do not know. You may **add** payload fields at any time. **Renaming or removing** a field breaks consumers: agree on it with them first.
+- The AMQP message also has `message_id` = `eventId`, `type` = `eventType`, `app_id` = `sourceService`, persistent delivery mode and, if the event comes from an HTTP request, the header `X-Correlation-Id`, so the logs of producer and consumer can be matched.
+- JSON uses Jackson 3 (Spring Boot 4). `java.time` support is built into Jackson 3, so the Jackson 2 `JavaTimeModule` is not needed. Dates are written as ISO strings, never as numbers (`EventMessageConverters`).
+
+### 9.2 Exchanges, routing keys and queues
+
+Names are built by `MessagingNames` (`common`). Name parts are lower case, digits and `-`, with **no dots**, because dots separate the parts.
+
+| Object | Rule | Example |
+|---|---|---|
+| Events exchange: **topic**, durable. One per **producing** service | `aisafe.<service>.events` | `aisafe.flightroutes.events` |
+| Routing key | `<aggregate>.<action>` | `route.created`, `scheduled-flight.created` |
+| Queue: durable, non-exclusive, not auto-delete. One per **consuming instance** per source service | `<instanceId>.<sourceService>` | `flightroutes-2.flightroutes` (replica 2 of Flight Routes, reading Flight Routes' events) |
+| Dead-letter exchange: direct, durable, **shared** | `aisafe.dlx` | `aisafe.dlx` |
+| Dead-letter queue (DLQ): one per consumer queue, bound to `aisafe.dlx` with the queue name as routing key | `<instanceId>.<sourceService>.dlq` | `flightroutes-2.flightroutes.dlq` |
+
+`<instanceId>` is the replica's `aisafe.instance-id` exactly as configured (`flightroutes-2`). It already contains the consuming service name, so the queue name says "who reads" (`flightroutes-2`) and "whose events" (`flightroutes`). Consequences of "one queue per instance":
+- **Every replica receives every matching event** (each has its own copy in its own queue). This is what each replica needs to keep its own copy of the data in its own database.
+- If a replica is down, its events **wait in its queue** and are processed when it comes back.
+- Queues are **not** shared by the replicas of a service (that would be the "competing consumers" pattern, where each event goes to only one replica).
+
+Binding patterns (topic syntax): `*` = exactly one word, `#` = zero or more words. `route.*` = every route event; `scheduled-flight.created` = only that one; `#` = everything from that exchange.
+
+| Exchange (topic, durable) | Publisher | Routing keys | Queue per consuming instance |
+|---|---|---|---|
+| `aisafe.flightroutes.events` | Flight Routes (owner replica of the entity) | `route.created`, `route.updated`, `scheduled-flight.created`, `scheduled-flight.status-changed` (reserved) | `<instanceId>.flightroutes`, e.g. `flightroutes-2.flightroutes`, `airports-1.flightroutes` |
+| `aisafe.aircraftmanagement.events` | Aircraft Management (**to implement**) | `aircraft.registered`, `aircraft.status-changed`, `aircraft-model.created` | `<instanceId>.aircraftmanagement`, e.g. `flightroutes-1.aircraftmanagement`, `maintenance-1.aircraftmanagement` |
+| `aisafe.airports.events` | Airports (**to implement**) | `airport.created`, `airport.updated`, `airport.status-changed` | `<instanceId>.airports`, e.g. `flightroutes-1.airports` |
+| `aisafe.maintenance.events` | Maintenance (optional, not needed by any bridge) | e.g. `maintenance-record.started`, `maintenance-record.completed` | — |
+| `aisafe.dlx` (direct, shared) | the broker (dead-lettering) | the consumer queue name | `<queue>.dlq` |
+
+Picture for Flight Routes with 3 replicas:
+
+```text
+                         route.created / route.updated / scheduled-flight.created
+flightroutes-N ──publish──▶ [aisafe.flightroutes.events] (topic)
+                                 │ route.*, scheduled-flight.*   (same bindings on each queue)
+                                 ▼                       ▼                       ▼
+             flightroutes-1.flightroutes   flightroutes-2.flightroutes   flightroutes-3.flightroutes
+                 │ rejected after retries
+                 ▼
+            [aisafe.dlx] ──▶ flightroutes-1.flightroutes.dlq
+```
+
+A service that wants route events (e.g. Airports) **adds its own queues** (`airports-1.flightroutes`, ...) bound to the same exchange. The producer does not change.
+
+### 9.3 Events published by Flight Routes
+
+Published today, on `aisafe.flightroutes.events`, after the commit, only by the replica that **owns** the entity (other replicas forward commands to it), so the events of one entity come from one producer, in order.
+
+| `eventType` | Routing key | Published when | Payload (record) | Consumers (status) |
+|---|---|---|---|---|
+| `RouteCreated` | `route.created` | US110 `POST /api/routes` (and demo bootstrap), by the replica that stored the route (its owner) | `RouteEventPayload`: `routeId`, `originIata`, `destinationIata`, `distance` (km), `minRange` (km), `minCapacity`, `estimatedFlightTime` (min), `status` (`ACTIVE`/`INACTIVE`), `version`, `history[]` (`changeDate`, `description`, `previous*`/`new*` of the attributes that changed) | Flight Routes replicas: `REPLICATED_ROUTE` (**implemented**). Airports: count per airport, replaces B5 (**possible now**). Aircraft Management: compatible routes, replaces B6 (**possible now**) |
+| `RouteUpdated` | `route.updated` | US112 `PATCH /api/routes/{id}` (details or `ACTIVE`/`INACTIVE`), by the **owner** | same | same |
+| `ScheduledFlightCreated` | `scheduled-flight.created` | US212 `POST /api/scheduled-flights` (and demo bootstrap), by the replica that stored the flight | `ScheduledFlightEventPayload`: `flightId`, `aircraftRegistration`, `routeId`, `originIata`, `destinationIata`, `estimatedFlightTime` (min, copied from the route), `date` (`yyyy-MM-dd`), `time` (`HH:mm:ss`), `status`, `version` | Flight Routes replicas: `REPLICATED_SCHEDULED_FLIGHT` (**implemented**). Aircraft Management: minutes per aircraft, replaces B4b (**possible now**). Maintenance: flight hours of B3d (**possible now**) |
+| `ScheduledFlightStatusChanged` | `scheduled-flight.status-changed` | **reserved**: the API cannot change a flight's status yet. The read model already applies it | same | same |
+
+There is **no `RouteDeleted`**: routes are never deleted. Deactivating a route is a `RouteUpdated` with `status = "INACTIVE"`. Code: `flightroutes/.../events/RouteEvents.java`, `RouteEventPayload.java`, `ScheduledFlightEvents.java`, `ScheduledFlightEventPayload.java`.
+
+### 9.4 Events expected from the other services
+
+These contracts are **agreed but not yet published**. Flight Routes already has the consumer: queues `<instanceId>.aircraftmanagement` and `<instanceId>.airports`, projections into `KNOWN_AIRCRAFT`, `KNOWN_AIRCRAFT_MODEL` and `KNOWN_AIRPORT`, and lookups that use them before HTTP. It is **off** by default and switched on with `AISAFE_EXTERNAL_EVENTS=true` (`aisafe.flightroutes.external-events.enabled`) once the producers publish. It then uses the local copy first and falls back to HTTP for an entity it has not seen yet, so switching it on never makes a request fail. While off, bridges B1 and B2 stay synchronous HTTP. Code: `flightroutes/.../events/external/`, `query/external/`, `infrastructure/messaging/ExternalEventsMessagingConfiguration.java`, test `ExternalEventsScaffoldingTest.java`.
+
+| Producer → exchange | `eventType` | Routing key | When | Payload (all fields required unless marked) | Consumers (status) |
+|---|---|---|---|---|---|
+| Aircraft Management → `aisafe.aircraftmanagement.events` | `AircraftRegistered` | `aircraft.registered` | US101/US102 aircraft registered | `registrationNumber`, `modelName`, `seatingCapacity`, `status` (`AVAILABLE`, `IN_FLIGHT`, `UNDER_MAINTENANCE`, `INACTIVE`), `version` | Flight Routes: `KNOWN_AIRCRAFT`, replaces B1a (**consumer ready, off**). Maintenance: replaces B3a and the fleet of B3d. Unicorns projection ([Unicorns-Mock.md](Unicorns-Mock.md)) |
+| | `AircraftStatusChanged` | `aircraft.status-changed` | US105 status changed, including the change requested by Maintenance (B3b) | same fields; `modelName` and `seatingCapacity` may be omitted (null keeps the stored value) | same |
+| | `AircraftModelCreated` | `aircraft-model.created` | aircraft model registered | `modelName`, `maximumRange` (km), `version` | Flight Routes: `KNOWN_AIRCRAFT_MODEL`, replaces B1b (**consumer ready, off**). Maintenance: replaces B3c |
+| Airports → `aisafe.airports.events` | `AirportCreated` | `airport.created` | US107 airport registered | `iataCode`, `latitude`, `longitude`, `status` (`OPERATIONAL`, `CLOSED`, `UNDER_MAINTENANCE`), `version` | Flight Routes: `KNOWN_AIRPORT`, replaces B2 (**consumer ready, off**) |
+| | `AirportUpdated` | `airport.updated` | airport details updated | same | same |
+| | `AirportStatusChanged` | `airport.status-changed` | operational status changed | same; `latitude`/`longitude` may be omitted | same |
+
+`aggregateId` = `registrationNumber`, `modelName` or `iataCode`. `version` = the entity's `@Version` (older events are ignored).
+
+### 9.5 How to publish and consume events
+
+**Common steps (publisher and consumer).**
+
+1. **Dependency** (`code/<service>/pom.xml`). `common` declares AMQP as *optional*, so add it yourself:
+
+   ```xml
+   <dependency>
+       <groupId>org.springframework.boot</groupId>
+       <artifactId>spring-boot-starter-amqp</artifactId>
+   </dependency>
+   ```
+
+2. **Configuration** (`code/<service>/src/main/resources/application.properties`). Copy this block as is:
+
+   ```properties
+   aisafe.messaging.enabled=${AISAFE_MESSAGING_ENABLED:true}
+   spring.rabbitmq.host=${RABBITMQ_HOST:localhost}
+   spring.rabbitmq.port=${RABBITMQ_PORT:5672}
+   spring.rabbitmq.username=${RABBITMQ_USER:}
+   spring.rabbitmq.password=${RABBITMQ_PASSWORD:}
+   spring.rabbitmq.publisher-confirm-type=simple
+   aisafe.messaging.max-attempts=3
+   aisafe.messaging.initial-interval=500ms
+   aisafe.messaging.multiplier=2.0
+   aisafe.messaging.max-interval=5s
+   management.health.rabbit.enabled=${aisafe.messaging.enabled}
+   # RabbitMQ only in READINESS: a replica whose broker is down stays live and keeps serving HTTP
+   management.endpoint.health.probes.enabled=true
+   management.endpoint.health.validate-group-membership=false
+   management.endpoint.health.group.liveness.include=livenessState,ping
+   management.endpoint.health.group.readiness.include=readinessState,rabbit
+   ```
+
+   With this block the common library declares your exchange `aisafe.<spring.application.name>.events` at startup and gives you an `EventPublisher` bean. `scripts/start-all.*` waits for `/actuator/health/liveness` (and falls back to `/actuator/health` for services without the probe groups).
+
+3. **Keep your existing tests broker-free.** Create `src/test/resources/config/application.properties` with `aisafe.messaging.enabled=false`. Spring Boot loads `config/application.properties` *on top of* your main file (it does not replace it), so only this key changes in tests.
+
+**Publish: raise an in-process event inside your transaction and publish it AFTER the commit.** Publishing inside the transaction could announce a change that is then rolled back.
+
+```java
+// 1) In your write service (already @Transactional): raise an in-process Spring event.
+//    With messaging off nobody listens to it, so this is always safe.
+@Service
+@RequiredArgsConstructor
+public class UpdateAircraftStatusService {
+    private final ApplicationEventPublisher events;
+    // ...
+    @Transactional
+    public AircraftDTO updateStatus(String registration, String newStatus) {
+        Aircraft saved = repository.saveAndFlush(aircraft);       // flush: the version is final
+        events.publishEvent(new AircraftStatusChanged(saved));   // your own small record
+        return assembler.toDTO(saved);
+    }
+}
+
+// 2) After the commit, turn it into an integration event.
+@Component
+@ConditionalOnProperty(prefix = "aisafe.messaging", name = "enabled", havingValue = "true")
+@RequiredArgsConstructor
+public class AircraftIntegrationEventPublisher {
+    private final EventPublisher eventPublisher;   // from common
+
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    public void on(AircraftStatusChanged change) {
+        Aircraft a = change.aircraft();
+        try {
+            eventPublisher.publish(
+                    "AircraftStatusChanged",                                  // eventType
+                    MessagingNames.routingKey("aircraft", "status-changed"),  // aircraft.status-changed
+                    a.getRegistrationNumber(),                                // aggregateId
+                    new AircraftEventPayload(a.getRegistrationNumber(), a.getModelName(),
+                            a.getSeatingCapacity(), a.getStatus().name(), a.getVersion()));   // payload (a record)
+        } catch (AmqpException e) {
+            log.error("Aircraft {} saved but the event could not be published: {}", a.getRegistrationNumber(), e.getMessage());
+        }
+    }
+}
+```
+
+If your service also keeps its **own** read model (CQRS, like Flight Routes), use the Flight Routes variant instead: `command/FlightRoutesEventEmitter` builds the event, applies it to the local read model in the same transaction, and `command/IntegrationEventRelay` publishes it after the commit.
+
+Publisher checklist:
+- [ ] `eventType` in past tense (`...Created`, `...Updated`, `...StatusChanged`).
+- [ ] Routing key via `MessagingNames.routingKey(aggregate, action)`.
+- [ ] Payload is a Java `record` with the full state and a `version` (your entity's `@Version`), so consumers can drop stale events.
+- [ ] Publish only from the replica that **owns** the entity (where the write happened), never from a replica that forwarded the command.
+- [ ] Add the event to section 9.3/9.4 of this document and to your L3 document, and tell the consumers.
+
+**Consume, step 1: subscribe this instance.** This declares your queue, its DLQ and the bindings:
+
+```java
+@Configuration(proxyBeanMethods = false)
+@ConditionalOnProperty(prefix = "aisafe.messaging", name = "enabled", havingValue = "true")
+public class MessagingConfiguration {
+
+    /** Queue <instanceId>.flightroutes (e.g. airports-1.flightroutes), bound to route.created and route.updated. */
+    @Bean
+    public EventSubscription flightRoutesEvents(MessagingTopology topology) {
+        return topology.subscribe("flightroutes", "route.*");
+    }
+}
+```
+
+**Consume, step 2: declare the payload you need** as a record with only the fields you read. Extra fields in the JSON are ignored:
+
+```java
+public record RoutePayload(String routeId, String originIata, String destinationIata, String status, Long version) { }
+```
+
+**Consume, step 3: listen and apply idempotently, in one transaction.**
+
+```java
+@Component
+@ConditionalOnProperty(prefix = "aisafe.messaging", name = "enabled", havingValue = "true")
+@RequiredArgsConstructor
+public class RouteEventsListener {
+    private final RouteCountProjection projection;
+
+    // The bean name of step 1 + ".queueName"
+    @RabbitListener(queues = "#{flightRoutesEvents.queueName}")
+    public void on(IntegrationEvent<RoutePayload> event) {   // the generic type is resolved from this signature
+        projection.apply(event);
+    }
+}
+
+@Service
+public class RouteCountProjection {
+    private final IdempotentEventHandler idempotent;
+    // + your repositories
+
+    public RouteCountProjection(ProcessedEventStore processedEvents /* , repositories */) {
+        this.idempotent = new IdempotentEventHandler(processedEvents);
+    }
+
+    @Transactional   // the change and the "already processed" record commit together
+    public void apply(IntegrationEvent<RoutePayload> event) {
+        idempotent.handle(event, e -> {
+            switch (e.eventType()) {
+                case "RouteCreated", "RouteUpdated" -> upsert(e.payload());   // insert or update by id, unless older version
+                default -> { }                                                // unknown type: ignore
+            }
+        });
+    }
+}
+```
+
+If one queue carries **several payload types** (all the events of one producer), receive `IntegrationEvent<tools.jackson.databind.JsonNode>` and convert the payload by `eventType` (`FlightRoutesEventRouter.withPayload` in Flight Routes).
+
+**Consume, step 4 (recommended): remember processed events in your database.** The default `ProcessedEventStore` is in memory. With a JPA implementation the "event applied" and "event id recorded" steps share one transaction. Copy `flightroutes/.../infrastructure/messaging/ProcessedEvent.java`, `ProcessedEventRepository.java` and `JpaProcessedEventStore.java` (3 small classes). Declaring it as a `@Component` replaces the in-memory default.
+
+Rules for handlers:
+- **Return normally = success.** The message is acknowledged (ack) only after your method returns.
+- **Throw = failure.** The message is retried (`aisafe.messaging.max-attempts`, default 3, with back-off) and then moved to your DLQ. Do not catch and hide exceptions you cannot handle.
+- **Be idempotent anyway:** use upserts by id. Use `version` to ignore events older than what you already have (`ReplicatedRoute.isNewerThan` in Flight Routes).
+- **Unknown `eventType`: ignore it** (log it). Producers may add event types.
+- **Your own events:** with one queue per instance, a service that subscribes to its own exchange also receives the events it published. Flight Routes has already applied them (same `eventId`), so they are skipped as duplicates.
+- Do not call other services over HTTP inside a handler. If you need their data, subscribe to their events.
+
+Reference: `flightroutes/.../infrastructure/messaging/FlightRoutesMessagingConfiguration.java`, `query/FlightRoutesEventsListener.java`, `query/FlightRoutesEventRouter.java`, `query/RouteProjection.java`, `query/ScheduledFlightProjection.java`. Do not override the reliability settings of `common` (`EventMessagingAutoConfiguration`, `ConsumerRetry`, `EventSubscription`) per service without telling the team.
+
+### 9.6 Status of every bridge
+
+| Bridge | Assignment 2 status | Why / what is missing |
+|---|---|---|
+| B1a, B1b (Flight Routes → Aircraft Management) | `HTTP (waiting for Aircraft Management events)` | Flight Routes' consumer (`KNOWN_AIRCRAFT`, `KNOWN_AIRCRAFT_MODEL`) is implemented and tested in-process; Aircraft Management must publish `AircraftRegistered`, `AircraftStatusChanged` and `AircraftModelCreated`. Note: US212 checks availability on Flight Routes' copy; Aircraft Management stays the source of truth (an aircraft that went `UNDER_MAINTENANCE` a few ms earlier can still be scheduled, see section 9.7). |
+| B2 (Flight Routes → Airports) | `HTTP (waiting for Airports events)` | Consumer (`KNOWN_AIRPORT`) implemented and tested in-process; Airports must publish `AirportCreated`, `AirportUpdated`, `AirportStatusChanged`. |
+| B3a, B3c (Maintenance → Aircraft Management) | `HTTP (waiting for Aircraft Management events)` | Maintenance needs a local copy of aircraft and models fed by the same events. |
+| B3b (Maintenance → Aircraft Management, status change) | `HTTP (kept)` | It is a **command** on Aircraft Management's aggregate with an immediate answer (409 if the transition is invalid, e.g. `IN_FLIGHT` → `UNDER_MAINTENANCE`) and a compensation on rollback (Q7). An event would make the outcome asynchronous and lose that answer. Aircraft Management then publishes `AircraftStatusChanged`, so the *effect* reaches everyone by event. |
+| B3d (Maintenance → Aircraft Management, fleet and hours) | `HTTP (waiting for Aircraft Management events)` | The fleet can come from aircraft events; the hours come from Flight Routes' `ScheduledFlightCreated` (already published). |
+| B4a (→ Flight Routes, operational hours page) | `HTTP (provider uses read model)` | No consumer; answered from `REPLICATED_SCHEDULED_FLIGHT`. |
+| B4b (Aircraft Management → Flight Routes, minutes per aircraft) | `HTTP (provider uses read model)`; `EVENT-BASED` possible now | Flight Routes answers from its read model (never partial). Aircraft Management can drop the call by consuming `ScheduledFlightCreated` and summing `estimatedFlightTime` per `aircraftRegistration`. |
+| B5 (Airports → Flight Routes, routes per airport) | `HTTP (provider uses read model)`; `EVENT-BASED` possible now | Same; Airports can count `originIata`/`destinationIata` of `RouteCreated` (routes are never deleted; `RouteUpdated` does not change the airports). |
+| B6 (Aircraft Management → Flight Routes, compatible routes) | `HTTP (provider uses read model)`; `EVENT-BASED` possible now | Same; Aircraft Management can keep active routes (`status`, `minRange`, `minCapacity`) from `RouteCreated`/`RouteUpdated` and filter locally. Kept as HTTP until then because it is a query whose filter depends on the request. |
+
+### 9.7 Consistency of the event-based bridges
+
+A consumer that decides on its local copy decides on data that may be **milliseconds old**. Where that matters, the **owner re-validates**:
+- US212 (scheduling) on Flight Routes' copy of an aircraft: if Aircraft Management has just set it `UNDER_MAINTENANCE`, the flight can still be accepted. Accepted risk for the assignment; the fix is a compensation (Flight Routes consuming `AircraftStatusChanged` and flagging the future flights of that aircraft, or Maintenance refusing to start while flights are scheduled).
+- Counts and statistics (B4b, B5) are informative: a slightly stale value is acceptable.

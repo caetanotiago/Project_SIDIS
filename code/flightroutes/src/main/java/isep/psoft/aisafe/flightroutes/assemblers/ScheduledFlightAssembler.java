@@ -3,6 +3,7 @@ package isep.psoft.aisafe.flightroutes.assemblers;
 import isep.psoft.aisafe.flightroutes.controllers.FlightRouteController;
 import isep.psoft.aisafe.flightroutes.controllers.ScheduledFlightController;
 import isep.psoft.aisafe.flightroutes.domain.ScheduledFlight;
+import isep.psoft.aisafe.flightroutes.query.ReplicatedScheduledFlight;
 import isep.psoft.aisafe.flightroutes.dto.ScheduledFlightDTO;
 import org.springframework.hateoas.server.RepresentationModelAssembler;
 import org.springframework.stereotype.Component;
@@ -33,14 +34,22 @@ public class ScheduledFlightAssembler
         return withLinks(dto);
     }
 
-    public List<ScheduledFlightDTO> toModelList(List<ScheduledFlight> flights) {
-        return flights.stream().map(this::toModel).toList();
+    /** Same representation, from the read model (flights of every replica). */
+    public ScheduledFlightDTO toModel(ReplicatedScheduledFlight flight) {
+        ScheduledFlightDTO dto = new ScheduledFlightDTO();
+        dto.setId(flight.getId());
+        dto.setAircraftRegistration(flight.getAircraftRegistration());
+        dto.setRouteID(flight.getRouteId());
+        dto.setOriginIATA(flight.getOriginIata());
+        dto.setDestIATA(flight.getDestinationIata());
+        dto.setEstimatedFlightTime(flight.getEstimatedFlightTime());
+        dto.setDate(flight.getDate());
+        dto.setTime(flight.getTime());
+        dto.setStatus(flight.getStatus());
+        return withLinks(dto);
     }
 
-    /**
-     * (Re)cria os links HATEOAS a apontar para ESTA réplica. Usado também nos DTOs recebidos de
-     * peers: os links continuam válidos aqui, porque esta réplica encaminha o pedido ao dono.
-     */
+    /** HATEOAS links pointing to THIS replica: every replica can answer them from its own read models. */
     public ScheduledFlightDTO withLinks(ScheduledFlightDTO dto) {
         dto.removeLinks();
         dto.add(linkTo(methodOn(ScheduledFlightController.class)

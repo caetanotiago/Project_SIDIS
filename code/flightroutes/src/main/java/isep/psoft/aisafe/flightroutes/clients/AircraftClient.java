@@ -1,6 +1,7 @@
 package isep.psoft.aisafe.flightroutes.clients;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import isep.psoft.aisafe.flightroutes.query.external.ExternalReadModels;
 import isep.sidis.common.remote.ReplicatedServiceClient;
 import jakarta.persistence.EntityNotFoundException;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -9,9 +10,13 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.server.ResponseStatusException;
 
 /**
- * Cliente HTTP do microsserviço Aircraft Management (anti-corruption layer).
- * Usa os endpoints existentes: GET /api/aircrafts/{registrationNumber} (US103)
- * e GET /api/aircraft-models/{modelName} (para obter o alcance máximo do modelo).
+ * Access to the Aircraft Management microservice (anti-corruption layer), bridge B1.
+ * <ol>
+ *   <li>Local read model built from Aircraft Management events ({@link ExternalReadModels}), only when
+ *       {@code aisafe.flightroutes.external-events.enabled=true};</li>
+ *   <li>otherwise (or on a miss) synchronous HTTP: GET /api/aircrafts/{registrationNumber} (US103) and
+ *       GET /api/aircraft-models/{modelName} (maximum range of the model).</li>
+ * </ol>
  */
 @Component
 public class AircraftClient {
@@ -19,13 +24,20 @@ public class AircraftClient {
     private static final String SERVICE = "Aircraft Management";
 
     private final ReplicatedServiceClient aircraftService;
+    private final ExternalReadModels local;
 
-    public AircraftClient(@Qualifier("aircraftService") ReplicatedServiceClient aircraftService) {
+    public AircraftClient(@Qualifier("aircraftService") ReplicatedServiceClient aircraftService,
+                          ExternalReadModels local) {
         this.aircraftService = aircraftService;
+        this.local = local;
     }
 
-    // 404 → EntityNotFoundException; nenhuma réplica responde → RemoteServiceUnavailableException (503)
+    // 404 -> EntityNotFoundException; no replica answers -> RemoteServiceUnavailableException (503)
     public AircraftSnapshot getAircraft(String registration) {
+        var known = local.aircraft(registration);
+        if (known.isPresent()) {
+            return known.get();
+        }
         AircraftResponse aircraft = get("/api/aircrafts/{reg}", AircraftResponse.class,
                 "Aircraft not found: " + registration, registration);
         AircraftModelResponse model = get("/api/aircraft-models/{model}", AircraftModelResponse.class,
@@ -36,6 +48,9 @@ public class AircraftClient {
     }
 
     public boolean exists(String registration) {
+        if (local.aircraft(registration).isPresent()) {
+            return true;
+        }
         try {
             get("/api/aircrafts/{reg}", AircraftResponse.class, "", registration);
             return true;
@@ -58,7 +73,7 @@ public class AircraftClient {
                 .body(type));
     }
 
-    // Campos do AircraftDTO que nos interessam (os restantes, incluindo _links, são ignorados).
+    // Fields of the AircraftDTO used here (the others, including _links, are ignored).
     @JsonIgnoreProperties(ignoreUnknown = true)
     private record AircraftResponse(String registrationNumber, String modelName,
                                     Integer seatingCapacity, String status) {}

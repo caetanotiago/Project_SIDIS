@@ -15,15 +15,22 @@ package "Presentation" {
         + minutesByAircraft()
     }
     class ScheduledFlightAssembler <<Component>> {
-        + toModel(flight) : ScheduledFlightDTO
+        + toModel(flight : ScheduledFlight) : ScheduledFlightDTO
+        + toModel(flight : ReplicatedScheduledFlight) : ScheduledFlightDTO
         + withLinks(dto) : ScheduledFlightDTO
     }
 }
 
-package "Application" {
+package "command (write side)" {
     class CreateScheduledFlightService <<Service>> {
         + create(dto) : ScheduledFlight
     }
+    class FlightRoutesEventEmitter <<Component>> {
+        + scheduledFlightCreated(flight)
+    }
+}
+
+package "query (read side)" {
     class ViewScheduledFlightsByAircraftService <<Service>> {
         + viewByAircraft(reg, pageable) : Page<ScheduledFlightDTO>
         + search(reg, date, time) : List<ScheduledFlightDTO>
@@ -36,9 +43,18 @@ package "Application" {
         + usageByRoute() : Map<String, Long>
         + minutesByAircraft() : Map<String, Long>
     }
-    class RouteReplicaQueries <<Component>> {
-        + findById(id) : Optional<RouteSummary>
+    class ReplicatedScheduledFlight <<Read Model>> <<Entity>> {
+        - aircraftRegistration, routeId
+        - date, time, status
+        - sourceVersion, ownerInstance
     }
+    interface ReplicatedScheduledFlightRepository <<Repository>> {
+        + findConflicting(reg, date, time)
+        + findByAircraftRegistration(reg)
+        + countByRoute()
+        + sumMinutesByAircraft()
+    }
+    interface ReplicatedRouteRepository <<Repository>>
 }
 
 package "Domain" {
@@ -53,7 +69,7 @@ package "Domain" {
         - originIata / destinationIata
         - estimatedFlightTimeMinutes
     }
-    class RouteSummary <<Read Model>> {
+    class RouteSummary <<View>> {
         + isActive() : boolean
         + isMetBy(range, capacity) : boolean
     }
@@ -65,13 +81,8 @@ package "Domain" {
     RouteReference ..> RouteSummary : of(route)
 }
 
-package "Persistence" {
-    interface ScheduledFlightRepository <<Repository>> {
-        + findConflicting(reg, date, time)
-        + findByAircraftRegistration(reg)
-        + countByRoute()
-        + sumMinutesByAircraft()
-    }
+package "Persistence (write model)" {
+    interface ScheduledFlightRepository <<Repository>>
 }
 
 package "Integration" {
@@ -82,7 +93,6 @@ package "Integration" {
     class AirportClient <<ACL>> {
         + getAirport(iata) : AirportSnapshot
     }
-    class "PeerClient\n(common)" as PeerClient <<Peer-to-peer>>
 }
 
 ScheduledFlightController --> CreateScheduledFlightService
@@ -93,16 +103,16 @@ ScheduledFlightController --> ScheduledFlightAssembler
 
 CreateScheduledFlightService --> AircraftClient
 CreateScheduledFlightService --> AirportClient
-CreateScheduledFlightService --> RouteReplicaQueries : route (any replica)
-CreateScheduledFlightService --> ViewScheduledFlightsByAircraftService : conflicts (any replica)
-CreateScheduledFlightService --> ScheduledFlightRepository
+CreateScheduledFlightService --> ReplicatedRouteRepository : route (any replica)
+CreateScheduledFlightService --> ReplicatedScheduledFlightRepository : overlap (any replica)
 CreateScheduledFlightService --> ScheduledFlightFactory
-ViewScheduledFlightsByAircraftService --> AircraftClient
-ViewScheduledFlightsByAircraftService --> ScheduledFlightRepository
-ViewScheduledFlightsByAircraftService --> PeerClient
+CreateScheduledFlightService --> ScheduledFlightRepository : saveAndFlush
+CreateScheduledFlightService --> FlightRoutesEventEmitter : ScheduledFlightCreated
+ViewScheduledFlightsByAircraftService --> AircraftClient : aircraft exists
+ViewScheduledFlightsByAircraftService --> ReplicatedScheduledFlightRepository
 CalculateOperationalHoursService --> ScheduledFlightStatisticsService
-ScheduledFlightStatisticsService --> ScheduledFlightRepository
-ScheduledFlightStatisticsService --> PeerClient
+ScheduledFlightStatisticsService --> ReplicatedScheduledFlightRepository
+ReplicatedScheduledFlightRepository ..> ReplicatedScheduledFlight : persists
 
 ScheduledFlightFactory ..> ScheduledFlight : creates
 ScheduledFlightRepository ..> ScheduledFlight : persists

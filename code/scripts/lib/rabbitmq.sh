@@ -1,6 +1,6 @@
 # RabbitMQ helpers shared by start-all.sh and stop-all.sh (source: . scripts/lib/rabbitmq.sh, from code/).
 # Broker definition: infra/docker-compose.rabbitmq.yml; credentials: infra/.env (copy of infra/.env.example).
-# Conventions: docs/Messaging-Conventions.md
+# Event contracts: docs/2-containers/Integration-Contracts.md (section 9); start and run: docs/README.md
 
 BROKER_REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 BROKER_COMPOSE_FILE="$BROKER_REPO_ROOT/infra/docker-compose.rabbitmq.yml"

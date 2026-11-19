@@ -1,0 +1,44 @@
+@startuml FlightRoutes-SD-ReadModelQuery
+autonumber
+title Query answered from the local read model, with the other replicas down (US113, US114; the same for every GET)
+actor "ATCC" as ATCC
+
+participant "flightroutes-1\n: FlightRouteController" as Ctrl <<Controller>>
+participant ": SearchFlightRoutesService" as Q <<query>>
+participant "readRepo : ReplicatedRouteRepository" as RM <<read model>>
+participant ": FlightRouteAssembler" as Asm
+participant "flightroutes-2 / -3\n(stopped)" as Peers #EEEEEE
+
+ATCC -> Ctrl : GET /api/routes/{id of a route owned by flightroutes-3}
+activate Ctrl
+Ctrl -> Q : getRouteById(id)
+activate Q
+Q -> RM : findById(id)
+RM --> Q : ReplicatedRoute (owner = flightroutes-3)
+Q --> Ctrl : RouteSummary
+deactivate Q
+Ctrl -> Asm : toDTO(summary)
+Asm --> Ctrl : FlightRouteDTO
+Ctrl --> ATCC : 200 OK
+deactivate Ctrl
+note right of Peers
+  No call to the peers: the answer does not
+  depend on them, there is no X-Partial-Response,
+  and it may be stale by the consistency window.
+end note
+
+ATCC -> Ctrl : GET /api/routes/search
+activate Ctrl
+Ctrl -> Q : searchRoutes(null, null)
+Q -> RM : findAllOrdered()
+RM --> Q : the routes of ALL replicas
+Ctrl --> ATCC : 200 OK (complete list)
+deactivate Ctrl
+
+ATCC -> Ctrl : PATCH /api/routes/{id of a route owned by flightroutes-3}
+activate Ctrl
+Ctrl -> Peers : forwardToOwner (command → owner only)
+Peers --> Ctrl : no peer answers
+Ctrl --> ATCC : 503 Service Unavailable (owner down)
+deactivate Ctrl
+@enduml

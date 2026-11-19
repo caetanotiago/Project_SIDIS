@@ -47,7 +47,7 @@
             <artifactId>spring-boot-starter-hateoas</artifactId>
         </dependency>
         <!-- AMQP (RabbitMQ): route events between replicas/services. Conventions in common
-             (isep.sidis.common.messaging) and docs/Messaging-Conventions.md -->
+             (isep.sidis.common.messaging) and docs/2-containers/Integration-Contracts.md, section 9 -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-amqp</artifactId>

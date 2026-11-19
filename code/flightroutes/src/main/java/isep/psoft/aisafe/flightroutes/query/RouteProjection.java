@@ -11,13 +11,13 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Applies route events to this replica's read-side table {@code REPLICATED_ROUTE}.
+ * Applies route events to this replica's read model {@code REPLICATED_ROUTE}.
  *
  * <ul>
  *   <li><b>Idempotent:</b> an {@code eventId} already processed by this replica is ignored, and the record of the
  *       event id commits in the same transaction as the change ({@code JpaProcessedEventStore}).</li>
- *   <li><b>Own events:</b> a replica also receives the events it published. They are applied like any other
- *       (an upsert of the same data), so the table holds the routes of ALL replicas, including its own.</li>
+ *   <li><b>Own events:</b> the owner applies its event inside the write transaction (read-your-writes), so when the
+ *       broker delivers the same event back to it, the event id is already recorded and it is skipped.</li>
  *   <li><b>Ordering:</b> each route is written by one replica only (its owner), and each queue has one consumer,
  *       so events of a route arrive in order. As a safety net, an event whose {@code version} is older than the
  *       stored one is ignored (e.g. a message replayed from the DLQ).</li>
@@ -50,7 +50,6 @@ public class RouteProjection {
         }
         switch (event.eventType()) {
             case RouteEvents.ROUTE_CREATED, RouteEvents.ROUTE_UPDATED -> upsert(event, payload);
-            case RouteEvents.ROUTE_DELETED -> delete(payload);
             default -> log.warn("Ignoring unknown route event type {} ({})", event.eventType(), event.eventId());
         }
     }
@@ -66,12 +65,5 @@ public class RouteProjection {
         repository.save(route);
         log.info("Applied {} for route {} {}->{} (owner {}, version {})", event.eventType(), payload.routeId(),
                 payload.originIata(), payload.destinationIata(), event.sourceInstance(), payload.version());
-    }
-
-    private void delete(RouteEventPayload payload) {
-        repository.findById(payload.routeId()).ifPresent(route -> {
-            repository.delete(route);
-            log.info("Applied RouteDeleted for route {}", payload.routeId());
-        });
     }
 }

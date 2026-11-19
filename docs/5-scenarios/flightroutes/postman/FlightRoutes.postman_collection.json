@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "AISafe - Flight Routes (distributed)",
-    "description": "Tests of the Flight Routes component with 3 replicas (SIDIS Assignment 1).\nPrerequisite: from code/, `./scripts/start-replicas.sh flightroutes demo` (or `.\\scripts\\start-replicas.ps1 -Service flightroutes -Profiles demo`).\nFolders 7 and 8 also need Aircraft Management (am1, port 8081) and Airports (ap1, port 8083): `./scripts/start-all.sh 1 demo` plus flightroutes replicas 2 and 3, or `./scripts/start-all.sh 3 demo`.\nUse the environment FlightRoutes.postman_environment.json and run the folders in order (folder 0 creates the tokens).\nBefore folder 6, STOP replica 2 (port 8184). Folders 7 and 8 create their own data with random identifiers, so they can be run again; they still work with replica 2 stopped.",
+    "description": "Tests of the Flight Routes component with 3 replicas (SIDIS Assignments 1 and 2).\n\nAssignment 2 (CQRS + RabbitMQ): every GET is answered from the LOCAL read model of the replica, which holds the routes and flights of all replicas (built from events), so no GET depends on the peers and X-Partial-Response is no longer used by these read paths. Commands (POST, PATCH) run on the replica that owns the entity; a PATCH sent to another replica is forwarded to the owner.\n\nPrerequisite: RabbitMQ (infra/.env + Docker, see docs/README.md), then from code/: `./scripts/start-all.sh 3 demo` (or `.\\scripts\\start-all.ps1 -Profiles demo`). Folders 0-6 only need the 3 Flight Routes replicas (`./scripts/start-replicas.sh flightroutes demo`) plus the broker; folders 7, 9 and 10 also need Aircraft Management (am1) and Airports (ap1).\nThe databases are files (code/data/), so data survives restarts: counts are checked as \"at least\" or on the demo routes only, and folders 7-9 create their own data with random identifiers so the collection can be run again. Delete code/data/ to start from the demo data only.\n\nUse the environment FlightRoutes.postman_environment.json and run the folders IN ORDER with the Collection Runner or newman (the polling requests of folder 9 repeat themselves with setNextRequest, which a single \"Send\" does not do). Folder 0 creates the tokens.\nMANUAL steps: before folder 6 STOP replica 2 (port 8184); before folder 10 STOP replicas 2 and 3 (ports 8184 and 8284) and keep replica 1 running.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "item": [
@@ -72,6 +72,33 @@
           ]
         },
         {
+          "name": "Liveness and readiness of the 3 replicas (readiness includes RabbitMQ)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{fr1}}/actuator/health/liveness"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"fr1 live\", () => pm.expect(pm.response.json().status).to.eql(\"UP\"));",
+                  "const bases = [pm.environment.get(\"fr1\"), pm.environment.get(\"fr2\"), pm.environment.get(\"fr3\")];",
+                  "bases.forEach(base => pm.sendRequest(base + \"/actuator/health/readiness\", (err, res) => {",
+                  "    pm.test(base + \" ready (RabbitMQ connected)\", () => {",
+                  "        pm.expect(err).to.be.null;",
+                  "        pm.expect(res.json().status).to.eql(\"UP\");",
+                  "        pm.expect(res.json().components).to.have.property(\"rabbit\");",
+                  "    });",
+                  "}));"
+                ]
+              }
+            }
+          ]
+        },
+        {
           "name": "Token ATCC (dev only)",
           "request": {
             "method": "POST",
@@ -132,7 +159,7 @@
       ]
     },
     {
-      "name": "1. Local access",
+      "name": "1. Local access (read model)",
       "item": [
         {
           "name": "Replica 3: local routes with origin CDG",
@@ -162,10 +189,11 @@
             }
           ]
         }
-      ]
+      ],
+      "description": "Replica 3 owns CDG-LHR (demo data). Its GETs, like every GET, are answered from its own read model."
     },
     {
-      "name": "2. Peer-to-peer forwarding (GET by id)",
+      "name": "2. GET by id from the read model (no forwarding)",
       "item": [
         {
           "name": "Replica 1: route stored in replica 3",
@@ -186,7 +214,7 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
-                  "pm.test(\"same route returned via forwarding\", () => pm.expect(pm.response.json().id).to.eql(pm.environment.get(\"cdgLhrId\")));",
+                  "pm.test(\"same route, answered from replica 1's read model\", () => pm.expect(pm.response.json().id).to.eql(pm.environment.get(\"cdgLhrId\")));",
                   "pm.test(\"origin CDG\", () => pm.expect(pm.response.json().originIATA).to.eql(\"CDG\"));"
                 ]
               }
@@ -242,10 +270,11 @@
             }
           ]
         }
-      ]
+      ],
+      "description": "Assignment 1 forwarded these GETs to the peer that stored the route. In Assignment 2 replica 1 and 2 answer from their own read models, filled by the RouteCreated/RouteUpdated events of replica 3 (history included)."
     },
     {
-      "name": "3. Response aggregation",
+      "name": "3. Every replica sees the data of all replicas (read model)",
       "item": [
         {
           "name": "All routes from fr1",
@@ -266,8 +295,9 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
-                  "pm.test(\"6 routes from the 3 replicas\", () => pm.expect(pm.response.json().length).to.eql(6));",
-                  "pm.test(\"complete response\", () => pm.expect(pm.response.headers.get(\"X-Partial-Response\")).to.be.undefined);"
+                  "const pairs = pm.response.json().map(r => r.originIATA + \"-\" + r.destIATA);",
+                  "pm.test(\"contains the 6 demo routes of the 3 replicas (read model)\", () => pm.expect(pairs).to.include.members([\"OPO-LIS\",\"LIS-MAD\",\"MAD-CDG\",\"LIS-FNC\",\"CDG-LHR\",\"OPO-MAD\"]));",
+                  "pm.test(\"no partial response (local read model)\", () => pm.expect(pm.response.headers.get(\"X-Partial-Response\")).to.be.undefined);"
                 ]
               }
             }
@@ -292,8 +322,9 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
-                  "pm.test(\"6 routes from the 3 replicas\", () => pm.expect(pm.response.json().length).to.eql(6));",
-                  "pm.test(\"complete response\", () => pm.expect(pm.response.headers.get(\"X-Partial-Response\")).to.be.undefined);"
+                  "const pairs = pm.response.json().map(r => r.originIATA + \"-\" + r.destIATA);",
+                  "pm.test(\"contains the 6 demo routes of the 3 replicas (read model)\", () => pm.expect(pairs).to.include.members([\"OPO-LIS\",\"LIS-MAD\",\"MAD-CDG\",\"LIS-FNC\",\"CDG-LHR\",\"OPO-MAD\"]));",
+                  "pm.test(\"no partial response (local read model)\", () => pm.expect(pm.response.headers.get(\"X-Partial-Response\")).to.be.undefined);"
                 ]
               }
             }
@@ -318,8 +349,9 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
-                  "pm.test(\"6 routes from the 3 replicas\", () => pm.expect(pm.response.json().length).to.eql(6));",
-                  "pm.test(\"complete response\", () => pm.expect(pm.response.headers.get(\"X-Partial-Response\")).to.be.undefined);"
+                  "const pairs = pm.response.json().map(r => r.originIATA + \"-\" + r.destIATA);",
+                  "pm.test(\"contains the 6 demo routes of the 3 replicas (read model)\", () => pm.expect(pairs).to.include.members([\"OPO-LIS\",\"LIS-MAD\",\"MAD-CDG\",\"LIS-FNC\",\"CDG-LHR\",\"OPO-MAD\"]));",
+                  "pm.test(\"no partial response (local read model)\", () => pm.expect(pm.response.headers.get(\"X-Partial-Response\")).to.be.undefined);"
                 ]
               }
             }
@@ -345,16 +377,18 @@
                 "exec": [
                   "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
                   "const list = pm.response.json();",
-                  "pm.test(\"6 active routes\", () => pm.expect(list.length).to.eql(6));",
-                  "pm.test(\"sorted by usage\", () => pm.expect(list[0].usageCount).to.be.at.least(list[list.length-1].usageCount));",
-                  "pm.test(\"5 flights in total\", () => pm.expect(list.reduce((s, r) => s + r.usageCount, 0)).to.eql(5));"
+                  "const demo = [\"OPO-LIS\",\"LIS-MAD\",\"MAD-CDG\",\"LIS-FNC\",\"CDG-LHR\",\"OPO-MAD\"];",
+                  "const demoRoutes = list.filter(r => demo.includes(r.originIATA + \"-\" + r.destIATA));",
+                  "pm.test(\"the 6 demo routes are active\", () => pm.expect(demoRoutes.length).to.eql(6));",
+                  "pm.test(\"sorted by usage\", () => list.slice(1).forEach((r, i) => pm.expect(list[i].usageCount).to.be.at.least(r.usageCount)));",
+                  "pm.test(\"5 demo flights on the demo routes (flights of all replicas)\", () => pm.expect(demoRoutes.reduce((s, r) => s + r.usageCount, 0)).to.eql(5));"
                 ]
               }
             }
           ]
         },
         {
-          "name": "US206 operational hours (sum of the 3 replicas; service call with X-Service-Key)",
+          "name": "US206 operational hours (flights of the 3 replicas, from the read model; service call with X-Service-Key)",
           "request": {
             "method": "GET",
             "header": [
@@ -402,14 +436,14 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
-                  "pm.test(\"3574 km\", () => pm.expect(pm.response.json().totalDistanceKm).to.eql(3574));"
+                  "pm.test(\"at least the 3574 km of the demo network\", () => pm.expect(pm.response.json().totalDistanceKm).to.be.at.least(3574));"
                 ]
               }
             }
           ]
         },
         {
-          "name": "US213 flights of CS-TUA (paginated, 3 replicas)",
+          "name": "US213 flights of CS-TUA (3 flights owned by 3 different replicas)",
           "request": {
             "method": "GET",
             "header": [
@@ -456,13 +490,14 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
-                  "pm.test(\"MAD in 3 routes\", () => pm.expect(pm.response.json().MAD).to.eql(3));"
+                  "pm.test(\"MAD in at least the 3 demo routes\", () => pm.expect(pm.response.json().MAD).to.be.at.least(3));"
                 ]
               }
             }
           ]
         }
-      ]
+      ],
+      "description": "Assignment 1 aggregated the answers of the 3 replicas on every GET. In Assignment 2 each replica already holds everything in its read model; no peer is called, so there is never an X-Partial-Response header."
     },
     {
       "name": "4. Command forwarded to the owner replica",
@@ -582,7 +617,8 @@
             }
           ]
         }
-      ]
+      ],
+      "description": "Unchanged in Assignment 2: one owner per route. The owner applies the change, reads it immediately (read-your-writes) and publishes RouteUpdated so the other replicas converge (checked in folder 9)."
     },
     {
       "name": "5. Security",
@@ -691,7 +727,7 @@
           ]
         },
         {
-          "name": "Valid peer request → local data only (not forwarded)",
+          "name": "Valid peer request → answered from the read model, like any request",
           "request": {
             "method": "GET",
             "header": [
@@ -717,7 +753,8 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
-                  "pm.test(\"only the 2 routes of replica 1\", () => pm.expect(pm.response.json().length).to.eql(2));"
+                  "const pairs = pm.response.json().map(r => r.originIATA + \"-\" + r.destIATA);",
+                  "pm.test(\"contains the 6 demo routes of the 3 replicas (read model)\", () => pm.expect(pairs).to.include.members([\"OPO-LIS\",\"LIS-MAD\",\"MAD-CDG\",\"LIS-FNC\",\"CDG-LHR\",\"OPO-MAD\"]));"
                 ]
               }
             }
@@ -779,7 +816,7 @@
       "name": "6. Replica failure (STOP replica 2 first)",
       "item": [
         {
-          "name": "Replica 1 keeps answering with a partial response",
+          "name": "Replica 1 keeps answering every route from its read model",
           "request": {
             "method": "GET",
             "header": [
@@ -797,8 +834,9 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
-                  "pm.test(\"partial response flagged\", () => pm.expect(pm.response.headers.get(\"X-Partial-Response\")).to.eql(\"true\"));",
-                  "pm.test(\"4 routes (replicas 1 and 3)\", () => pm.expect(pm.response.json().length).to.eql(4));"
+                  "const pairs = pm.response.json().map(r => r.originIATA + \"-\" + r.destIATA);",
+                  "pm.test(\"contains the 6 demo routes of the 3 replicas (read model)\", () => pm.expect(pairs).to.include.members([\"OPO-LIS\",\"LIS-MAD\",\"MAD-CDG\",\"LIS-FNC\",\"CDG-LHR\",\"OPO-MAD\"]));",
+                  "pm.test(\"no partial response: no peer is needed for a read\", () => pm.expect(pm.response.headers.get(\"X-Partial-Response\")).to.be.undefined);"
                 ]
               }
             }
@@ -829,7 +867,7 @@
           ]
         },
         {
-          "name": "Data only in replica 2 → 404",
+          "name": "Route owned by replica 2 is still readable → 200 (read model)",
           "request": {
             "method": "GET",
             "header": [
@@ -846,14 +884,47 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test(\"status 404\", () => pm.response.to.have.status(404));"
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"MAD-CDG\", () => pm.expect(pm.response.json().originIATA + \"-\" + pm.response.json().destIATA).to.eql(\"MAD-CDG\"));"
                 ]
               }
             }
           ]
         },
         {
-          "name": "Health shows the circuit of replica 2",
+          "name": "Write of a route owned by replica 2 → 503 (its owner is down)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{fr1}}/api/routes/{{madCdgId}}",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"minCapacity\": 165\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 503: only the owner may change the route\", () => pm.response.to.have.status(503));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Replica 1 is still live and lists replica 2 as a peer",
           "request": {
             "method": "GET",
             "header": [],
@@ -866,13 +937,16 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
-                  "pm.test(\"peer 8184 not CLOSED\", () => pm.expect(pm.response.json().components.peers.details.peers[\"http://localhost:8184\"]).to.not.eql(\"CLOSED\"));"
+                  "pm.test(\"peer 8184 is monitored\", () => pm.expect(pm.response.json().components.peers.details.peers).to.have.property(\"http://localhost:8184\"));",
+                  "pm.sendRequest(pm.environment.get(\"fr1\") + \"/actuator/health/liveness\", (err, res) =>",
+                  "    pm.test(\"replica 1 live\", () => pm.expect(res.json().status).to.eql(\"UP\")));"
                 ]
               }
             }
           ]
         }
-      ]
+      ],
+      "description": "MANUAL: stop replica 2 (port 8184) before running this folder. Reads keep working on replica 1 from its read model, including the routes OWNED by replica 2; only writes of the entities owned by replica 2 are unavailable until it comes back."
     },
     {
       "name": "7. Cross-service (needs Aircraft Management and Airports running)",
@@ -1160,9 +1234,24 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test(\"status 201\", () => pm.response.to.have.status(201));",
-                  "pm.test(\"Location header\", () => pm.response.to.have.header(\"Location\"));",
-                  "pm.test(\"aircraft and route\", () => { const f = pm.response.json(); pm.expect(f.aircraftRegistration).to.eql(pm.environment.get(\"xsReg\")); pm.expect(f.routeID).to.eql(pm.environment.get(\"xsRouteId\")); });"
+                  "// The route was created on fr1 a moment ago: fr3 may not have its RouteCreated event yet (404 -> retry).",
+                  "// Eventual consistency: retry this request every 500 ms (max ~10 s) until the read model has converged.",
+                  "const pollKey = \"poll:\" + pm.info.requestName;",
+                  "const attempt = Number(pm.variables.get(pollKey) || 0);",
+                  "let converged = false;",
+                  "try { converged = (pm.response.code !== 404); } catch (e) { converged = false; }",
+                  "const next = n => (pm.execution && pm.execution.setNextRequest) ? pm.execution.setNextRequest(n) : postman.setNextRequest(n);",
+                  "if (!converged && attempt < 20) {",
+                  "    pm.variables.set(pollKey, attempt + 1);",
+                  "    setTimeout(() => {}, 500);",
+                  "    next(pm.info.requestName);",
+                  "} else {",
+                  "    pm.variables.unset(pollKey);",
+                  "    pm.test(\"converged after \" + attempt + \" retr\" + (attempt === 1 ? \"y\" : \"ies\"), () => pm.expect(converged).to.be.true);",
+                  "    pm.test(\"status 201\", () => pm.response.to.have.status(201));",
+                  "    pm.test(\"Location header\", () => pm.response.to.have.header(\"Location\"));",
+                  "    pm.test(\"aircraft and route\", () => { const f = pm.response.json(); pm.expect(f.aircraftRegistration).to.eql(pm.environment.get(\"xsReg\")); pm.expect(f.routeID).to.eql(pm.environment.get(\"xsRouteId\")); });",
+                  "}"
                 ]
               }
             }
@@ -1260,8 +1349,22 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test(\"status 409\", () => pm.response.to.have.status(409));",
-                  "pm.test(\"not available\", () => pm.expect(pm.response.json().error).to.include(\"is not available\"));"
+                  "// Eventual consistency: retry this request every 500 ms (max ~10 s) until the read model has converged.",
+                  "const pollKey = \"poll:\" + pm.info.requestName;",
+                  "const attempt = Number(pm.variables.get(pollKey) || 0);",
+                  "let converged = false;",
+                  "try { converged = (pm.response.code !== 404); } catch (e) { converged = false; }",
+                  "const next = n => (pm.execution && pm.execution.setNextRequest) ? pm.execution.setNextRequest(n) : postman.setNextRequest(n);",
+                  "if (!converged && attempt < 20) {",
+                  "    pm.variables.set(pollKey, attempt + 1);",
+                  "    setTimeout(() => {}, 500);",
+                  "    next(pm.info.requestName);",
+                  "} else {",
+                  "    pm.variables.unset(pollKey);",
+                  "    pm.test(\"converged after \" + attempt + \" retr\" + (attempt === 1 ? \"y\" : \"ies\"), () => pm.expect(converged).to.be.true);",
+                  "    pm.test(\"status 409\", () => pm.response.to.have.status(409));",
+                  "    pm.test(\"not available\", () => pm.expect(pm.response.json().error).to.include(\"is not available\"));",
+                  "}"
                 ]
               }
             }
@@ -1471,10 +1574,10 @@
                   "    console.log(\"parallel PATCH statuses: \" + statuses.join(\", \"));",
                   "    pm.test(\"every answer is 200 or 409 (never 5xx)\", () => statuses.forEach(s => pm.expect([200, 409]).to.include(s)));",
                   "    pm.test(\"at least one update succeeded\", () => pm.expect(statuses).to.include(200));",
-                  "    pm.sendRequest({ url: bases[1] + \"/api/routes/\" + id, method: \"GET\",",
+                  "    setTimeout(() => pm.sendRequest({ url: bases[1] + \"/api/routes/\" + id, method: \"GET\",",
                   "        header: { \"Authorization\": \"Bearer \" + pm.environment.get(\"token\") } }, (e2, final) => {",
                   "        pm.test(\"final minCapacity is one of the values written\", () => pm.expect(values).to.include(final.json().minCapacity));",
-                  "    });",
+                  "    }), 1500); // replica 2 reads its read model: give the RouteUpdated events time to arrive",
                   "}));"
                 ]
               }
@@ -1543,6 +1646,16 @@
           },
           "event": [
             {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// fr3 answers from its read model: wait for the last RouteUpdated events of the owner",
+                  "setTimeout(() => {}, 1500);"
+                ]
+              }
+            },
+            {
               "listen": "test",
               "script": {
                 "type": "text/javascript",
@@ -1550,6 +1663,1073 @@
                   "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
                   "pm.test(\"minCapacity is a value that was written\", () => pm.expect(pm.response.json().minCapacity).to.be.within(100, 149));",
                   "pm.test(\"still ACTIVE\", () => pm.expect(pm.response.json().status).to.eql(\"ACTIVE\"));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "9. Assignment 2 — events, read models and eventual consistency",
+      "description": "Write -> event -> projection on every replica. Needs RabbitMQ, the 3 Flight Routes replicas, Aircraft Management (am1) and Airports (ap1); folder 0 for the tokens. Creates its own airports, aircraft model and aircraft with random identifiers, so it can be run again.\n- The replica that executes a command (the owner) answers it from its read model at once (read-your-writes).\n- The other replicas get it through RabbitMQ: the \"Poll\" requests repeat themselves every 500 ms, for at most ~10 s, until the replica has converged (eventual consistency). The test name shows how many retries were needed.\nRun with the Collection Runner or newman (`npx newman run FlightRoutes.postman_collection.json -e FlightRoutes.postman_environment.json --folder \"9. Assignment 2 — events, read models and eventual consistency\"`, after folder 0).",
+      "item": [
+        {
+          "name": "Setup: random identifiers + Airports health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{ap1}}/actuator/health"
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// IATA codes with letters A-W only (never a demo airport and never \"ZZZ\")",
+                  "const L = \"ABCDEFGHIJKLMNOPQRSTUVW\";",
+                  "const pick = n => Array.from({ length: n }, () => L[Math.floor(Math.random() * L.length)]).join(\"\");",
+                  "const origin = pick(3); let dest = pick(3); while (dest === origin) dest = pick(3);",
+                  "pm.environment.set(\"a2Origin\", origin);",
+                  "pm.environment.set(\"a2Dest\", dest);",
+                  "pm.environment.set(\"a2Model\", \"A2-\" + pick(4));",
+                  "pm.environment.set(\"a2Reg\", \"CS-\" + pick(4));",
+                  "pm.environment.set(\"a2Capacity\", 101 + Math.floor(Math.random() * 40));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Airports is UP\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Setup: Aircraft Management health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{am1}}/actuator/health"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Aircraft Management is UP\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Setup: register the origin airport → 201",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{boToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{ap1}}/api/airports",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"iataCode\": \"{{a2Origin}}\",\n  \"name\": \"A2 Origin\",\n  \"city\": \"A2 Origin\",\n  \"country\": \"Portugal\",\n  \"region\": \"Europe\",\n  \"timezone\": \"Europe/Lisbon\",\n  \"latitude\": 41.2481,\n  \"longitude\": -8.6814,\n  \"runways\": [ { \"name\": \"17/35\", \"lengthMeters\": 3400, \"orientation\": 170, \"surface\": \"asphalt\" } ]\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 201\", () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Setup: register the destination airport → 201",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{boToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{ap1}}/api/airports",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"iataCode\": \"{{a2Dest}}\",\n  \"name\": \"A2 Destination\",\n  \"city\": \"A2 Destination\",\n  \"country\": \"Spain\",\n  \"region\": \"Europe\",\n  \"timezone\": \"Europe/Madrid\",\n  \"latitude\": 40.4719,\n  \"longitude\": -3.5626,\n  \"runways\": [ { \"name\": \"14/32\", \"lengthMeters\": 4100, \"orientation\": 140, \"surface\": \"asphalt\" } ]\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 201\", () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Setup: register an aircraft model → 201",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{boToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{am1}}/api/aircraft-models",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"modelName\": \"{{a2Model}}\",\n  \"manufacturer\": \"Postman\",\n  \"seatingCapacity\": 180,\n  \"fuelCapacity\": 20000,\n  \"maximumRange\": 6000,\n  \"cruisingSpeed\": 830\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 201\", () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Setup: register an AVAILABLE aircraft → 201",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{am1}}/api/aircrafts",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"registrationNumber\": \"{{a2Reg}}\",\n  \"modelName\": \"{{a2Model}}\",\n  \"seatingCapacity\": 180,\n  \"manufacturingDate\": \"2021-03-01\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 201\", () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create a route on fr1 → 201 (fr1 owns it; publishes RouteCreated)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{fr1}}/api/routes",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"originIATA\": \"{{a2Origin}}\",\n  \"destIATA\": \"{{a2Dest}}\",\n  \"estimatedFlightTime\": 70,\n  \"minRange\": 600,\n  \"minCapacity\": 100\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 201\", () => pm.response.to.have.status(201));",
+                  "pm.environment.set(\"a2RouteId\", pm.response.json().id);",
+                  "pm.test(\"ACTIVE\", () => pm.expect(pm.response.json().status).to.eql(\"ACTIVE\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "fr1 reads its own write immediately (read-your-writes on the owner)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{fr1}}/api/routes/{{a2RouteId}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200 with no wait\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Poll fr2 until the route appears (RouteCreated)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{fr2}}/api/routes/{{a2RouteId}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Eventual consistency: retry this request every 500 ms (max ~10 s) until the read model has converged.",
+                  "const pollKey = \"poll:\" + pm.info.requestName;",
+                  "const attempt = Number(pm.variables.get(pollKey) || 0);",
+                  "let converged = false;",
+                  "try { converged = (pm.response.code === 200); } catch (e) { converged = false; }",
+                  "const next = n => (pm.execution && pm.execution.setNextRequest) ? pm.execution.setNextRequest(n) : postman.setNextRequest(n);",
+                  "if (!converged && attempt < 20) {",
+                  "    pm.variables.set(pollKey, attempt + 1);",
+                  "    setTimeout(() => {}, 500);",
+                  "    next(pm.info.requestName);",
+                  "} else {",
+                  "    pm.variables.unset(pollKey);",
+                  "    pm.test(\"converged after \" + attempt + \" retr\" + (attempt === 1 ? \"y\" : \"ies\"), () => pm.expect(converged).to.be.true);",
+                  "    pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "    pm.test(\"same route\", () => pm.expect(pm.response.json().id).to.eql(pm.environment.get(\"a2RouteId\")));",
+                  "    pm.test(\"origin/destination\", () => pm.expect(pm.response.json().originIATA + \"-\" + pm.response.json().destIATA).to.eql(pm.environment.get(\"a2Origin\") + \"-\" + pm.environment.get(\"a2Dest\")));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Poll fr3 until the route appears (RouteCreated)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{fr3}}/api/routes/{{a2RouteId}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Eventual consistency: retry this request every 500 ms (max ~10 s) until the read model has converged.",
+                  "const pollKey = \"poll:\" + pm.info.requestName;",
+                  "const attempt = Number(pm.variables.get(pollKey) || 0);",
+                  "let converged = false;",
+                  "try { converged = (pm.response.code === 200); } catch (e) { converged = false; }",
+                  "const next = n => (pm.execution && pm.execution.setNextRequest) ? pm.execution.setNextRequest(n) : postman.setNextRequest(n);",
+                  "if (!converged && attempt < 20) {",
+                  "    pm.variables.set(pollKey, attempt + 1);",
+                  "    setTimeout(() => {}, 500);",
+                  "    next(pm.info.requestName);",
+                  "} else {",
+                  "    pm.variables.unset(pollKey);",
+                  "    pm.test(\"converged after \" + attempt + \" retr\" + (attempt === 1 ? \"y\" : \"ies\"), () => pm.expect(converged).to.be.true);",
+                  "    pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "    pm.test(\"same route\", () => pm.expect(pm.response.json().id).to.eql(pm.environment.get(\"a2RouteId\")));",
+                  "    pm.test(\"origin/destination\", () => pm.expect(pm.response.json().originIATA + \"-\" + pm.response.json().destIATA).to.eql(pm.environment.get(\"a2Origin\") + \"-\" + pm.environment.get(\"a2Dest\")));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Duplicate of the route on fr2 → 400 (uniqueness checked on fr2's read model)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{fr2}}/api/routes",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"originIATA\": \"{{a2Origin}}\",\n  \"destIATA\": \"{{a2Dest}}\",\n  \"estimatedFlightTime\": 70,\n  \"minRange\": 600,\n  \"minCapacity\": 100\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"already exists\", () => pm.expect(pm.response.json().error).to.include(\"already exists\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update on fr3 → forwarded to the owner fr1 → 200 (RouteUpdated)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{fr3}}/api/routes/{{a2RouteId}}",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"minCapacity\": {{a2Capacity}}\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"new minCapacity returned by the owner\", () => pm.expect(pm.response.json().minCapacity).to.eql(Number(pm.environment.get(\"a2Capacity\"))));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Poll fr1 (owner) until minCapacity = new value (RouteUpdated)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{fr1}}/api/routes/{{a2RouteId}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Eventual consistency: retry this request every 500 ms (max ~10 s) until the read model has converged.",
+                  "const pollKey = \"poll:\" + pm.info.requestName;",
+                  "const attempt = Number(pm.variables.get(pollKey) || 0);",
+                  "let converged = false;",
+                  "try { converged = (pm.response.code === 200 && pm.response.json().minCapacity === Number(pm.environment.get(\"a2Capacity\"))); } catch (e) { converged = false; }",
+                  "const next = n => (pm.execution && pm.execution.setNextRequest) ? pm.execution.setNextRequest(n) : postman.setNextRequest(n);",
+                  "if (!converged && attempt < 20) {",
+                  "    pm.variables.set(pollKey, attempt + 1);",
+                  "    setTimeout(() => {}, 500);",
+                  "    next(pm.info.requestName);",
+                  "} else {",
+                  "    pm.variables.unset(pollKey);",
+                  "    pm.test(\"converged after \" + attempt + \" retr\" + (attempt === 1 ? \"y\" : \"ies\"), () => pm.expect(converged).to.be.true);",
+                  "    pm.test(\"minCapacity converged\", () => pm.expect(pm.response.json().minCapacity).to.eql(Number(pm.environment.get(\"a2Capacity\"))));",
+                  "    pm.sendRequest({ url: pm.environment.get(\"fr1\") + \"/api/routes/\" + pm.environment.get(\"a2RouteId\") + \"/history\",",
+                  "        header: { Authorization: \"Bearer \" + pm.environment.get(\"token\") } }, (err, res) =>",
+                  "        pm.test(\"history has the creation and the update (carried by the event)\", () => pm.expect(res.json().length).to.eql(2)));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Poll fr2 until minCapacity = new value (RouteUpdated)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{fr2}}/api/routes/{{a2RouteId}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Eventual consistency: retry this request every 500 ms (max ~10 s) until the read model has converged.",
+                  "const pollKey = \"poll:\" + pm.info.requestName;",
+                  "const attempt = Number(pm.variables.get(pollKey) || 0);",
+                  "let converged = false;",
+                  "try { converged = (pm.response.code === 200 && pm.response.json().minCapacity === Number(pm.environment.get(\"a2Capacity\"))); } catch (e) { converged = false; }",
+                  "const next = n => (pm.execution && pm.execution.setNextRequest) ? pm.execution.setNextRequest(n) : postman.setNextRequest(n);",
+                  "if (!converged && attempt < 20) {",
+                  "    pm.variables.set(pollKey, attempt + 1);",
+                  "    setTimeout(() => {}, 500);",
+                  "    next(pm.info.requestName);",
+                  "} else {",
+                  "    pm.variables.unset(pollKey);",
+                  "    pm.test(\"converged after \" + attempt + \" retr\" + (attempt === 1 ? \"y\" : \"ies\"), () => pm.expect(converged).to.be.true);",
+                  "    pm.test(\"minCapacity converged\", () => pm.expect(pm.response.json().minCapacity).to.eql(Number(pm.environment.get(\"a2Capacity\"))));",
+                  "    pm.sendRequest({ url: pm.environment.get(\"fr2\") + \"/api/routes/\" + pm.environment.get(\"a2RouteId\") + \"/history\",",
+                  "        header: { Authorization: \"Bearer \" + pm.environment.get(\"token\") } }, (err, res) =>",
+                  "        pm.test(\"history has the creation and the update (carried by the event)\", () => pm.expect(res.json().length).to.eql(2)));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Poll fr3 until minCapacity = new value (RouteUpdated)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{fr3}}/api/routes/{{a2RouteId}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Eventual consistency: retry this request every 500 ms (max ~10 s) until the read model has converged.",
+                  "const pollKey = \"poll:\" + pm.info.requestName;",
+                  "const attempt = Number(pm.variables.get(pollKey) || 0);",
+                  "let converged = false;",
+                  "try { converged = (pm.response.code === 200 && pm.response.json().minCapacity === Number(pm.environment.get(\"a2Capacity\"))); } catch (e) { converged = false; }",
+                  "const next = n => (pm.execution && pm.execution.setNextRequest) ? pm.execution.setNextRequest(n) : postman.setNextRequest(n);",
+                  "if (!converged && attempt < 20) {",
+                  "    pm.variables.set(pollKey, attempt + 1);",
+                  "    setTimeout(() => {}, 500);",
+                  "    next(pm.info.requestName);",
+                  "} else {",
+                  "    pm.variables.unset(pollKey);",
+                  "    pm.test(\"converged after \" + attempt + \" retr\" + (attempt === 1 ? \"y\" : \"ies\"), () => pm.expect(converged).to.be.true);",
+                  "    pm.test(\"minCapacity converged\", () => pm.expect(pm.response.json().minCapacity).to.eql(Number(pm.environment.get(\"a2Capacity\"))));",
+                  "    pm.sendRequest({ url: pm.environment.get(\"fr3\") + \"/api/routes/\" + pm.environment.get(\"a2RouteId\") + \"/history\",",
+                  "        header: { Authorization: \"Bearer \" + pm.environment.get(\"token\") } }, (err, res) =>",
+                  "        pm.test(\"history has the creation and the update (carried by the event)\", () => pm.expect(res.json().length).to.eql(2)));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Schedule a flight on fr2 → 201 (fr2 owns it; publishes ScheduledFlightCreated)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{fr2}}/api/scheduled-flights",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"aircraftRegistration\": \"{{a2Reg}}\",\n  \"routeID\": \"{{a2RouteId}}\",\n  \"date\": \"2027-06-01\",\n  \"time\": \"09:30:00\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 201\", () => pm.response.to.have.status(201));",
+                  "pm.environment.set(\"a2FlightId\", pm.response.json().id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Poll fr1 until the flight appears (ScheduledFlightCreated)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{fr1}}/api/scheduled-flights/{{a2FlightId}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Eventual consistency: retry this request every 500 ms (max ~10 s) until the read model has converged.",
+                  "const pollKey = \"poll:\" + pm.info.requestName;",
+                  "const attempt = Number(pm.variables.get(pollKey) || 0);",
+                  "let converged = false;",
+                  "try { converged = (pm.response.code === 200); } catch (e) { converged = false; }",
+                  "const next = n => (pm.execution && pm.execution.setNextRequest) ? pm.execution.setNextRequest(n) : postman.setNextRequest(n);",
+                  "if (!converged && attempt < 20) {",
+                  "    pm.variables.set(pollKey, attempt + 1);",
+                  "    setTimeout(() => {}, 500);",
+                  "    next(pm.info.requestName);",
+                  "} else {",
+                  "    pm.variables.unset(pollKey);",
+                  "    pm.test(\"converged after \" + attempt + \" retr\" + (attempt === 1 ? \"y\" : \"ies\"), () => pm.expect(converged).to.be.true);",
+                  "    pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "    pm.test(\"aircraft and route\", () => { const f = pm.response.json(); pm.expect(f.aircraftRegistration).to.eql(pm.environment.get(\"a2Reg\")); pm.expect(f.routeID).to.eql(pm.environment.get(\"a2RouteId\")); });",
+                  "    pm.test(\"HATEOAS self link points to this replica\", () => pm.expect(pm.response.json()._links.self.href).to.include(pm.environment.get(\"fr1\")));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Poll fr3 until the flight appears (ScheduledFlightCreated)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{fr3}}/api/scheduled-flights/{{a2FlightId}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Eventual consistency: retry this request every 500 ms (max ~10 s) until the read model has converged.",
+                  "const pollKey = \"poll:\" + pm.info.requestName;",
+                  "const attempt = Number(pm.variables.get(pollKey) || 0);",
+                  "let converged = false;",
+                  "try { converged = (pm.response.code === 200); } catch (e) { converged = false; }",
+                  "const next = n => (pm.execution && pm.execution.setNextRequest) ? pm.execution.setNextRequest(n) : postman.setNextRequest(n);",
+                  "if (!converged && attempt < 20) {",
+                  "    pm.variables.set(pollKey, attempt + 1);",
+                  "    setTimeout(() => {}, 500);",
+                  "    next(pm.info.requestName);",
+                  "} else {",
+                  "    pm.variables.unset(pollKey);",
+                  "    pm.test(\"converged after \" + attempt + \" retr\" + (attempt === 1 ? \"y\" : \"ies\"), () => pm.expect(converged).to.be.true);",
+                  "    pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "    pm.test(\"aircraft and route\", () => { const f = pm.response.json(); pm.expect(f.aircraftRegistration).to.eql(pm.environment.get(\"a2Reg\")); pm.expect(f.routeID).to.eql(pm.environment.get(\"a2RouteId\")); });",
+                  "    pm.test(\"HATEOAS self link points to this replica\", () => pm.expect(pm.response.json()._links.self.href).to.include(pm.environment.get(\"fr3\")));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Poll fr1 until the statistics count the flight",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "X-Service-Key",
+                "value": "{{serviceKey}}"
+              }
+            ],
+            "url": "{{fr1}}/api/scheduled-flights/statistics/usage-by-route"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Eventual consistency: retry this request every 500 ms (max ~10 s) until the read model has converged.",
+                  "const pollKey = \"poll:\" + pm.info.requestName;",
+                  "const attempt = Number(pm.variables.get(pollKey) || 0);",
+                  "let converged = false;",
+                  "try { converged = (pm.response.code === 200 && pm.response.json()[pm.environment.get(\"a2RouteId\")] === 1); } catch (e) { converged = false; }",
+                  "const next = n => (pm.execution && pm.execution.setNextRequest) ? pm.execution.setNextRequest(n) : postman.setNextRequest(n);",
+                  "if (!converged && attempt < 20) {",
+                  "    pm.variables.set(pollKey, attempt + 1);",
+                  "    setTimeout(() => {}, 500);",
+                  "    next(pm.info.requestName);",
+                  "} else {",
+                  "    pm.variables.unset(pollKey);",
+                  "    pm.test(\"converged after \" + attempt + \" retr\" + (attempt === 1 ? \"y\" : \"ies\"), () => pm.expect(converged).to.be.true);",
+                  "    pm.test(\"usage of the new route = 1\", () => pm.expect(pm.response.json()[pm.environment.get(\"a2RouteId\")]).to.eql(1));",
+                  "    pm.sendRequest({ url: pm.environment.get(\"fr1\") + \"/api/scheduled-flights/statistics/minutes-by-aircraft\",",
+                  "        header: { Authorization: \"Bearer \" + pm.environment.get(\"boToken\"), \"X-Service-Key\": pm.environment.get(\"serviceKey\") } }, (err, res) =>",
+                  "        pm.test(\"minutes of the aircraft = 70 (B4b provider)\", () => pm.expect(res.json()[pm.environment.get(\"a2Reg\")]).to.eql(70)));",
+                  "    pm.sendRequest({ url: pm.environment.get(\"fr1\") + \"/api/routes/active?sortBy=popularity\",",
+                  "        header: { Authorization: \"Bearer \" + pm.environment.get(\"token\") } }, (err, res) => {",
+                  "        const r = res.json().find(x => x.id === pm.environment.get(\"a2RouteId\"));",
+                  "        pm.test(\"popularity of the new route = 1 (US214)\", () => pm.expect(r.usageCount).to.eql(1));",
+                  "    });",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Poll fr2 until the statistics count the flight",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "X-Service-Key",
+                "value": "{{serviceKey}}"
+              }
+            ],
+            "url": "{{fr2}}/api/scheduled-flights/statistics/usage-by-route"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Eventual consistency: retry this request every 500 ms (max ~10 s) until the read model has converged.",
+                  "const pollKey = \"poll:\" + pm.info.requestName;",
+                  "const attempt = Number(pm.variables.get(pollKey) || 0);",
+                  "let converged = false;",
+                  "try { converged = (pm.response.code === 200 && pm.response.json()[pm.environment.get(\"a2RouteId\")] === 1); } catch (e) { converged = false; }",
+                  "const next = n => (pm.execution && pm.execution.setNextRequest) ? pm.execution.setNextRequest(n) : postman.setNextRequest(n);",
+                  "if (!converged && attempt < 20) {",
+                  "    pm.variables.set(pollKey, attempt + 1);",
+                  "    setTimeout(() => {}, 500);",
+                  "    next(pm.info.requestName);",
+                  "} else {",
+                  "    pm.variables.unset(pollKey);",
+                  "    pm.test(\"converged after \" + attempt + \" retr\" + (attempt === 1 ? \"y\" : \"ies\"), () => pm.expect(converged).to.be.true);",
+                  "    pm.test(\"usage of the new route = 1\", () => pm.expect(pm.response.json()[pm.environment.get(\"a2RouteId\")]).to.eql(1));",
+                  "    pm.sendRequest({ url: pm.environment.get(\"fr2\") + \"/api/scheduled-flights/statistics/minutes-by-aircraft\",",
+                  "        header: { Authorization: \"Bearer \" + pm.environment.get(\"boToken\"), \"X-Service-Key\": pm.environment.get(\"serviceKey\") } }, (err, res) =>",
+                  "        pm.test(\"minutes of the aircraft = 70 (B4b provider)\", () => pm.expect(res.json()[pm.environment.get(\"a2Reg\")]).to.eql(70)));",
+                  "    pm.sendRequest({ url: pm.environment.get(\"fr2\") + \"/api/routes/active?sortBy=popularity\",",
+                  "        header: { Authorization: \"Bearer \" + pm.environment.get(\"token\") } }, (err, res) => {",
+                  "        const r = res.json().find(x => x.id === pm.environment.get(\"a2RouteId\"));",
+                  "        pm.test(\"popularity of the new route = 1 (US214)\", () => pm.expect(r.usageCount).to.eql(1));",
+                  "    });",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Poll fr3 until the statistics count the flight",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "X-Service-Key",
+                "value": "{{serviceKey}}"
+              }
+            ],
+            "url": "{{fr3}}/api/scheduled-flights/statistics/usage-by-route"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Eventual consistency: retry this request every 500 ms (max ~10 s) until the read model has converged.",
+                  "const pollKey = \"poll:\" + pm.info.requestName;",
+                  "const attempt = Number(pm.variables.get(pollKey) || 0);",
+                  "let converged = false;",
+                  "try { converged = (pm.response.code === 200 && pm.response.json()[pm.environment.get(\"a2RouteId\")] === 1); } catch (e) { converged = false; }",
+                  "const next = n => (pm.execution && pm.execution.setNextRequest) ? pm.execution.setNextRequest(n) : postman.setNextRequest(n);",
+                  "if (!converged && attempt < 20) {",
+                  "    pm.variables.set(pollKey, attempt + 1);",
+                  "    setTimeout(() => {}, 500);",
+                  "    next(pm.info.requestName);",
+                  "} else {",
+                  "    pm.variables.unset(pollKey);",
+                  "    pm.test(\"converged after \" + attempt + \" retr\" + (attempt === 1 ? \"y\" : \"ies\"), () => pm.expect(converged).to.be.true);",
+                  "    pm.test(\"usage of the new route = 1\", () => pm.expect(pm.response.json()[pm.environment.get(\"a2RouteId\")]).to.eql(1));",
+                  "    pm.sendRequest({ url: pm.environment.get(\"fr3\") + \"/api/scheduled-flights/statistics/minutes-by-aircraft\",",
+                  "        header: { Authorization: \"Bearer \" + pm.environment.get(\"boToken\"), \"X-Service-Key\": pm.environment.get(\"serviceKey\") } }, (err, res) =>",
+                  "        pm.test(\"minutes of the aircraft = 70 (B4b provider)\", () => pm.expect(res.json()[pm.environment.get(\"a2Reg\")]).to.eql(70)));",
+                  "    pm.sendRequest({ url: pm.environment.get(\"fr3\") + \"/api/routes/active?sortBy=popularity\",",
+                  "        header: { Authorization: \"Bearer \" + pm.environment.get(\"token\") } }, (err, res) => {",
+                  "        const r = res.json().find(x => x.id === pm.environment.get(\"a2RouteId\"));",
+                  "        pm.test(\"popularity of the new route = 1 (US214)\", () => pm.expect(r.usageCount).to.eql(1));",
+                  "    });",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Same aircraft and time on fr3 → 409 (conflict found in fr3's flight read model)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{fr3}}/api/scheduled-flights",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"aircraftRegistration\": \"{{a2Reg}}\",\n  \"routeID\": \"{{a2RouteId}}\",\n  \"date\": \"2027-06-01\",\n  \"time\": \"09:30:00\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 409\", () => pm.response.to.have.status(409));",
+                  "pm.test(\"already has a scheduled flight\", () => pm.expect(pm.response.json().error).to.include(\"already has a scheduled flight\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Deactivate the route on fr1 (owner) → 200 (RouteUpdated with status INACTIVE; there is no RouteDeleted)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{fr1}}/api/routes/{{a2RouteId}}",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"INACTIVE\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"INACTIVE\", () => pm.expect(pm.response.json().status).to.eql(\"INACTIVE\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Poll fr2 until the route is INACTIVE and left the active network",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{fr2}}/api/routes/{{a2RouteId}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Eventual consistency: retry this request every 500 ms (max ~10 s) until the read model has converged.",
+                  "const pollKey = \"poll:\" + pm.info.requestName;",
+                  "const attempt = Number(pm.variables.get(pollKey) || 0);",
+                  "let converged = false;",
+                  "try { converged = (pm.response.code === 200 && pm.response.json().status === \"INACTIVE\"); } catch (e) { converged = false; }",
+                  "const next = n => (pm.execution && pm.execution.setNextRequest) ? pm.execution.setNextRequest(n) : postman.setNextRequest(n);",
+                  "if (!converged && attempt < 20) {",
+                  "    pm.variables.set(pollKey, attempt + 1);",
+                  "    setTimeout(() => {}, 500);",
+                  "    next(pm.info.requestName);",
+                  "} else {",
+                  "    pm.variables.unset(pollKey);",
+                  "    pm.test(\"converged after \" + attempt + \" retr\" + (attempt === 1 ? \"y\" : \"ies\"), () => pm.expect(converged).to.be.true);",
+                  "    pm.test(\"INACTIVE on fr2\", () => pm.expect(pm.response.json().status).to.eql(\"INACTIVE\"));",
+                  "    pm.sendRequest({ url: pm.environment.get(\"fr2\") + \"/api/routes/active?sortBy=distance\", header: { Authorization: \"Bearer \" + pm.environment.get(\"token\") } }, (err, res) =>",
+                  "        pm.test(\"not in the active network of fr2\", () => pm.expect(res.json().map(r => r.id)).to.not.include(pm.environment.get(\"a2RouteId\"))));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Reactivate the route through fr2 → forwarded to fr1 → 200",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{fr2}}/api/routes/{{a2RouteId}}",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"ACTIVE\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"ACTIVE\", () => pm.expect(pm.response.json().status).to.eql(\"ACTIVE\"));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "10. Assignment 2 — reads with the other replicas stopped (MANUAL: stop fr2 and fr3 first)",
+      "description": "MANUAL: run folder 9 first, then STOP replicas 2 and 3 (ports 8184 and 8284) and keep replica 1 running.\nReplica 1 answers every read from its own read model, including routes and flights owned by the stopped replicas: no peer call, no X-Partial-Response. Writes owned by a stopped replica fail with 503 until it is back; when it restarts, its durable queue delivers the events it missed.",
+      "item": [
+        {
+          "name": "fr1 lists every route, including those owned by replicas 2 and 3",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{fr1}}/api/routes/search"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "const pairs = pm.response.json().map(r => r.originIATA + \"-\" + r.destIATA);",
+                  "pm.test(\"contains the 6 demo routes of the 3 replicas (read model)\", () => pm.expect(pairs).to.include.members([\"OPO-LIS\",\"LIS-MAD\",\"MAD-CDG\",\"LIS-FNC\",\"CDG-LHR\",\"OPO-MAD\"]));",
+                  "pm.test(\"the folder 9 route is there\", () => pm.expect(pm.response.json().map(r => r.id)).to.include(pm.environment.get(\"a2RouteId\")));",
+                  "pm.test(\"no partial response\", () => pm.expect(pm.response.headers.get(\"X-Partial-Response\")).to.be.undefined);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "fr1 reads the flight owned by replica 2",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{fr1}}/api/scheduled-flights/{{a2FlightId}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "fr1 statistics still include the flights owned by the stopped replicas",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": "{{fr1}}/api/routes/active?sortBy=popularity"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "const demo = [\"OPO-LIS\",\"LIS-MAD\",\"MAD-CDG\",\"LIS-FNC\",\"CDG-LHR\",\"OPO-MAD\"];",
+                  "pm.test(\"5 demo flights counted\", () => pm.expect(pm.response.json().filter(r => demo.includes(r.originIATA + \"-\" + r.destIATA)).reduce((s, r) => s + r.usageCount, 0)).to.eql(5));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Write of CDG-LHR (owned by replica 3) → 503",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{fr1}}/api/routes/{{cdgLhrId}}",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"minCapacity\": 105\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 503: its owner is down\", () => pm.response.to.have.status(503));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Write of the folder 9 route (owned by replica 1) still works → 200",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{fr1}}/api/routes/{{a2RouteId}}",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"estimatedFlightTime\": 72\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"updated\", () => pm.expect(pm.response.json().estimatedFlightTime).to.eql(72));"
                 ]
               }
             }

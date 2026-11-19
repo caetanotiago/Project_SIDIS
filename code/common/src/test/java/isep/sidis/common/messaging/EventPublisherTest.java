@@ -62,6 +62,22 @@ class EventPublisherTest {
     }
 
     @Test
+    void aPrebuiltEventIsPublishedWithItsOwnIdAndAnotherServicesEventIsRejected() {
+        ConnectionFactory cf = mock(ConnectionFactory.class);
+        when(template.getConnectionFactory()).thenReturn(cf);
+        IntegrationEvent<String> built = IntegrationEvent.create("RouteCreated", NOW, "flightroutes",
+                "flightroutes-2", "r-1", "payload");
+
+        assertSame(built, publisher.publish(built, "route.created"));
+        verify(template).convertAndSend(eq("aisafe.flightroutes.events"), eq("route.created"), eq(built),
+                any(MessagePostProcessor.class));
+
+        IntegrationEvent<String> foreign = IntegrationEvent.create("AirportCreated", NOW, "airports",
+                "airports-1", "OPO", "payload");
+        assertThrows(IllegalArgumentException.class, () -> publisher.publish(foreign, "airport.created"));
+    }
+
+    @Test
     void withSimplePublisherConfirmsItWaitsForTheBrokerConfirm() {
         ConnectionFactory cf = mock(ConnectionFactory.class);
         when(cf.isSimplePublisherConfirms()).thenReturn(true);

@@ -7,11 +7,11 @@ Person(backoffice, "Backoffice Operator", "Registers airports and aircraft model
 Person(atcc, "Air Traffic Control Coordinator (ATCC)", "Registers aircraft; defines flight routes and schedules flights; consults airports and the route network.")
 Person(maint, "Maintenance Technician / Supervisor", "Plans and records aircraft maintenance.")
 
-System(aisafe, "AISafe Flight Management System", "Distributed system that manages the fleet, airports, flight routes, scheduled flights and maintenance of an airline.")
+System(aisafe, "AISafe Flight Management System", "Distributed system that manages the fleet, airports, flight routes, scheduled flights and maintenance of an airline. Inside: replicated services with a database per replica, exchanging events through a message broker (see Level 2).")
 
-Rel(backoffice, aisafe, "Registers airports and aircraft models; manages routes; reads statistics")
-Rel(atcc, aisafe, "Registers aircraft, creates routes, schedules flights, queries airports and the network")
-Rel(maint, aisafe, "Records maintenance and checks aircraft status")
+Rel(backoffice, aisafe, "Registers airports and aircraft models; manages routes; reads statistics", "REST, JSON/HTTPS + JWT")
+Rel(atcc, aisafe, "Registers aircraft, creates routes, schedules flights, queries airports and the network", "REST, JSON/HTTPS + JWT")
+Rel(maint, aisafe, "Records maintenance and checks aircraft status", "REST, JSON/HTTPS + JWT")
 
 SHOW_LEGEND()
 @enduml

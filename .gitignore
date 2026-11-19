@@ -34,6 +34,8 @@ logs/
 *.pid
 *.mv.db
 *.trace.db
+# File-based H2 databases of the replicas (one per instance), e.g. code/data/flightRoutesdb-1.mv.db
+data/
 
 # ---- Segredos / ficheiros locais ----
 .env

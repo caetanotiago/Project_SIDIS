@@ -20,11 +20,16 @@ public final class MessagingNames {
         return part(aggregate, "aggregate") + "." + part(action, "action");
     }
 
-    public static String consumerQueue(String consumerService, String instanceId, String sourceService) {
-        return part(consumerService, "consumerService") + "." + part(instanceId, "instanceId") + "."
-                + part(sourceService, "sourceService");
+    /**
+     * Queue of one consuming instance for the events of one source service: {@code <instanceId>.<sourceService>},
+     * e.g. {@code flightroutes-2.flightroutes}. The instance id already names the consuming service
+     * ({@code <service>-<n>}), so it is not repeated.
+     */
+    public static String consumerQueue(String instanceId, String sourceService) {
+        return part(instanceId, "instanceId") + "." + part(sourceService, "sourceService");
     }
 
+    /** {@code <queue>.dlq}, e.g. {@code flightroutes-2.flightroutes.dlq}. */
     public static String deadLetterQueue(String queue) {
         return queue + ".dlq";
     }
