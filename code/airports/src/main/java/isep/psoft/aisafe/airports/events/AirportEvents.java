@@ -24,6 +24,14 @@ public final class AirportEvents {
     public static final String UPDATED_KEY = MessagingNames.routingKey(AGGREGATE, "updated");
     public static final String STATUS_CHANGED_KEY = MessagingNames.routingKey(AGGREGATE, "status-changed");
 
+    /**
+     * Pedido de sincronização: uma réplica que acabou de arrancar pede às outras que voltem a publicar o estado dos
+     * aeroportos de que são donas (ver {@code ReadModelSynchronizer}). Usa outro "agregado" ({@code airport-sync}) para
+     * NÃO apanhar o binding {@code airport.*}: só as réplicas do Airports o recebem, os outros serviços não.
+     */
+    public static final String SYNC_REQUESTED = "AirportSyncRequested";
+    public static final String SYNC_REQUESTED_KEY = MessagingNames.routingKey("airport-sync", "requested");
+
     /** Padrão de binding que apanha todos os eventos de aeroportos. */
     public static final String ALL_AIRPORT_EVENTS = AGGREGATE + ".*";
 
