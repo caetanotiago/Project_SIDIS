@@ -1,8 +1,8 @@
 package isep.psoft.aisafe.airports.query;
 
-import isep.psoft.aisafe.airports.clients.FlightRoutesClient;
 import isep.psoft.aisafe.airports.dto.AirportDTO;
 import isep.psoft.aisafe.airports.dto.BusiestAirportDTO;
+import isep.psoft.aisafe.airports.query.external.RouteCountProjection;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -14,7 +14,9 @@ import java.util.Map;
 import java.util.Optional;
 
 /**
- * US210 — estatística dos aeroportos com mais rotas.
+ * US210 — estatística dos aeroportos com mais rotas. Lado de leitura, SEM chamadas HTTP: as contagens vêm do read
+ * model {@code KNOWN_ROUTE} (eventos de rotas do Flight Routes) e os detalhes dos aeroportos do read model
+ * {@code REPLICATED_AIRPORT}. Responde mesmo com o Flight Routes em baixo (com as rotas que já conhece).
  */
 @Service
 @RequiredArgsConstructor
@@ -23,7 +25,7 @@ public class AirportStatisticsService {
     public static final int DEFAULT_LIMIT = 5;
     public static final int MAX_LIMIT = 100;
 
-    private final FlightRoutesClient flightRoutesClient;
+    private final RouteCountProjection routes;
     private final SearchAirportsService airports;
 
     @Transactional(readOnly = true)
@@ -33,7 +35,7 @@ public class AirportStatisticsService {
             throw new IllegalArgumentException("Limit must be between 1 and " + MAX_LIMIT + ".");
         }
 
-        List<Map.Entry<String, Long>> ranking = flightRoutesClient.routeCountsByAirport().entrySet().stream()
+        List<Map.Entry<String, Long>> ranking = routes.routeCountsByAirport().entrySet().stream()
                 .filter(e -> e.getKey() != null && e.getValue() != null && e.getValue() > 0)
                 .sorted(Map.Entry.<String, Long>comparingByValue(Comparator.reverseOrder())
                         .thenComparing(Map.Entry.<String, Long>comparingByKey()))

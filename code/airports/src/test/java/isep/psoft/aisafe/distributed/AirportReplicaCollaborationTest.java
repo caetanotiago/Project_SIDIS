@@ -1,7 +1,9 @@
 package isep.psoft.aisafe.distributed;
 
-import com.sun.net.httpserver.HttpServer;
+import isep.psoft.aisafe.airports.events.external.FlightRouteEventPayload;
+import isep.psoft.aisafe.airports.query.external.RouteCountProjection;
 import isep.psoft.aisafe.support.InProcessEventBus;
+import isep.sidis.common.messaging.IntegrationEvent;
 import isep.sidis.common.http.AisafeHeaders;
 import isep.sidis.common.security.JwtTokenProvider;
 import org.junit.jupiter.api.AfterAll;
@@ -15,14 +17,12 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 
 import java.io.IOException;
-import java.io.OutputStream;
-import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
-import java.nio.charset.StandardCharsets;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -33,7 +33,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * Testes de colaboração entre réplicas do Airports.
  *
  * <p>Arranca DUAS réplicas reais do Airports (A e B, cada uma com a sua H2) configuradas como peers
- * uma da outra, e um stub HTTP do Flight Routes (contrato B5). Desenho CQRS do Assignment 2, SEM broker: os
+ * uma da outra. Desenho CQRS do Assignment 2, SEM broker: os
  * eventos confirmados viajam pelo {@link InProcessEventBus} (JSON, uma entrega por réplica), tal como pelo
  * RabbitMQ. Cobre: leituras respondidas pelo read model local (sem forwarding de GET), unicidade do IATA no
  * read model, comandos encaminhados para a réplica dona (US106a, US109, US208) e propagados por evento a todas
@@ -47,7 +47,6 @@ class AirportReplicaCollaborationTest {
     private static final HttpClient HTTP = HttpClient.newHttpClient();
     private static final InProcessEventBus BUS = new InProcessEventBus();
 
-    private static HttpServer flightRoutesStub;
     private static ConfigurableApplicationContext replicaA;
     private static ConfigurableApplicationContext replicaB;
     private static String urlA;
@@ -57,16 +56,13 @@ class AirportReplicaCollaborationTest {
 
     @BeforeAll
     static void startReplicas() throws IOException {
-        flightRoutesStub = startFlightRoutesStub();
-        String flightRoutes = "http://localhost:" + flightRoutesStub.getAddress().getPort();
-
         int portA = freePort();
         int portB = freePort();
         urlA = "http://localhost:" + portA;
         urlB = "http://localhost:" + portB;
 
-        replicaA = startReplica("A", portA, urlB, flightRoutes);
-        replicaB = startReplica("B", portB, urlA, flightRoutes);
+        replicaA = startReplica("A", portA, urlB);
+        replicaB = startReplica("B", portB, urlA);
 
         JwtTokenProvider tokens = replicaA.getBean(JwtTokenProvider.class);
         backoffice = tokens.generateToken("bo-it", List.of("ROLE_BACKOFFICE_OPERATOR"));
@@ -77,7 +73,6 @@ class AirportReplicaCollaborationTest {
     static void stopAll() {
         if (replicaA != null) replicaA.close();
         if (replicaB != null && replicaB.isActive()) replicaB.close();
-        if (flightRoutesStub != null) flightRoutesStub.stop(0);
     }
 
     // ------------------------------------------------------------------ cenários
@@ -206,8 +201,16 @@ class AirportReplicaCollaborationTest {
 
     @Test
     @Order(8)
-    void busiestAirportsCombineFlightRoutesCountsWithAirportDetails() throws Exception {
-        // Stub do Flight Routes: {"LIS":3,"OPO":2,"MAD":2,"ZZZ":1}
+    void busiestAirportsAreComputedFromFlightRoutesEvents() throws Exception {
+        // Eventos RouteCreated do Flight Routes (como chegariam à fila <instanceId>.flightroutes de cada réplica).
+        // Contagens resultantes: LIS 3, OPO 2, MAD 2, ZZZ 1 (uma rota conta para a origem e para o destino).
+        routeCreated("r1", "LIS", "OPO");
+        routeCreated("r2", "LIS", "MAD");
+        routeCreated("r3", "LIS", "ZZZ");
+        IntegrationEvent<FlightRouteEventPayload> r4 = routeCreated("r4", "OPO", "MAD");
+        // O mesmo evento entregue outra vez (at-least-once) não conta a rota duas vezes
+        assertFalse(replicaA.getBean(RouteCountProjection.class).apply(r4));
+
         HttpResponse<String> response = send("GET", urlA + "/api/airports/statistics/busiest?limit=3", null, backoffice);
         assertEquals(200, response.statusCode(), response.body());
 
@@ -215,12 +218,15 @@ class AirportReplicaCollaborationTest {
         assertEquals(3, ranking.size());
         assertEquals("LIS", ranking.get(0).get("iataCode").asString());
         assertEquals(3, ranking.get(0).get("routeCount").asLong());
-        assertEquals("Lisbon", ranking.get(0).get("city").asString()); // detalhes vindos de B
+        assertEquals("Lisbon", ranking.get(0).get("city").asString()); // detalhes do read model (LIS é de B)
         assertEquals("MAD", ranking.get(1).get("iataCode").asString()); // empate 2-2 → ordem do IATA
         assertEquals("OPO", ranking.get(2).get("iataCode").asString());
         assertEquals(3, ranking.get(2).get("rank").asInt());
 
         assertEquals(400, send("GET", urlA + "/api/airports/statistics/busiest?limit=0", null, backoffice).statusCode());
+        // A réplica B tem o seu próprio read model de rotas, com as mesmas contagens
+        assertEquals("LIS", json(send("GET", urlB + "/api/airports/statistics/busiest?limit=1", null, backoffice))
+                .get(0).get("iataCode").asString());
     }
 
     @Test
@@ -298,34 +304,28 @@ class AirportReplicaCollaborationTest {
 
     // ------------------------------------------------------------------ infraestrutura do teste
 
-    private static ConfigurableApplicationContext startReplica(String name, int port, String peerUrl, String flightRoutes) {
+    /** Evento RouteCreated do Flight Routes, entregue às duas réplicas (cada uma tem a sua fila). */
+    private static IntegrationEvent<FlightRouteEventPayload> routeCreated(String id, String origin, String destination) {
+        IntegrationEvent<FlightRouteEventPayload> event = IntegrationEvent.create("RouteCreated", Instant.now(),
+                "flightroutes", "flightroutes-it", id, new FlightRouteEventPayload(id, origin, destination, "ACTIVE", 0L));
+        for (ConfigurableApplicationContext replica : List.of(replicaA, replicaB)) {
+            assertTrue(replica.getBean(RouteCountProjection.class).apply(event));
+        }
+        return event;
+    }
+
+    private static ConfigurableApplicationContext startReplica(String name, int port, String peerUrl) {
         // Argumentos de linha de comando: têm precedência sobre o application.properties
         return BUS.start(name,
                 "--server.port=" + port,
                 "--aisafe.instance-id=it-" + name,
                 "--spring.datasource.url=jdbc:h2:mem:airports-it-" + name + ";DB_CLOSE_DELAY=-1",
                 "--aisafe.peers.urls=" + peerUrl,
-                "--services.flightroutes.urls=" + flightRoutes,
                 "--aisafe.security.service-key=" + SERVICE_KEY,
                 "--aisafe.http.read-timeout=2s",
                 "--aisafe.http.max-retries=0",
                 "--aisafe.bootstrap.enabled=false",
                 "--logging.file.name=target/it-logs/airports-" + name + ".log");
-    }
-
-    /** Stub do Flight Routes: só o endpoint de contagens do contrato B5. */
-    private static HttpServer startFlightRoutesStub() throws IOException {
-        HttpServer server = HttpServer.create(new InetSocketAddress("localhost", 0), 0);
-        server.createContext("/api/routes/statistics/count-by-airport", exchange -> {
-            byte[] bytes = "{\"LIS\":3,\"OPO\":2,\"MAD\":2,\"ZZZ\":1}".getBytes(StandardCharsets.UTF_8);
-            exchange.getResponseHeaders().add("Content-Type", "application/json");
-            exchange.sendResponseHeaders(200, bytes.length);
-            try (OutputStream os = exchange.getResponseBody()) {
-                os.write(bytes);
-            }
-        });
-        server.start();
-        return server;
     }
 
     private static String airport(String iata, String city, String country, double lat, double lon) {

@@ -1,6 +1,7 @@
 package isep.psoft.aisafe.infrastructure.messaging;
 
 import isep.psoft.aisafe.airports.events.AirportEvents;
+import isep.psoft.aisafe.airports.events.external.FlightRoutesEvents;
 import isep.sidis.common.messaging.EventSubscription;
 import isep.sidis.common.messaging.MessagingTopology;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -25,5 +26,15 @@ public class AirportsMessagingConfiguration {
     public EventSubscription airportEventsSubscription(MessagingTopology topology) {
         return topology.subscribe(AirportEvents.SOURCE_SERVICE, AirportEvents.ALL_AIRPORT_EVENTS,
                 AirportEvents.SYNC_REQUESTED_KEY);
+    }
+
+    /**
+     * Fila {@code <instanceId>.flightroutes} (ex. {@code airports-1.flightroutes}) + DLQ, ligada a {@code route.*}
+     * do exchange {@code aisafe.flightroutes.events}: alimenta o read model {@code KNOWN_ROUTE} (US210), em vez da
+     * chamada HTTP B5 ao Flight Routes. O produtor não muda: só acrescentamos a nossa fila ao exchange dele.
+     */
+    @Bean
+    public EventSubscription flightRoutesEventsSubscription(MessagingTopology topology) {
+        return topology.subscribe(FlightRoutesEvents.SOURCE_SERVICE, FlightRoutesEvents.ALL_ROUTE_EVENTS);
     }
 }
