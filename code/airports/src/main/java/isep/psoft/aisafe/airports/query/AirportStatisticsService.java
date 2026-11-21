@@ -1,4 +1,4 @@
-package isep.psoft.aisafe.airports.services;
+package isep.psoft.aisafe.airports.query;
 
 import isep.psoft.aisafe.airports.clients.FlightRoutesClient;
 import isep.psoft.aisafe.airports.dto.AirportDTO;
@@ -24,7 +24,7 @@ public class AirportStatisticsService {
     public static final int MAX_LIMIT = 100;
 
     private final FlightRoutesClient flightRoutesClient;
-    private final AirportReplicaQueries replicas;
+    private final SearchAirportsService airports;
 
     @Transactional(readOnly = true)
     public List<BusiestAirportDTO> busiestAirports(Integer limit) {
@@ -44,7 +44,7 @@ public class AirportStatisticsService {
         int rank = 1;
         for (Map.Entry<String, Long> entry : ranking) {
             String iata = entry.getKey().toUpperCase();
-            Optional<AirportDTO> airport = replicas.findByIata(iata);
+            Optional<AirportDTO> airport = airports.findByIata(iata);
             result.add(new BusiestAirportDTO(
                     rank++,
                     iata,

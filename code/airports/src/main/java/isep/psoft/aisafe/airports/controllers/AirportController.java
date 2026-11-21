@@ -9,10 +9,10 @@ import isep.psoft.aisafe.airports.dto.BusiestAirportDTO;
 import isep.psoft.aisafe.airports.dto.CreateAirportDTO;
 import isep.psoft.aisafe.airports.dto.UpdateAirportDetailsDTO;
 import isep.psoft.aisafe.airports.dto.UpdateAirportStatusDTO;
-import isep.psoft.aisafe.airports.services.AirportStatisticsService;
-import isep.psoft.aisafe.airports.services.GroupAirportsService;
 import isep.psoft.aisafe.airports.command.RegisterAirportService;
-import isep.psoft.aisafe.airports.services.SearchAirportsService;
+import isep.psoft.aisafe.airports.query.AirportStatisticsService;
+import isep.psoft.aisafe.airports.query.GroupAirportsService;
+import isep.psoft.aisafe.airports.query.SearchAirportsService;
 import isep.psoft.aisafe.airports.command.UpdateAirportService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -57,16 +57,16 @@ public class AirportController {
         return ResponseEntity.created(location).body(assembler.toDTO(airport));
     }
 
-    // US107: detalhes pelo IATA (local ou numa réplica peer). Contrato B2 do Flight Routes.
+    // US107: detalhes pelo IATA, a partir do read model desta réplica. Contrato B2 do Flight Routes.
     @GetMapping("/{iataCode}")
-    @Operation(summary = "US107 — Airport details by IATA code (forwarded to the peer replicas when not stored locally)")
+    @Operation(summary = "US107 — Airport details by IATA code (answered from this replica's read model)")
     public ResponseEntity<AirportDTO> getByIata(@PathVariable String iataCode) {
         return ResponseEntity.ok(searchService.getByIata(iataCode));
     }
 
     // US108: pesquisar por cidade, país ou nome (filtros opcionais e combináveis)
     @GetMapping
-    @Operation(summary = "US108 — Search airports by city, country or name (all replicas)")
+    @Operation(summary = "US108 — Search airports by city, country or name (read model with the airports of all replicas)")
     public ResponseEntity<List<AirportDTO>> search(
             @RequestParam(required = false) String city,
             @RequestParam(required = false) String country,
@@ -82,7 +82,7 @@ public class AirportController {
         return ResponseEntity.ok(statisticsService.busiestAirports(limit));
     }
 
-    // US211: aeroportos agrupados por região ou país (todas as réplicas)
+    // US211: aeroportos agrupados por região ou país (read model com os aeroportos de todas as réplicas)
     @GetMapping("/grouped")
     @Operation(summary = "US211 — Airports grouped by region or country (by=country|region, default country)")
     public ResponseEntity<List<AirportGroupDTO>> groupAirports(

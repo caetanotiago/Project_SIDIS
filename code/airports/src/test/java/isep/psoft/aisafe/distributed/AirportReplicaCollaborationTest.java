@@ -1,7 +1,7 @@
 package isep.psoft.aisafe.distributed;
 
 import com.sun.net.httpserver.HttpServer;
-import isep.psoft.aisafe.AirportsApplication;
+import isep.psoft.aisafe.support.InProcessEventBus;
 import isep.sidis.common.http.AisafeHeaders;
 import isep.sidis.common.security.JwtTokenProvider;
 import org.junit.jupiter.api.AfterAll;
@@ -10,7 +10,6 @@ import org.junit.jupiter.api.MethodOrderer;
 import org.junit.jupiter.api.Order;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestMethodOrder;
-import org.springframework.boot.builder.SpringApplicationBuilder;
 import org.springframework.context.ConfigurableApplicationContext;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
@@ -34,10 +33,11 @@ import static org.junit.jupiter.api.Assertions.*;
  * Testes de colaboração entre réplicas do Airports.
  *
  * <p>Arranca DUAS réplicas reais do Airports (A e B, cada uma com a sua H2) configuradas como peers
- * uma da outra, e um stub HTTP do Flight Routes (contrato B5). Cobre: acesso local, forwarding de GET
- * para o peer, agregação, unicidade do IATA entre réplicas, comandos encaminhados para a réplica dona
- * (US106a, US109, US208), US210 e US211 sobre dados de várias réplicas, autenticação entre serviços,
- * RBAC e falha de uma réplica.
+ * uma da outra, e um stub HTTP do Flight Routes (contrato B5). Desenho CQRS do Assignment 2, SEM broker: os
+ * eventos confirmados viajam pelo {@link InProcessEventBus} (JSON, uma entrega por réplica), tal como pelo
+ * RabbitMQ. Cobre: leituras respondidas pelo read model local (sem forwarding de GET), unicidade do IATA no
+ * read model, comandos encaminhados para a réplica dona (US106a, US109, US208) e propagados por evento a todas
+ * as réplicas, US210 e US211, autenticação entre serviços, RBAC, falha de uma réplica e consistência eventual.
  */
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 class AirportReplicaCollaborationTest {
@@ -45,6 +45,7 @@ class AirportReplicaCollaborationTest {
     private static final String SERVICE_KEY = "it-service-key";
     private static final JsonMapper JSON = JsonMapper.builder().build();
     private static final HttpClient HTTP = HttpClient.newHttpClient();
+    private static final InProcessEventBus BUS = new InProcessEventBus();
 
     private static HttpServer flightRoutesStub;
     private static ConfigurableApplicationContext replicaA;
@@ -101,7 +102,8 @@ class AirportReplicaCollaborationTest {
 
     @Test
     @Order(2)
-    void getByIataIsForwardedToThePeerThatOwnsTheAirport() throws Exception {
+    void getByIataIsAnsweredFromTheLocalReadModel() throws Exception {
+        // LIS foi registado em B; A responde a partir do seu read model, alimentado pelo evento AirportCreated
         HttpResponse<String> response = send("GET", urlA + "/api/airports/lis", null, atcc);
 
         assertEquals(200, response.statusCode(), response.body());
@@ -119,7 +121,7 @@ class AirportReplicaCollaborationTest {
 
     @Test
     @Order(3)
-    void searchAggregatesTheAirportsOfAllReplicas() throws Exception {
+    void everyReplicaSearchesTheAirportsOfAllReplicas() throws Exception {
         for (String url : List.of(urlA, urlB)) {
             HttpResponse<String> all = send("GET", url + "/api/airports", null, atcc);
             assertEquals(200, all.statusCode());
@@ -127,7 +129,7 @@ class AirportReplicaCollaborationTest {
             assertTrue(all.headers().firstValue(AisafeHeaders.PARTIAL_RESPONSE).isEmpty());
         }
 
-        // Filtros também são aplicados nos peers
+        // Filtros aplicados ao read model
         assertEquals(List.of("LIS", "OPO"), iatas(json(send("GET", urlA + "/api/airports?country=portugal", null, atcc))));
         assertEquals(List.of("LIS"), iatas(json(send("GET", urlA + "/api/airports?city=Lisbon", null, atcc))));
         assertEquals(List.of("MAD"), iatas(json(send("GET", urlA + "/api/airports?name=madrid", null, atcc))));
@@ -135,7 +137,8 @@ class AirportReplicaCollaborationTest {
 
     @Test
     @Order(4)
-    void duplicateIataIsDetectedAcrossReplicas() throws Exception {
+    void duplicateIataIsDetectedInTheReadModel() throws Exception {
+        // LIS é de B; A deteta o duplicado no seu read model, sem perguntar a B
         HttpResponse<String> response = send("POST", urlA + "/api/airports",
                 airport("LIS", "Lisbon", "Portugal", 38.7742, -9.1342), backoffice);
 
@@ -160,8 +163,11 @@ class AirportReplicaCollaborationTest {
         HttpResponse<String> status = send("PATCH", urlA + "/api/airports/LIS/status", "{\"status\":\"UNDER_MAINTENANCE\"}", backoffice);
         assertEquals(200, status.statusCode(), status.body());
         assertEquals("UNDER_MAINTENANCE", json(status).get("status").asString());
-        // A alteração ficou na réplica dona (B)
+        // A alteração foi feita na réplica dona (B) e chegou por evento (AirportStatusChanged) às duas réplicas
         assertEquals("UNDER_MAINTENANCE", json(send("GET", urlB + "/api/airports/LIS", null, atcc)).get("status").asString());
+        assertEquals("UNDER_MAINTENANCE", json(send("GET", urlA + "/api/airports/LIS", null, atcc)).get("status").asString());
+        assertTrue(BUS.delivered().stream().anyMatch(e -> e.eventType().equals("AirportStatusChanged")
+                && e.aggregateId().equals("LIS") && e.sourceInstance().equals("it-B")));
         assertEquals(400, send("PATCH", urlA + "/api/airports/LIS/status", "{\"status\":\"OPEN\"}", backoffice).statusCode());
 
         // US106a: certificação via A; repetir → 409 vindo da dona e propagado
@@ -175,6 +181,7 @@ class AirportReplicaCollaborationTest {
         assertEquals(200, details.statusCode(), details.body());
         assertEquals(60, json(details).get("gates").asInt());
         assertEquals("info@lis.pt", json(send("GET", urlB + "/api/airports/LIS", null, atcc)).get("contactEmail").asString());
+        assertEquals(60, json(send("GET", urlA + "/api/airports/LIS", null, atcc)).get("gates").asInt());
 
         // Nenhuma réplica tem o aeroporto → 404
         assertEquals(404, send("PATCH", urlA + "/api/airports/XXX/status", "{\"status\":\"CLOSED\"}", backoffice).statusCode());
@@ -219,6 +226,7 @@ class AirportReplicaCollaborationTest {
     @Test
     @Order(9)
     void peerRequestsRequireTheServiceKeyAndAreAnsweredLocally() throws Exception {
+        // Os GET já não são reencaminhados, mas os pedidos entre réplicas (comandos) continuam protegidos
         assertEquals(401, send("GET", urlB + "/api/airports", null, atcc,
                 Map.of(AisafeHeaders.PEER_HOPS, "1")).statusCode());
         assertEquals(401, send("GET", urlB + "/api/airports", null, atcc,
@@ -229,7 +237,7 @@ class AirportReplicaCollaborationTest {
         HttpResponse<String> local = send("GET", urlB + "/api/airports", null, atcc,
                 Map.of(AisafeHeaders.PEER_HOPS, "1", AisafeHeaders.SERVICE_KEY, SERVICE_KEY));
         assertEquals(200, local.statusCode());
-        assertEquals(List.of("LIS", "MAD"), iatas(json(local)));
+        assertEquals(List.of("LIS", "MAD", "OPO"), iatas(json(local))); // read model de B: todos os aeroportos
     }
 
     @Test
@@ -259,19 +267,32 @@ class AirportReplicaCollaborationTest {
 
     @Test
     @Order(11)
-    void whenAReplicaFailsTheOthersKeepServingWithPartialData() throws Exception {
+    void eventualConsistencyWhileAReplicaIsDisconnected() throws Exception {
+        // Partição: B deixa de receber eventos. Uma alteração feita em A não chega a B (B fica desatualizada)
+        BUS.disconnect("B");
+        assertEquals(200, send("PATCH", urlA + "/api/airports/OPO/status", "{\"status\":\"CLOSED\"}", backoffice).statusCode());
+        assertEquals("CLOSED", json(send("GET", urlA + "/api/airports/OPO", null, atcc)).get("status").asString());
+        assertEquals("OPERATIONAL", json(send("GET", urlB + "/api/airports/OPO", null, atcc)).get("status").asString());
+
+        // Volta a ligar-se: o próximo evento traz o estado COMPLETO (e a versão mais recente), por isso B converge
+        BUS.reconnect("B");
+        assertEquals(200, send("PATCH", urlA + "/api/airports/OPO/status", "{\"status\":\"OPERATIONAL\"}", backoffice).statusCode());
+        assertEquals("OPERATIONAL", json(send("GET", urlB + "/api/airports/OPO", null, atcc)).get("status").asString());
+    }
+
+    @Test
+    @Order(12)
+    void whenAReplicaFailsTheOthersKeepServingFromTheirReadModel() throws Exception {
         replicaB.close(); // simula a falha da réplica B
 
+        // A continua a responder com TODOS os aeroportos (incluindo os de B), sem resposta parcial
         HttpResponse<String> all = send("GET", urlA + "/api/airports", null, atcc);
         assertEquals(200, all.statusCode());
-        assertEquals(List.of("OPO"), iatas(json(all)));
-        assertEquals("true", all.headers().firstValue(AisafeHeaders.PARTIAL_RESPONSE).orElse(null));
+        assertEquals(List.of("LIS", "MAD", "OPO"), iatas(json(all)));
+        assertTrue(all.headers().firstValue(AisafeHeaders.PARTIAL_RESPONSE).isEmpty());
+        assertEquals(200, send("GET", urlA + "/api/airports/LIS", null, atcc).statusCode());
 
-        // Dados locais continuam acessíveis; dados só existentes em B → 404
-        assertEquals(200, send("GET", urlA + "/api/airports/OPO", null, atcc).statusCode());
-        assertEquals(404, send("GET", urlA + "/api/airports/LIS", null, atcc).statusCode());
-
-        // Comando para um aeroporto da réplica em baixo: o único peer não responde → 503
+        // Comando para um aeroporto da réplica em baixo: só a dona o pode alterar e não responde → 503
         assertEquals(503, send("PATCH", urlA + "/api/airports/LIS/status", "{\"status\":\"CLOSED\"}", backoffice).statusCode());
     }
 
@@ -279,7 +300,7 @@ class AirportReplicaCollaborationTest {
 
     private static ConfigurableApplicationContext startReplica(String name, int port, String peerUrl, String flightRoutes) {
         // Argumentos de linha de comando: têm precedência sobre o application.properties
-        return new SpringApplicationBuilder(AirportsApplication.class).run(
+        return BUS.start(name,
                 "--server.port=" + port,
                 "--aisafe.instance-id=it-" + name,
                 "--spring.datasource.url=jdbc:h2:mem:airports-it-" + name + ";DB_CLOSE_DELAY=-1",

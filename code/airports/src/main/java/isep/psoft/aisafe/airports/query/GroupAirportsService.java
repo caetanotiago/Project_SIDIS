@@ -1,4 +1,4 @@
-package isep.psoft.aisafe.airports.services;
+package isep.psoft.aisafe.airports.query;
 
 import isep.psoft.aisafe.airports.dto.AirportDTO;
 import isep.psoft.aisafe.airports.dto.AirportGroupDTO;
@@ -14,7 +14,7 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 
 /**
- * US211 — aeroportos agrupados por região ou por país.
+ * US211 — aeroportos agrupados por região ou por país (lado de leitura: read model desta réplica).
  */
 @Service
 @RequiredArgsConstructor
