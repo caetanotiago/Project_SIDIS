@@ -1,5 +1,6 @@
 package isep.psoft.aisafe.airports.bootstrap;
 
+import isep.psoft.aisafe.airports.command.AirportEventEmitter;
 import isep.psoft.aisafe.airports.domain.Airport;
 import isep.psoft.aisafe.airports.dto.CreateAirportDTO;
 import isep.psoft.aisafe.airports.dto.RunwayDTO;
@@ -57,6 +58,8 @@ public class DemoDataBootstrap implements ApplicationRunner {
 
     private final AirportRepository airportRepository;
     private final AirportFactory airportFactory;
+    /** Os aeroportos de demo são anunciados como qualquer outra escrita (AirportCreated), pela réplica que os insere. */
+    private final AirportEventEmitter events;
 
     @Value("${aisafe.bootstrap.airports:}")
     private List<String> airports;
@@ -79,7 +82,7 @@ public class DemoDataBootstrap implements ApplicationRunner {
             }
             Airport airport = airportFactory.create(dto);
             DEMO_CERTIFIED_MODELS.forEach(airport::certifyModel);
-            airportRepository.save(airport);
+            events.airportCreated(airportRepository.saveAndFlush(airport));
             log.info("Demo airport loaded: {} ({}, {})", iata, dto.city(), dto.country());
         }
     }
