@@ -1,0 +1,42 @@
+@startuml Airports-SD-StartupSync
+autonumber
+title S4 — Read-model synchronisation when a replica starts (new replica, wiped database, or late start)
+participant "airports-2\n(already running)" as R2
+queue "RabbitMQ" as MQ
+box "airports-1 (starting)" #F8F9FA
+participant "Spring\nApplicationReadyEvent" as Ready
+participant ": ReadModelSynchronizer" as Sync
+participant ": AirportStateRepublisher" as Rep
+participant ": AirportEventEmitter" as Emit
+participant "REPLICATED_AIRPORT\n(#1)" as RM1
+end box
+
+Ready -> Ready : context ready: queue airports-1.airports declared,\nlisteners running (it receives events from now on)
+Ready -> Sync : onStartup()
+activate Sync
+Sync -> Rep : republishOwnedAirports("startup")
+activate Rep
+loop each airport in the write model of airports-1 (OPO, LIS)
+  Rep -> Emit : airportUpdated(airport)
+  Emit -> RM1 : apply locally (same tx)
+end
+Rep --> Sync : 2
+deactivate Rep
+Emit -> MQ : AirportUpdated OPO, LIS (after commit)
+MQ -> R2 : OPO, LIS → its read model (upsert, same version = same row)
+Sync -> MQ : AirportSyncRequested {requestedBy: airports-1}\n(routing key airport-sync.requested)
+deactivate Sync
+MQ -> R2 : AirportSyncRequested
+activate R2
+R2 -> R2 : requestedBy ≠ self →\nrepublishOwnedAirports("sync requested by airports-1")
+R2 -> MQ : AirportUpdated MAD, CDG
+deactivate R2
+MQ -> RM1 : MAD, CDG (queue airports-1.airports) → read model complete
+MQ -> Sync : AirportSyncRequested (own request) → ignored
+
+note over R2, RM1
+  Why: a queue only receives the events published AFTER it was declared.
+  Safe to repeat: projections are idempotent (eventId) and ignore older versions.
+  airport-sync.requested does not match airport.*, so other services (Flight Routes) never receive it.
+end note
+@enduml

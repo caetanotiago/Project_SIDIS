@@ -12,7 +12,7 @@ The monolith was decomposed by **bounded context** (domain-driven segregation). 
 |---|---|---|---|---|---|
 | **Aircraft Management Service** | Java 21, Spring Boot 4 | 8081 / 8181 / 8281 | H2 `aircraftManagementdb-N` (in memory) | *Fleet*: aircraft models, aircraft, operational status (WP#1) | [L3](../3-components/aircraftmanagement/AircraftManagement-Components.md) |
 | **Maintenance Service** | Java 21, Spring Boot 4 | 8082 / 8182 / 8282 | H2 `maintenancedb-N` (in memory) | *Maintenance*: templates, records, reports and due-maintenance alerts (WP#4) | [L3](../3-components/maintenance/Maintenance-Components.md) |
-| **Airports Service** | Java 21, Spring Boot 4 | 8083 / 8183 / 8283 | H2 `airportsdb-N` (in memory) | *Airport infrastructure*: airports, runways, certification (WP#2) | [L3](../3-components/airports/Airports-Components.md) |
+| **Airports Service** | Java 21, Spring Boot 4 | 8083 / 8183 / 8283 | H2 `airportsdb-N` (file, one per instance) | *Airport infrastructure*: airports, runways, certification (WP#2) | [L3](../3-components/airports/Airports-Components.md) |
 | **Flight Routes Service** | Java 21, Spring Boot 4, Spring AMQP | 8084 / 8184 / 8284 | H2 **file** `code/data/flightRoutesdb-N`: write model + CQRS read models | *Flight operations*: routes, history, scheduled flights, network queries (WP#3) | [L3](../3-components/flightroutes/FlightRoutes-Components.md) |
 | **Message broker** | RabbitMQ 3 (Docker, `infra/docker-compose.rabbitmq.yml`) | 1 (AMQP 5672, UI 15672) | durable queues in the volume `aisafe_rabbitmq-data` | Topic exchange per producing service, one durable queue per consuming replica, dead-letter queues ([Integration-Contracts §9.2](Integration-Contracts.md#92-exchanges-routing-keys-and-queues)) | — |
 | *common* (library, not a container) | Java library | embedded in every service | — | Security, peer forwarding, resilience, audit, **messaging** (`EventPublisher`, subscriptions, retry/DLQ, idempotency) — the same distributed behaviour in every container | [L3](../3-components/common/Common-Components.md) |
@@ -40,24 +40,24 @@ The `ADMIN` role exists in the token, but no endpoint requires it.
 
 | From | To | Endpoints | Purpose |
 |---|---|---|---|
-| Flight Routes | Airports | B2: `GET /api/airports/{iata}` | Coordinates (route distance) and operational status (US110, US209, US212, US216) — event consumer ready, waiting for Airports events |
+| Flight Routes | Airports | B2: `GET /api/airports/{iata}` | Coordinates (route distance) and operational status (US110, US209, US212, US216) — Airports publishes its events; Flight Routes' consumer is switched on with `AISAFE_EXTERNAL_EVENTS=true` |
 | Flight Routes | Aircraft Management | B1: `GET /api/aircrafts/{reg}`, `GET /api/aircraft-models/{model}` | Status, seating capacity and range (US212, US213) — event consumer ready, waiting for Aircraft Management events |
 | Aircraft Management | Flight Routes | B4b: `GET /api/scheduled-flights/statistics/minutes-by-aircraft` | Flight minutes per aircraft for US204 and US206 (answered from Flight Routes' read model) |
 | Aircraft Management | Flight Routes | B6: `GET /api/routes/compatible?range=&capacity=` | Active routes compatible with an aircraft (US203) (read model) |
-| Airports | Flight Routes | B5: `GET /api/routes/statistics/count-by-airport` | Route counts per airport (US210) (read model) |
+| Airports | Flight Routes | B5 — **replaced by events** (`route.*` → `KNOWN_ROUTE`) | Route counts per airport (US210); the endpoint stays, unused |
 | Maintenance | Aircraft Management | B3a: `GET /api/aircrafts/{reg}` | Aircraft exists, its model and status (US115, US116) |
 | Maintenance | Aircraft Management | B3b: `PATCH /api/aircrafts/{reg}/status` | `UNDER_MAINTENANCE` when a record starts (US115), `AVAILABLE` when the last ongoing record is completed (US119); kept synchronous (a command) |
 | Maintenance | Aircraft Management | B3c: `GET /api/aircraft-models/{model}` | Applicable models of a template exist (US115 templates) |
 | Maintenance | Aircraft Management | B3d: `GET /api/aircrafts?page=&size=100`, `GET /api/aircrafts/operational-hours?page=&size=100` | Fleet and flight hours for due-maintenance alerts (US222) |
-| Replica | other replicas of the **same** service | Flight Routes: only **commands** for an entity it does not own (`PATCH /api/routes/{id}`). Other services: also GET forwarding/aggregation (section 3.2) | One owner per entity |
+| Replica | other replicas of the **same** service | Flight Routes and Airports: only **commands** for an entity they do not own (`PATCH /api/routes/{id}`, `POST`/`PATCH /api/airports/{iata}/...`). Other services: also GET forwarding/aggregation (section 3.2) | One owner per entity |
 
 **Events (AMQP):**
 
 | Publisher → exchange | Events | Consumers |
 |---|---|---|
-| Flight Routes → `aisafe.flightroutes.events` | `RouteCreated`, `RouteUpdated`, `ScheduledFlightCreated` | every Flight Routes replica (queue `<instanceId>.flightroutes`): read models `REPLICATED_ROUTE`, `REPLICATED_SCHEDULED_FLIGHT`. Available to Airports (B5) and Aircraft Management (B4b, B6) |
+| Flight Routes → `aisafe.flightroutes.events` | `RouteCreated`, `RouteUpdated`, `ScheduledFlightCreated` | every Flight Routes replica (queue `<instanceId>.flightroutes`): read models `REPLICATED_ROUTE`, `REPLICATED_SCHEDULED_FLIGHT`. Airports (queue `<instanceId>.flightroutes`, `route.*` → `KNOWN_ROUTE`, replaces B5). Available to Aircraft Management (B4b, B6) |
 | Aircraft Management → `aisafe.aircraftmanagement.events` (to implement) | `AircraftRegistered`, `AircraftStatusChanged`, `AircraftModelCreated` | Flight Routes (consumer ready, off), Maintenance |
-| Airports → `aisafe.airports.events` (to implement) | `AirportCreated`, `AirportUpdated`, `AirportStatusChanged` | Flight Routes (consumer ready, off) |
+| Airports → `aisafe.airports.events` | `AirportCreated`, `AirportUpdated`, `AirportStatusChanged` (+ internal `AirportSyncRequested`) | every Airports replica (queue `<instanceId>.airports`): read model `REPLICATED_AIRPORT`; Flight Routes (`KNOWN_AIRPORT`, switch on with `AISAFE_EXTERNAL_EVENTS=true`) |
 
 The B4b, B5 and B6 endpoints are **service-only** (section 3.7): a user calling them directly gets `401`, even with a valid JWT. Flight Routes also provides `GET /api/scheduled-flights/operational-hours` (B4a), but no other service calls it. Maintenance is only a consumer: the aircraft status in Aircraft Management is the single source of truth for availability.
 
@@ -74,7 +74,7 @@ Exact schemas, status codes, roles and replica behaviour: [Integration-Contracts
 | `X-Peer-Hops` | request | Present only in replica-to-replica calls; the receiver does not forward again |
 | `X-Service-Key` | request | Shared secret that authenticates the calling service. Sent automatically by `common` on every inter-service and peer call; **required** on peer calls and on the service-only Flight Routes endpoints |
 | `X-Caller-Instance` | request | Calling replica/service (audit) |
-| `X-Partial-Response`, `X-Unavailable-Peers` | response | A peer did not answer an aggregated GET (Aircraft Management, Airports, Maintenance). Flight Routes' GETs never need it: they read local read models |
+| `X-Partial-Response`, `X-Unavailable-Peers` | response | A peer did not answer an aggregated GET (Aircraft Management, Maintenance). Flight Routes' and Airports' GETs never need it: they read local read models |
 
 ## 3. Distribution design decisions
 
@@ -85,11 +85,13 @@ Exact schemas, status codes, roles and replica behaviour: [Integration-Contracts
 - **Single owner per record:** a write to an existing record is executed by the replica that stores it; other replicas forward the command to it (unicast). Each record has exactly one writer, so there are no write conflicts between replicas, and its events come from one producer, in order.
 - **Peer discovery:** static peer list per replica (`aisafe.peers.urls`), full mesh, excluding the replica itself.
 
-### 3.2 Queries: CQRS read models (Flight Routes) and peer aggregation (Assignment 1)
+### 3.2 Queries: CQRS read models (Flight Routes, Airports) and peer aggregation (Assignment 1)
 
 **Flight Routes (Assignment 2, CQRS).** The service is split into a **command side** (`command` package: create/update routes, schedule flights, on the owner's write model) and a **query side** (`query` package). Every change is published as a state-carrying event; **every replica projects every event** into its own read models (`REPLICATED_ROUTE` with history, `REPLICATED_SCHEDULED_FLIGHT`). All GET endpoints — including the ones other services call (B4a, B4b, B5, B6) — read only those local tables: no peer call, no aggregation, no `X-Partial-Response`. The owner applies its own event inside the write transaction, so it reads its writes at once; the event delivered back to it is skipped as a duplicate. Flow and tables: [Flight Routes L3 §6](../3-components/flightroutes/FlightRoutes-Components.md#6-cqrs-flow-write--event--projection-on-every-replica).
 
-**Aircraft Management, Airports, Maintenance (Assignment 1, still in use).** When a GET reaches a replica that does not hold all the data, the replica forwards the query to its peers and aggregates the answers (`PeerClient` of `common`):
+**Airports (Assignment 2, CQRS).** Same design: the `command` package changes the owner's write model (`AIRPORT`) and publishes `AirportCreated` / `AirportUpdated` / `AirportStatusChanged` after the commit; every replica projects them into `REPLICATED_AIRPORT`, and the route events of Flight Routes into `KNOWN_ROUTE` (US210). All GETs read these local tables. A starting replica republishes its airports and asks the others to do the same (`AirportSyncRequested`), so a late or new replica fills its read model. Details: [Airports L3 §6](../3-components/airports/Airports-Components.md#6-cqrs-flow-write--event--projection-on-every-replica).
+
+**Aircraft Management, Maintenance (Assignment 1, still in use).** When a GET reaches a replica that does not hold all the data, the replica forwards the query to its peers and aggregates the answers (`PeerClient` of `common`):
 
 | Kind of GET | Strategy |
 |---|---|

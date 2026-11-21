@@ -2,108 +2,125 @@
 !pragma layout smetana
 skinparam classAttributeIconSize 0
 hide empty members
+title Airports — class diagram (CQRS: command side, query side and event flow)
 
 package controllers {
-    class AirportController {
-        + register(CreateAirportDTO)
-        + getByIata(String)
-        + search(city, country, name)
-        + busiestAirports(limit)
-        + groupAirports(by)
-        + addCertification(String, AddCertificationDTO)
-        + changeStatus(String, UpdateAirportStatusDTO)
-        + updateDetails(String, UpdateAirportDetailsDTO)
-    }
+    class AirportController
 }
 
-package services {
+package command <<write side>> {
     class RegisterAirportService {
         + register(CreateAirportDTO) : Airport
-    }
-    class SearchAirportsService {
-        + getByIata(String) : AirportDTO
-        + search(city, country, name) : List<AirportDTO>
     }
     class UpdateAirportService {
         + addCertification(...) : AirportDTO
         + changeStatus(...) : AirportDTO
         + updateDetails(...) : AirportDTO
-        - onOwner(iata, method, subPath, body, change)
+        - onOwner(iata, method, subPath, body, change, announce)
     }
+    class AirportEventEmitter {
+        + airportCreated(Airport)
+        + airportUpdated(Airport)
+        + airportStatusChanged(Airport)
+    }
+    class IntegrationEventRelay {
+        + afterCommit(OutgoingIntegrationEvent)
+    }
+    interface IntegrationEventTransport {
+        + send(OutgoingIntegrationEvent)
+    }
+    class AirportStateRepublisher {
+        + republishOwnedAirports(reason) : int
+    }
+    class ReadModelSynchronizer {
+        + onStartup()
+        + onSyncRequested(requestedBy)
+    }
+}
+
+package query <<read side>> {
+    class SearchAirportsService {
+        + getByIata(String) : AirportDTO
+        + search(city, country, name) : List<AirportDTO>
+    }
+    class GroupAirportsService
     class AirportStatisticsService {
-        + busiestAirports(Integer) : List<BusiestAirportDTO>
+        + busiestAirports(Integer)
     }
-    class GroupAirportsService {
-        + groupBy(String) : List<AirportGroupDTO>
+    class AirportProjection {
+        + apply(IntegrationEvent<AirportEventPayload>) : boolean
     }
-    class AirportReplicaQueries {
-        + findByIata(String) : Optional<AirportDTO>
-        + withPeers(List<Airport>, String) : List<AirportDTO>
-    }
-}
-
-package factories {
-    class AirportFactory {
-        + create(CreateAirportDTO) : Airport
-    }
-}
-
-package assemblers {
-    class AirportAssembler {
-        + toDTO(Airport) : AirportDTO
-    }
-}
-
-package repositories {
-    interface AirportRepository {
-        + search(city, country, namePattern)
-        + findById(String)
-    }
-}
-
-package clients {
-    class FlightRoutesClient {
+    class ReplicatedAirport <<read model>>
+    interface ReplicatedAirportRepository
+    class RouteCountProjection {
+        + apply(IntegrationEvent<FlightRouteEventPayload>) : boolean
         + routeCountsByAirport() : Map<String, Long>
     }
+    class KnownRoute <<read model>>
 }
 
-package "common (library)" {
-    class PeerClient {
-        + findFirst(uri, type)
-        + collectList(uri, type)
-        + forwardToOwner(method, uri, body, type)
+package infrastructure.messaging {
+    class RabbitIntegrationEventTransport
+    class AirportsEventsListener {
+        + on(IntegrationEvent<JsonNode>)
     }
-    class ReplicatedServiceClient {
-        + call(request)
+    class FlightRoutesEventsListener {
+        + on(IntegrationEvent<FlightRouteEventPayload>)
     }
+    class JpaProcessedEventStore
 }
 
 package domain {
     class Airport <<Root>>
 }
+interface AirportRepository
+class AirportFactory
+
+package "common (library)" {
+    class PeerClient {
+        + forwardToOwner(method, uri, body, type)
+    }
+    class EventPublisher {
+        + publish(event, routingKey)
+    }
+    class IdempotentEventHandler
+}
 
 AirportController --> RegisterAirportService
-AirportController --> SearchAirportsService
 AirportController --> UpdateAirportService
-AirportController --> AirportStatisticsService
+AirportController --> SearchAirportsService
 AirportController --> GroupAirportsService
-AirportController --> AirportAssembler
+AirportController --> AirportStatisticsService
 
-RegisterAirportService --> AirportReplicaQueries : IATA unique?
 RegisterAirportService --> AirportFactory
 RegisterAirportService --> AirportRepository
-SearchAirportsService --> AirportReplicaQueries
-SearchAirportsService --> AirportRepository
-GroupAirportsService --> SearchAirportsService
-AirportStatisticsService --> FlightRoutesClient
-AirportStatisticsService --> AirportReplicaQueries
+RegisterAirportService --> ReplicatedAirportRepository : IATA unique?
+RegisterAirportService --> AirportEventEmitter
 UpdateAirportService --> AirportRepository
-UpdateAirportService --> PeerClient : forwardToOwner
-UpdateAirportService --> AirportAssembler
-AirportReplicaQueries --> AirportRepository
-AirportReplicaQueries --> PeerClient
-AirportReplicaQueries --> AirportAssembler
-FlightRoutesClient --> ReplicatedServiceClient
+UpdateAirportService --> PeerClient : not the owner
+UpdateAirportService --> AirportEventEmitter
+AirportEventEmitter --> AirportProjection : same transaction
+AirportEventEmitter ..> IntegrationEventRelay : OutgoingIntegrationEvent
+IntegrationEventRelay --> IntegrationEventTransport : after commit
+RabbitIntegrationEventTransport ..|> IntegrationEventTransport
+RabbitIntegrationEventTransport --> EventPublisher
+ReadModelSynchronizer --> AirportStateRepublisher
+ReadModelSynchronizer --> EventPublisher : AirportSyncRequested
+AirportStateRepublisher --> AirportEventEmitter
+
+AirportsEventsListener --> AirportProjection
+AirportsEventsListener --> ReadModelSynchronizer
+FlightRoutesEventsListener --> RouteCountProjection
+AirportProjection --> ReplicatedAirportRepository
+AirportProjection --> IdempotentEventHandler
+RouteCountProjection --> KnownRoute
+RouteCountProjection --> IdempotentEventHandler
+IdempotentEventHandler ..> JpaProcessedEventStore : ProcessedEventStore
+ReplicatedAirportRepository ..> ReplicatedAirport
+SearchAirportsService --> ReplicatedAirportRepository
+GroupAirportsService --> SearchAirportsService
+AirportStatisticsService --> RouteCountProjection
+AirportStatisticsService --> SearchAirportsService
 AirportFactory ..> Airport : creates
 AirportRepository ..> Airport
 @enduml

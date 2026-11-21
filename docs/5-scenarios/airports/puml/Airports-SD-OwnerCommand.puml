@@ -1,56 +1,47 @@
 @startuml Airports-SD-OwnerCommand
 autonumber
-title Command forwarded to the owner replica — PATCH /api/airports/{iata}/status (US109; same for US106a, US208)
+title S3 — Command forwarded to the owner replica, then propagated by event (US109; same for US106a, US208)
 actor "Backoffice Operator" as BO
-participant "airports-1\n: AirportController" as Ctrl
-participant ": UpdateAirportService" as Service
-participant "airportRepo (H2 #1)" as Repo
+participant "airports-1\n: UpdateAirportService" as S1
+participant "AIRPORT\n(write model #1)" as W1
 participant ": PeerClient" as Peers
-participant "airports-2\n(owner of MAD)" as R2
-participant "airportRepo (H2 #2)" as Repo2
-participant "airports-3" as R3
+participant "airports-2 (owner of MAD)\n: UpdateAirportService" as S2
+participant "AIRPORT\n(write model #2)" as W2
+participant ": AirportEventEmitter (#2)" as E2
+queue "RabbitMQ\naisafe.airports.events" as MQ
+participant "airports-1\nREPLICATED_AIRPORT" as RM1
 
 activate BO
-BO -> Ctrl : PATCH /api/airports/MAD/status\n{"status":"UNDER_MAINTENANCE"}
-activate Ctrl
-Ctrl -> Service : changeStatus("MAD", dto)
-activate Service
-Service -> Service : AirportStatus.from(dto.status)\n(unknown → 400, before forwarding)
-Service -> Repo : findById("MAD")
-Repo --> Service : empty (not stored here)
-
-Service -> Peers : forwardToOwner(PATCH, "/api/airports/MAD/status", dto)
+BO -> S1 : PATCH /api/airports/MAD/status\n{"status":"UNDER_MAINTENANCE"}
+activate S1
+S1 -> S1 : AirportStatus.from(...) (unknown → 400 before forwarding)
+S1 -> W1 : findById("MAD")
+W1 --> S1 : empty (not the owner)
+S1 -> Peers : forwardToOwner(PATCH, "/api/airports/MAD/status", dto)
 activate Peers
-note right of Peers
-  Unicast: peers are tried ONE AT A TIME.
-  Same method, path, body and JWT; X-Peer-Hops: 1.
-end note
-Peers -> R3 : PATCH /api/airports/MAD/status
-R3 -> R3 : hops=1 → no re-forwarding
-R3 --> Peers : 404 (not mine) → try next peer
-Peers -> R2 : PATCH /api/airports/MAD/status
-activate R2
-R2 -> Repo2 : findById("MAD")
-Repo2 --> R2 : Airport (version 3)
-R2 -> R2 : airport.changeStatus(UNDER_MAINTENANCE)
-R2 -> Repo2 : saveAndFlush(airport)
-note right of Repo2
-  @Version: UPDATE ... WHERE version = 3.
-  A concurrent change already committed → 409.
-end note
-Repo2 --> R2 : Airport (version 4)
-R2 --> Peers : 200 AirportDTO
-deactivate R2
-Peers --> Service : Optional(dto)
+note right of Peers : unicast, one peer at a time;\nX-Peer-Hops: 1 + X-Service-Key
+Peers -> S2 : PATCH /api/airports/MAD/status
+activate S2
+S2 -> W2 : findById("MAD") → version 3
+S2 -> S2 : airport.changeStatus(UNDER_MAINTENANCE)
+S2 -> W2 : saveAndFlush → version 4\n(@Version: concurrent change → 409)
+S2 -> E2 : airportStatusChanged(airport)
+E2 -> E2 : apply to read model #2 (same tx)
+S2 --> Peers : 200 AirportDTO
+deactivate S2
+== commit on airports-2 ==
+E2 -> MQ : AirportStatusChanged (airport.status-changed, version 4)
+Peers --> S1 : AirportDTO
 deactivate Peers
-Service --> Ctrl : AirportDTO
-deactivate Service
-Ctrl --> BO : 200 OK (AirportDTO)
-deactivate Ctrl
+S1 --> BO : 200 OK (status UNDER_MAINTENANCE)
+deactivate S1
 
-note over BO, R3
-  Single owner: each airport has exactly one copy, so replicas never have conflicting versions.
+MQ -> RM1 : AirportStatusChanged (queue airports-1.airports)
+RM1 -> RM1 : version 4 > stored 3 → apply
+
+note over BO, RM1
+  Single owner: one copy of each airport in a write model, one producer of its events (ordered per airport).
   Owner answers 4xx (e.g. 409 certification already exists) → same status to the client.
-  No replica has the airport → 404. No peer answers → 503.
+  No replica owns the airport → 404. The owner is down → 503 (reads of MAD keep working from the read models).
 end note
 @enduml

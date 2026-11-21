@@ -1,0 +1,62 @@
+@startuml Airports-SD-WriteEventProjection
+autonumber
+title S1 — Write → event → projection on every replica (US106; the same flow for US106a, US109, US208)
+actor "Backoffice Operator" as BO
+
+box "airports-1 (receives the command: owner)" #F8F9FA
+participant ": AirportController" as Ctrl
+participant ": RegisterAirportService" as Cmd <<command>>
+participant "AIRPORT\n(write model #1)" as Write <<write model>>
+participant ": AirportEventEmitter" as Emitter
+participant ": AirportProjection" as Proj1 <<projection>>
+participant "REPLICATED_AIRPORT\n(#1)" as RM1 <<read model>>
+participant ": IntegrationEventRelay" as Relay
+end box
+queue "RabbitMQ\naisafe.airports.events" as MQ
+box "airports-2" #F1F3F5
+participant ": AirportsEventsListener" as L2
+participant ": AirportProjection" as Proj2 <<projection>>
+participant "REPLICATED_AIRPORT\n(#2)" as RM2 <<read model>>
+end box
+participant "flightroutes-N\nKNOWN_AIRPORT" as FR
+
+activate BO
+BO -> Ctrl : POST /api/airports {iataCode: "FAO", ...}
+activate Ctrl
+Ctrl -> Cmd : register(dto)
+activate Cmd
+note right of Cmd : @Transactional
+Cmd -> Write : existsById("FAO")
+Cmd -> RM1 : existsById("FAO")\n(read model has the airports of ALL replicas)
+Cmd -> Write : saveAndFlush(airport) → version 0
+Cmd -> Emitter : airportCreated(airport)
+activate Emitter
+Emitter -> Emitter : IntegrationEvent(AirportCreated,\nfull state + version, eventId E1)
+Emitter -> Proj1 : apply(E1)
+Proj1 -> RM1 : upsert FAO + PROCESSED_EVENT(E1)
+note right of RM1 : read-your-writes on the owner
+Emitter -> Relay : OutgoingIntegrationEvent("airport.created", E1)
+deactivate Emitter
+Cmd --> Ctrl : Airport
+deactivate Cmd
+== COMMIT (write model + read model + processed event, atomically) ==
+Relay -> MQ : publish E1 (persistent, publisher confirm)
+Ctrl --> BO : 201 Created + Location
+deactivate Ctrl
+
+MQ -> L2 : E1 (queue airports-2.airports)
+activate L2
+L2 -> Proj2 : apply(E1)
+Proj2 -> RM2 : E1 not processed → upsert FAO (owner airports-1, version 0)
+L2 --> MQ : ack
+deactivate L2
+MQ -> FR : E1 (queue flightroutes-N.airports, when enabled)
+MQ -> Relay : E1 (queue airports-1.airports)
+note left of MQ : airports-1 already processed E1 → skipped as duplicate
+
+note over BO, FR
+  Eventual consistency: between the commit on airports-1 and step 21, airports-2 does not know FAO yet.
+  A failure applying E1 → retried with back-off, then moved to airports-2.airports.dlq.
+  Rollback → nothing is published (the relay only runs AFTER_COMMIT).
+end note
+@enduml

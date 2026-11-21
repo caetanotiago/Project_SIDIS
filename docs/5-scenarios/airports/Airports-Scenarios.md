@@ -27,92 +27,102 @@
 
 ## 2. Acceptance criteria
 
-**Airports:** AC1 IATA exactly 3 letters, normalised to upper case (else `400`); AC2 name, city, country, timezone (IANA), coordinates in range and at least one runway are required (else `400`); AC3 an IATA registered in any replica that answers → `409`; AC4 created `OPERATIONAL`, `201` + `Location`; AC5 unknown status → `400`; AC6 a model certified twice → `409`; AC7 US208 changes only the fields sent; AC8 concurrent changes of the same airport → `409`.
+**Airports:** AC1 IATA exactly 3 letters, normalised to upper case (else `400`); AC2 name, city, country, timezone (IANA), coordinates in range and at least one runway are required (else `400`); AC3 an IATA already known (write model or read model) → `409`; AC4 created `OPERATIONAL`, `201` + `Location`; AC5 unknown status → `400`; AC6 a model certified twice → `409`; AC7 US208 changes only the fields sent; AC8 concurrent changes of the same airport → `409`.
 
 **Queries:** AC9 US108 filters are combinable and case-insensitive, results sorted by IATA; AC10 US211 groups the airports of all replicas, `by` = `country` or `region` (else `400`); AC11 US210 ranks by route count (ties by IATA), `limit` 1–100 (default 5), with the airport details joined.
 
-**Distribution:** AC12 any replica answers with the data of all replicas, `404` if no replica has it; AC13 a failed peer gives a `200` with `X-Partial-Response: true`; AC14 an airport is only modified by its owner replica; AC15 peer requests without valid `X-Service-Key` → `401`, `X-Peer-Hops > 1` → `400`; AC16 JWT + roles on every endpoint (`401`/`403`), every request audited; AC17 `503` when no replica of a remote service (or no peer, for commands) answers.
+**Assignment 2 (CQRS, AMQP, Database-per-Service):**
+
+- AC12 every GET is answered from the **local read model** of the replica, with the airports of **all** replicas; no request is forwarded to a peer and there is no partial response.
+- AC13 every successful command publishes **one** event on `aisafe.airports.events` (`AirportCreated`, `AirportUpdated`, `AirportStatusChanged`) with the full state and `version`, **after the commit**; a failed command publishes nothing.
+- AC14 the owner reads its own write immediately; the other replicas apply the event to their read model (eventual consistency).
+- AC15 an event delivered twice is applied once; an event older than the stored version is ignored; an invalid event goes to the DLQ after bounded retries.
+- AC16 a replica that starts (or missed events) recovers the airports of the other replicas (startup synchronisation).
+- AC17 US210 counts routes from Flight Routes' `route.*` events (no HTTP call).
+- AC18 each instance has its own database; at least two instances run.
+- AC19 an airport is only modified by its owner replica; if the owner is down, commands on its airports → `503`, reads keep working.
+- AC20 peer requests without valid `X-Service-Key` → `401`, `X-Peer-Hops > 1` → `400`; JWT + roles on every endpoint (`401`/`403`), every request audited.
 
 ## 3. System sequence diagram
 
-"System" = any of the three replicas.
+"System" = any of the replicas.
 
 ![Airports-SSD](svg/Airports-SSD.svg)
 
 ## 4. Scenarios (sequence diagrams)
 
-### 4.1 Distributed scenarios
+**S1 — Write → event → projection on every replica (US106; the same for US106a, US109, US208)**
 
-**S1 — Peer-to-peer query resolution: GET an airport stored in another replica (US107, contract B2)**
+![Airports-SD-WriteEventProjection](svg/Airports-SD-WriteEventProjection.svg)
 
-![Airports-SD-PeerForwarding](svg/Airports-SD-PeerForwarding.svg)
+**S2 — Query answered from the local read model (US107; US108 and US211 likewise)**
 
-**S2 — Response aggregation with a failed replica (US108; US211 groups after this merge)**
+![Airports-SD-ReadModelQuery](svg/Airports-SD-ReadModelQuery.svg)
 
-![Airports-SD-PeerAggregation](svg/Airports-SD-PeerAggregation.svg)
-
-**S3 — Command forwarded to the owner replica (US109; same for US106a and US208)**
+**S3 — Command forwarded to the owner replica, then propagated by event (US109; same for US106a, US208)**
 
 ![Airports-SD-OwnerCommand](svg/Airports-SD-OwnerCommand.svg)
 
-### 4.2 Use-case scenarios
+**S4 — Read-model synchronisation when a replica starts**
 
-**S4 — Register airport (US106, US207)**
+![Airports-SD-StartupSync](svg/Airports-SD-StartupSync.svg)
 
-![Airports-SD-RegisterAirport](svg/Airports-SD-RegisterAirport.svg)
-
-**S5 — Busiest airports (US210, contract B5 with Flight Routes)**
+**S5 — Busiest airports (US210) from Flight Routes events**
 
 ![Airports-SD-BusiestAirports](svg/Airports-SD-BusiestAirports.svg)
 
 ## 5. Tests
 
-From `code/`: `./mvnw -pl airports -am test`.
+From `code/`: `./mvnw -pl airports -am test` (no broker needed: messaging is off in tests; events travel through an in-process bus or are handed to the projections directly).
 
 | Test class | Type | What is verified |
 |---|---|---|
 | [`AirportTest`](../../../code/airports/src/test/java/isep/psoft/aisafe/airports/domain/AirportTest.java) | Unit (domain) | IATA normalisation/format, coordinates and runway validation, required fields and IANA timezone, unique runways, created `OPERATIONAL`, duplicate certification, status changes, facilities, partial update of details |
-| [`AirportsApplicationTests`](../../../code/airports/src/test/java/isep/psoft/aisafe/AirportsApplicationTests.java) | Context | The service starts with the shared configuration (security chain of `common` + `AirportsAuthorizationRules`) |
-| **[`AirportReplicaCollaborationTest`](../../../code/airports/src/test/java/isep/psoft/aisafe/distributed/AirportReplicaCollaborationTest.java)** | **Distributed** — two real replicas + a stub of Flight Routes | scenarios below |
+| [`AirportsApplicationTests`](../../../code/airports/src/test/java/isep/psoft/aisafe/AirportsApplicationTests.java) | Context | The service starts with the shared configuration |
+| **[`AirportCqrsTest`](../../../code/airports/src/test/java/isep/psoft/aisafe/messaging/AirportCqrsTest.java)** | **CQRS, one real replica** | projection (create, idempotency, stale versions, invalid payload, unknown type); read-your-writes and one event per command with the full state; nothing published on rollback; startup synchronisation (own request ignored); listener converts the wire format and routes by `eventType`; US210 counts from route events without double counting; no AMQP bean with messaging off |
+| **[`AirportReplicaCollaborationTest`](../../../code/airports/src/test/java/isep/psoft/aisafe/distributed/AirportReplicaCollaborationTest.java)** | **Distributed** — two real replicas + [`InProcessEventBus`](../../../code/airports/src/test/java/isep/psoft/aisafe/support/InProcessEventBus.java) | scenarios below |
 
 `AirportReplicaCollaborationTest`:
 
-1. Each replica stores the airports it receives (`201` + `Location`); local access `200`.
-2. GET on A of an airport stored on B → forwarded, `200` with the B2 fields; unknown → `404`; invalid IATA → `400` (S1).
-3. Search on A and on B → the same merged, sorted list; filters applied in the peers (S2).
-4. Registering on A an IATA stored on B → `409`.
-5. Invalid registration (no runways, invalid timezone) → `400`.
-6. Status, certification and details changed through A for an airport of B → executed by B; owner's `409` propagated; unknown airport → `404` (S3).
-7. Grouping by country/region uses airports of both replicas; invalid grouping → `400`.
-8. US210 combines the Flight Routes counts with airport details from both replicas; ties ordered by IATA; invalid limit → `400` (S5).
-9. Peer headers without/wrong service key → `401`; hops 2 → `400`; valid peer request → only local data.
-10. No token → `401`; wrong role → `403` on each restricted endpoint; unexpected method → `403`; health `UP`.
-11. Replica B stopped: A answers `200` with `X-Partial-Response: true`; local airport `200`; airport only in B → `404`; command for an airport of B → `503` (S2).
+1. Each replica stores the airports it receives (`201` + `Location`).
+2. GET on A of an airport registered on B → `200` from A's read model, with the B2 fields; unknown → `404`; invalid IATA → `400` (S2).
+3. Search on A and on B → the same list, no partial response; filters on the read model.
+4. Registering on A an IATA registered on B → `409` (detected in the read model).
+5. Invalid registration → `400`.
+6. Status, certification and details changed through A for an airport of B → executed by B, the event reaches both read models (S1, S3).
+7. Grouping by country/region → airports of both replicas.
+8. US210 from `RouteCreated` events delivered to both replicas; duplicate event not counted twice (S5).
+9. Peer headers without/wrong service key → `401`; hops 2 → `400`.
+10. No token → `401`; wrong role → `403`; unexpected method → `403`; health `UP`.
+11. **Eventual consistency:** B disconnected from the bus misses a change made on A; after reconnecting, the next event (full state, newer version) makes it converge.
+12. **Replica B stopped:** A still answers **all** airports (no partial response), including B's; a command on an airport of B → `503`.
 
-**Postman:** [postman/Airports.postman_collection.json](postman/Airports.postman_collection.json) + [environment](postman/Airports.postman_environment.json), against the three replicas with the `demo` profile — folders: setup, local access, forwarding, aggregation, owner commands, security, integration with Flight Routes (US210, needs Flight Routes with `demo`), replica failure (stop replica 2 before the last folder). Requests that create data use random values, so the collection can be run more than once.
+**Postman:** [postman/Airports.postman_collection.json](postman/Airports.postman_collection.json) + [environment](postman/Airports.postman_environment.json), 2 replicas with the `demo` profile and RabbitMQ — folders: 0 setup (health incl. RabbitMQ, tokens), 1 queries on the read model, 2 command → event → read models (with a 1.5 s wait for the eventual-consistency reads), 3 US210 from Flight Routes events, 4 RabbitMQ evidence through the management API (exchange, queues with consumers and DLX, DLQ, bindings), 5 security, 6 replica failure (stop replica 2 before). The mandatory `/api/v2/unicorns` mock is shared by the group: [unicorns/postman](../unicorns/postman/UnicornsMock.postman_collection.json), explained in [Unicorns-Mock.md](../../2-containers/Unicorns-Mock.md).
 
 ## 6. Demo
 
-From `code/`:
+From `code/` (Windows PowerShell; `.sh` equivalents exist):
 
-1. `./mvnw clean install`
-2. `./scripts/start-replicas.sh airports demo` (Windows: `.\scripts\start-replicas.ps1 -Service airports -Profiles demo`). Each replica loads different airports: replica 1 OPO, LIS; replica 2 MAD, CDG; replica 3 LHR, FNC (the airports of the Flight Routes demo routes).
-3. For US210 and the end-to-end flow also start Flight Routes: `.\scripts\start-replicas.ps1 -Service flightroutes -Profiles demo`.
-4. `GET http://localhost:8083/actuator/health` (also 8183, 8283).
-5. `POST http://localhost:8083/auth/dev-token` `{"username":"atcc1","roles":["ATCC"]}` (and `["BACKOFFICE_OPERATOR"]`) → tokens for Postman / Swagger *Authorize*.
-6. Run the Postman collection, or by hand:
-   - `GET :8083/api/airports` and `:8283/...` → the same 6 airports.
-   - `GET :8083/api/airports/LHR` → `200`; log of replica 1: `Not found locally: forwarding GET ...`; replica 3: `AUDIT ... source=peer:airports-1` with the same correlation id.
-   - `PATCH :8083/api/airports/MAD/status` `{"status":"CLOSED"}` → executed by replica 2; then a US212 flight from/to MAD in Flight Routes → `409` (airport not operational). Set it back to `OPERATIONAL`.
-   - `GET :8083/api/airports/statistics/busiest?limit=3` (Backoffice) → LIS 3, MAD 3, CDG 2.
-   - `GET :8183/api/airports/grouped?by=country` → Portugal groups OPO and LIS (replica 1) with FNC (replica 3).
-   - Close the window of replica 2 → `GET :8083/api/airports` returns 4 airports with `X-Partial-Response: true`.
-   - HTTPS: add the `tls` profile (`demo,tls`) and use `https://`.
+1. Docker Desktop running; `copy ..\infra\.env.example ..\infra\.env` and set the RabbitMQ credentials (once).
+2. `.\mvnw.cmd clean install -DskipTests` (after any code change: `.\mvnw.cmd -pl airports -am package -DskipTests`, with the replicas stopped).
+3. `.\scripts\start-all.ps1 -Replicas 2 -Profiles demo` — starts RabbitMQ (docker compose) and two replicas of each service. Replica 1 loads OPO, LIS; replica 2 MAD, CDG.
+4. RabbitMQ UI `http://localhost:15672`: exchange `aisafe.airports.events`; queues `airports-1.airports`, `airports-2.airports`, `airports-N.flightroutes` and their `.dlq`.
+5. Logs `code/logs/airports-N.log`: `Published AirportCreated ...`, `Applied AirportUpdated for airport OPO (owner airports-1, ...)` on replica 2, `Republished the state of 2 owned airport(s) (sync requested by ...)`, `Applied RouteCreated for route ... OPO->LIS`.
+6. Tokens: `POST :8083/auth/dev-token` `{"username":"atcc1","roles":["ATCC"]}` (and `["BACKOFFICE_OPERATOR"]`).
+7. Run the Postman collection, or by hand:
+   - `GET :8183/api/airports/OPO` → `200` from replica 2's read model (OPO belongs to replica 1).
+   - `PATCH :8183/api/airports/OPO/status` `{"status":"CLOSED"}` → forwarded to replica 1; then `GET :8183/api/airports/OPO` → `CLOSED` (the event arrived).
+   - `GET :8083/api/airports/statistics/busiest?limit=3` (Backoffice) → LIS 3, MAD 2, then CDG / FNC / OPO 1.
+   - Stop replica 2 (`Stop-Process -Id (Get-Content logs\airports-2.pid)`) → `GET :8083/api/airports` still returns the 4 airports; `PATCH :8083/api/airports/MAD/status` → `503`.
+   - Start it again (`.\scripts\run-instance.ps1` or `start-all`) → its log shows the startup synchronisation.
 
-H2 console: `http://localhost:8083/h2-console` (JDBC URL `jdbc:h2:mem:airportsdb-1`).
+H2 console: `http://localhost:8083/h2-console` (JDBC URL `jdbc:h2:file:./data/airportsdb-1`): tables `AIRPORT` (write model), `REPLICATED_AIRPORT`, `KNOWN_ROUTE`, `PROCESSED_EVENT`.
 
-## 7. Observations
+## 7. Observations and alternatives
 
-- Cross-replica uniqueness of the IATA code is best-effort (AP, see [L2 §3.3](../../2-containers/Containers.md#33-consistency-model-cap)): during a partition, or with two simultaneous registrations on different replicas, the same IATA can be stored twice. Deterministic ownership (hash of the IATA → replica) would remove this at the cost of availability for writes when that replica is down.
-- US210 depends on Flight Routes being available (`503` otherwise); the route counts are already summed over the Flight Routes replicas.
-- Certifications are not validated against Aircraft Management because that service is not implemented yet; adding a call to `GET /api/aircraft-models/{model}` (B1b) would complete US106a.
+- **Consistency model:** AP with eventual consistency on reads; strong per airport on writes (single owner + `@Version`). The window is typically milliseconds; longer while a consumer is down (its events wait in its durable queue).
+- **IATA uniqueness is best-effort:** the check runs on the read model, so two registrations of the same IATA on different replicas inside the window (or during a partition) can both succeed. Alternative: deterministic ownership (hash of the IATA → replica, the command is routed there), at the cost of write availability when that replica is down.
+- **No transactional outbox:** if the broker is down when the relay publishes, the change is committed but the event is lost for the other replicas (logged). Alternative: an outbox table written in the same transaction and a relay that retries; here the next change of the airport, or the next startup synchronisation, carries the full state again.
+- **Flight Routes has no replay:** routes published before `airports-N.flightroutes` existed are not received. A sync request like `airport-sync.requested` on Flight Routes would remove this.
+- **Alternatives to one queue per instance:** competing consumers (one queue shared by the replicas) would deliver each event to only one replica, which does not work for replicated read models; Kafka (a log with offsets) would allow replays from the start instead of the synchronisation protocol.
+- Certifications are not validated against Aircraft Management; it could consume `AircraftModelCreated` events to keep a local list of models.

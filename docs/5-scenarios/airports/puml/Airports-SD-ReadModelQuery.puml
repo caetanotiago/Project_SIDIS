@@ -1,0 +1,37 @@
+@startuml Airports-SD-ReadModelQuery
+autonumber
+title S2 — Query answered from the local read model (US107; US108 and US211 likewise)
+actor "ATCC" as ATCC
+participant "airports-2\n: AirportController" as Ctrl
+participant ": SearchAirportsService" as Q <<query>>
+participant "REPLICATED_AIRPORT\n(H2 #2)" as RM <<read model>>
+participant ": AirportAssembler" as Asm
+participant "airports-1\n(owner of OPO)" as R1
+
+activate ATCC
+ATCC -> Ctrl : GET /api/airports/opo
+activate Ctrl
+Ctrl -> Q : getByIata("opo")
+activate Q
+Q -> Q : IataCode.normalize → "OPO"
+Q -> RM : findById("OPO")
+RM --> Q : ReplicatedAirport (owner airports-1, version 2)
+Q -> Asm : toDTO(replicated)
+Asm --> Q : AirportDTO (same contract as Assignment 1)
+Q --> Ctrl : AirportDTO
+deactivate Q
+Ctrl --> ATCC : 200 OK
+deactivate Ctrl
+
+note over R1
+  airports-1 is NOT called.
+  It may even be down:
+  the answer is the same.
+end note
+
+note over ATCC, RM
+  Unknown IATA → 404 (not in the read model). Invalid IATA → 400.
+  No X-Partial-Response: every replica holds every airport.
+  The value can be milliseconds old (eventual consistency); the owner reads its own writes at once.
+end note
+@enduml

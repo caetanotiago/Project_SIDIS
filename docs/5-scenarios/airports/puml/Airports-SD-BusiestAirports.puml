@@ -1,43 +1,39 @@
 @startuml Airports-SD-BusiestAirports
 autonumber
-title Busiest airports by number of routes — GET /api/airports/statistics/busiest (US210, contract B5)
+title S5 — Busiest airports (US210) from Flight Routes events, without HTTP
+participant "flightroutes-N\n(owner of the route)" as FR
+queue "RabbitMQ\naisafe.flightroutes.events" as MQ
+participant ": FlightRoutesEventsListener" as L
+participant ": RouteCountProjection" as P <<projection>>
+participant "KNOWN_ROUTE\n(H2 #1)" as KR <<read model>>
 actor "Backoffice Operator" as BO
-participant "airports-1\n: AirportController" as Ctrl
-participant ": AirportStatisticsService" as Service
-participant ": FlightRoutesClient" as Client
-participant ": ReplicatedServiceClient" as Rep
-participant "Flight Routes\n(any replica)" as FR
-participant ": AirportReplicaQueries" as Queries
+participant ": AirportStatisticsService" as S <<query>>
+participant ": SearchAirportsService" as Q
+participant "REPLICATED_AIRPORT\n(H2 #1)" as RA <<read model>>
 
-activate BO
-BO -> Ctrl : GET /api/airports/statistics/busiest?limit=3
-activate Ctrl
-Ctrl -> Service : busiestAirports(3)
-activate Service
-Service -> Client : routeCountsByAirport()
-activate Client
-Client -> Rep : call(GET /api/routes/statistics/count-by-airport)
-Rep -> FR : GET (round-robin; failover to the next replica)
-FR -> FR : sums the counts of ALL its replicas
-FR --> Rep : 200 {"LIS":3, "MAD":3, "OPO":2, "CDG":2, ...}
-Rep --> Client : Map<String, Long>
-deactivate Client
-note right of Rep
-  401/403 → same status.
-  No Flight Routes replica answers → 503.
-end note
-Service -> Service : sort by count desc, then IATA;\nkeep top 3
-loop for each IATA of the top 3
-    Service -> Queries : findByIata(iata)
-    Queries --> Service : AirportDTO (local or from a peer)
+== continuously, asynchronously ==
+FR -> MQ : RouteCreated {routeId, originIata: "LIS", destinationIata: "MAD", version}
+MQ -> L : queue airports-1.flightroutes (binding route.*)
+L -> P : apply(event)
+P -> KR : upsert by routeId (idempotent, stale versions ignored)
+
+== request ==
+BO -> S : GET /api/airports/statistics/busiest?limit=3
+activate S
+S -> P : routeCountsByAirport()
+P -> KR : findAll
+P --> S : {LIS: 3, MAD: 2, CDG: 1, FNC: 1, OPO: 1}\n(a route counts for origin and destination)
+S -> S : sort by count desc, then IATA; top 3
+loop each ranked IATA
+  S -> Q : findByIata(iata)
+  Q -> RA : findById
 end
-note right of Service
-  Lookup by IATA (allowed to Backoffice Operator),
-  not the US108 search (ATCC only): the user's JWT
-  is forwarded to the peers, which apply the same rules.
+S --> BO : 200 [{rank 1, LIS, Lisbon, 3}, {rank 2, MAD, 2}, {rank 3, CDG, 1}]
+deactivate S
+
+note over FR, RA
+  Replaces the HTTP bridge B5: Airports answers even while Flight Routes is down, with the routes it already knows.
+  The queue is durable: events published while Airports is down wait there.
+  Routes published before the queue existed are not received (Flight Routes has no replay yet).
 end note
-Service --> Ctrl : [rank 1 LIS 3, rank 2 MAD 3, rank 3 CDG 2]
-deactivate Service
-Ctrl --> BO : 200 List<BusiestAirportDTO>
-deactivate Ctrl
 @enduml
