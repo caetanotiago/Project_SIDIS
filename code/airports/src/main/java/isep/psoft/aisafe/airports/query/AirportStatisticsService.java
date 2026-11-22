@@ -13,15 +13,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
-/**
- * US210 — estatística dos aeroportos com mais rotas. Lado de leitura, SEM chamadas HTTP: as contagens vêm do read
- * model {@code KNOWN_ROUTE} (eventos de rotas do Flight Routes) e os detalhes dos aeroportos do read model
- * {@code REPLICATED_AIRPORT}. Responde mesmo com o Flight Routes em baixo (com as rotas que já conhece).
- */
 @Service
 @RequiredArgsConstructor
 public class AirportStatisticsService {
-
     public static final int DEFAULT_LIMIT = 5;
     public static final int MAX_LIMIT = 100;
 

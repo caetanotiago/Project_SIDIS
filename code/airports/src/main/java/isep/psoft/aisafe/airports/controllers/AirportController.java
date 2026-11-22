@@ -33,13 +33,11 @@ import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 import java.net.URI;
 import java.util.List;
 
-
 @RestController
 @RequestMapping("/api/airports")
 @RequiredArgsConstructor
 @Tag(name = "Airports", description = "Airport management (WP#2A & WP#2B)")
 public class AirportController {
-
     private final RegisterAirportService registerService;
     private final SearchAirportsService searchService;
     private final UpdateAirportService updateService;
@@ -47,7 +45,6 @@ public class AirportController {
     private final GroupAirportsService groupService;
     private final AirportAssembler assembler;
 
-    // US106 / US207: registar aeroporto (fica guardado nesta réplica)
     @PostMapping
     @Operation(summary = "US106/US207 — Register an airport with runways and optional facilities")
     public ResponseEntity<AirportDTO> register(@Valid @RequestBody CreateAirportDTO dto) {
@@ -57,14 +54,12 @@ public class AirportController {
         return ResponseEntity.created(location).body(assembler.toDTO(airport));
     }
 
-    // US107: detalhes pelo IATA, a partir do read model desta réplica. Contrato B2 do Flight Routes.
     @GetMapping("/{iataCode}")
     @Operation(summary = "US107 — Airport details by IATA code (answered from this replica's read model)")
     public ResponseEntity<AirportDTO> getByIata(@PathVariable String iataCode) {
         return ResponseEntity.ok(searchService.getByIata(iataCode));
     }
 
-    // US108: pesquisar por cidade, país ou nome (filtros opcionais e combináveis)
     @GetMapping
     @Operation(summary = "US108 — Search airports by city, country or name (read model with the airports of all replicas)")
     public ResponseEntity<List<AirportDTO>> search(
@@ -74,7 +69,6 @@ public class AirportController {
         return ResponseEntity.ok(searchService.search(city, country, name));
     }
 
-    // US210: aeroportos com mais rotas (contagens vindas do Flight Routes, contrato B5)
     @GetMapping("/statistics/busiest")
     @Operation(summary = "US210 — Busiest airports by number of routes (route counts from Flight Routes)")
     public ResponseEntity<List<BusiestAirportDTO>> busiestAirports(
@@ -82,7 +76,6 @@ public class AirportController {
         return ResponseEntity.ok(statisticsService.busiestAirports(limit));
     }
 
-    // US211: aeroportos agrupados por região ou país (read model com os aeroportos de todas as réplicas)
     @GetMapping("/grouped")
     @Operation(summary = "US211 — Airports grouped by region or country (by=country|region, default country)")
     public ResponseEntity<List<AirportGroupDTO>> groupAirports(
@@ -90,7 +83,6 @@ public class AirportController {
         return ResponseEntity.ok(groupService.groupBy(by));
     }
 
-    // US106a: certificar um modelo de aeronave no aeroporto (executado na réplica dona)
     @PostMapping("/{iataCode}/certifications")
     @Operation(summary = "US106a — Certify an aircraft model to fly to/from the airport (forwarded to the owner replica)")
     public ResponseEntity<AirportDTO> addCertification(
@@ -99,7 +91,6 @@ public class AirportController {
         return ResponseEntity.status(HttpStatus.CREATED).body(updateService.addCertification(iataCode, dto));
     }
 
-    // US109: alterar o estado operacional (executado na réplica dona)
     @PatchMapping("/{iataCode}/status")
     @Operation(summary = "US109 — Update the operational status (OPERATIONAL, CLOSED, UNDER_MAINTENANCE)")
     public ResponseEntity<AirportDTO> changeStatus(
@@ -108,7 +99,6 @@ public class AirportController {
         return ResponseEntity.ok(updateService.changeStatus(iataCode, dto));
     }
 
-    // US208: atualizar horário, contactos e instalações (parcial; executado na réplica dona)
     @PatchMapping("/{iataCode}")
     @Operation(summary = "US208 — Update airport details: operational hours, contacts and facilities")
     public ResponseEntity<AirportDTO> updateDetails(

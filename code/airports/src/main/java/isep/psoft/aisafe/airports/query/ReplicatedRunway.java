@@ -5,12 +5,10 @@ import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
-/** Pista de um aeroporto no read model (cópia do que veio no evento). */
 @Embeddable
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class ReplicatedRunway {
-
     private String name;
     private Integer lengthMeters;
     private Integer orientation;

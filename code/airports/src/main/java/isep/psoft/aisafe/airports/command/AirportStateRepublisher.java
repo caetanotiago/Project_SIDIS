@@ -10,27 +10,14 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 
-/**
- * Volta a anunciar o estado atual de TODOS os aeroportos de que esta réplica é dona, como {@code AirportUpdated}
- * (um evento novo por aeroporto, com a versão atual). Serve para pôr em dia read models que perderam eventos:
- * <ul>
- *   <li>o read model desta própria réplica (ex.: dados gravados antes de existir read model);</li>
- *   <li>réplicas cuja fila ainda não existia quando os eventos foram publicados (arranque ou réplica nova);</li>
- *   <li>outros serviços subscritos (ex. {@code KNOWN_AIRPORT} do Flight Routes).</li>
- * </ul>
- * É seguro repetir: quem já tem o aeroporto nessa versão só o volta a gravar igual, e versões mais antigas que
- * a guardada são ignoradas pelas projeções.
- */
 @Service
 @RequiredArgsConstructor
 public class AirportStateRepublisher {
-
     private static final Logger log = LoggerFactory.getLogger(AirportStateRepublisher.class);
 
     private final AirportRepository airportRepository;
     private final AirportEventEmitter events;
 
-    /** @return número de aeroportos anunciados */
     @Transactional
     public int republishOwnedAirports(String reason) {
         List<Airport> owned = airportRepository.findAllByOrderByIataCodeAsc();

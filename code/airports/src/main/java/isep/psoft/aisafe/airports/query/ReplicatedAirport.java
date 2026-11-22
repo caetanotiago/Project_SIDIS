@@ -20,21 +20,11 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 
-/**
- * READ MODEL de um aeroporto (tabela {@code REPLICATED_AIRPORT} na BD própria desta réplica), construído SÓ a
- * partir dos eventos de aeroportos. Todas as réplicas têm aqui todos os aeroportos, seja qual for a réplica dona,
- * por isso todas as consultas são respondidas localmente (lado de leitura do CQRS). O write model
- * ({@code Airport}) continua particionado: cada aeroporto só é guardado e alterado pela sua réplica dona.
- *
- * <p>Na réplica dona a linha é escrita na mesma transação que o write model (read-your-writes); nas outras é
- * escrita quando o evento chega (consistência eventual).
- */
 @Entity
 @Table(name = "REPLICATED_AIRPORT")
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class ReplicatedAirport {
-
     @Id
     @Column(length = 3)
     private String iataCode;
@@ -74,13 +64,10 @@ public class ReplicatedAirport {
     @Column(name = "URL")
     private List<String> photoUrls = new ArrayList<>();
 
-    /** Versão do aeroporto na réplica dona (vem do evento), NÃO é um optimistic lock local. */
     private Long sourceVersion;
 
-    /** Réplica dona (guarda e altera o aeroporto): o {@code sourceInstance} dos seus eventos. */
     private String ownerInstance;
 
-    /** Id e instante do último evento aplicado a esta linha. */
     private String lastEventId;
     private Instant lastEventAt;
 
@@ -88,12 +75,10 @@ public class ReplicatedAirport {
         this.iataCode = iataCode;
     }
 
-    /** {@code true} se um evento com esta versão tem de ser ignorado porque esta linha já é mais recente. */
     boolean isNewerThan(Long version) {
         return sourceVersion != null && version != null && version < sourceVersion;
     }
 
-    /** Substitui o estado pelo do evento (o payload traz sempre o estado completo do aeroporto). */
     void apply(AirportEventPayload p, String ownerInstance, String eventId, Instant eventAt) {
         this.name = p.name();
         this.city = p.city();

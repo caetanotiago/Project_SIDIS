@@ -26,13 +26,11 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 
-
 @Entity
 @Table(name = "airport")
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class Airport {
-
     @Id
     @Column(name = "iata_code", length = 3)
     private String iataCode;
@@ -46,10 +44,8 @@ public class Airport {
     @Column(nullable = false)
     private String country;
 
-    /** Região geográfica (ex. "Europe") — usada no agrupamento da US211. Opcional. */
     private String region;
 
-    /** Fuso horário IANA, ex. "Europe/Lisbon". */
     @Column(nullable = false)
     private String timezone;
 
@@ -65,13 +61,11 @@ public class Airport {
     @OrderColumn(name = "position")
     private List<Runway> runways = new ArrayList<>();
 
-    // ---- US106a: modelos de aeronave certificados para operar neste aeroporto
     @ElementCollection(fetch = FetchType.EAGER)
     @CollectionTable(name = "airport_certification", joinColumns = @JoinColumn(name = "iata_code"))
     @Column(name = "aircraft_model")
     private Set<String> certifiedModels = new LinkedHashSet<>();
 
-    // ---- US207: instalações (opcionais)
     private Integer terminals;
 
     private Integer gates;
@@ -87,7 +81,6 @@ public class Airport {
     @Column(name = "url")
     private List<String> photoUrls = new ArrayList<>();
 
-    // ---- US208: horário e contactos (opcionais)
     private String operationalHours;
 
     private String contactEmail;
@@ -119,10 +112,9 @@ public class Airport {
             }
         }
         this.runways.addAll(runways);
-        this.status = AirportStatus.OPERATIONAL; // um aeroporto registado nasce operacional
+        this.status = AirportStatus.OPERATIONAL;
     }
 
-    /** US207 — instalações opcionais (terminais, portas de embarque, serviços, fotos). */
     public void describeFacilities(Integer terminals, Integer gates, Set<String> services, List<String> photoUrls) {
         if (terminals != null && terminals < 0) {
             throw new IllegalArgumentException("Number of terminals cannot be negative.");
@@ -142,7 +134,6 @@ public class Airport {
         }
     }
 
-    /** US208 — horário de funcionamento e contactos (null = não altera). */
     public void updateContactDetails(String operationalHours, String contactEmail, String contactPhone) {
         if (operationalHours != null) {
             this.operationalHours = optional(operationalHours);
@@ -155,10 +146,6 @@ public class Airport {
         }
     }
 
-    /**
-     * US208 — atualização parcial dos detalhes: horário, contactos e instalações.
-     * Cada parâmetro a null = atributo não alterado; uma lista/conjunto vazio limpa o atributo.
-     */
     public void updateDetails(String operationalHours, String contactEmail, String contactPhone,
                               Integer terminals, Integer gates, Set<String> services, List<String> photoUrls) {
         updateContactDetails(operationalHours, contactEmail, contactPhone);
@@ -169,7 +156,6 @@ public class Airport {
                 photoUrls != null ? photoUrls : new ArrayList<>(this.photoUrls));
     }
 
-    /** US109 — mudar o estado operacional (operational, closed, under maintenance). */
     public void changeStatus(AirportStatus newStatus) {
         if (newStatus == null) {
             throw new IllegalArgumentException("Airport status is required.");
@@ -177,11 +163,6 @@ public class Airport {
         this.status = newStatus;
     }
 
-    /**
-     * US106a — certificar um modelo de aeronave para operar neste aeroporto.
-     * O modelo é referenciado pelo nome (identidade no Aircraft Management), tal como o IATA é
-     * referenciado pelos outros serviços. Certificar o mesmo modelo duas vezes → 409.
-     */
     public void certifyModel(String aircraftModel) {
         String model = required(aircraftModel, "Aircraft model");
         boolean alreadyCertified = certifiedModels.stream().anyMatch(m -> m.equalsIgnoreCase(model));

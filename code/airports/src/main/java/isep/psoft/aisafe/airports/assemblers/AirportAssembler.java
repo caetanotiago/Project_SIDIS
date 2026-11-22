@@ -11,10 +11,8 @@ import org.springframework.stereotype.Component;
 import java.util.List;
 import java.util.Set;
 
-/** Converte o agregado Airport (write model) ou a sua cópia no read model ({@code ReplicatedAirport}) no DTO da API. */
 @Component
 public class AirportAssembler {
-
     public AirportDTO toDTO(Airport a) {
         return new AirportDTO(
                 a.getIataCode(),
@@ -37,7 +35,6 @@ public class AirportAssembler {
                 a.getContactPhone());
     }
 
-    /** Mesmo contrato da API, a partir do read model (lado de leitura do CQRS). */
     public AirportDTO toDTO(ReplicatedAirport a) {
         return new AirportDTO(
                 a.getIataCode(),

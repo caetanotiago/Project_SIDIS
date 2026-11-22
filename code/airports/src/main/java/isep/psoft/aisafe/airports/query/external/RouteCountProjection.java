@@ -13,14 +13,8 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.Map;
 import java.util.TreeMap;
 
-/**
- * Aplica os eventos de rotas do Flight Routes ao read model {@code KNOWN_ROUTE} e calcula o número de rotas por
- * aeroporto (US210). Idempotente (eventId registado em {@code PROCESSED_EVENT} na mesma transação), ignora versões
- * antigas e tipos de evento desconhecidos.
- */
 @Service
 public class RouteCountProjection {
-
     private static final Logger log = LoggerFactory.getLogger(RouteCountProjection.class);
 
     private final KnownRouteRepository repository;
@@ -31,16 +25,11 @@ public class RouteCountProjection {
         this.idempotent = new IdempotentEventHandler(processedEvents);
     }
 
-    /** @return {@code false} se o evento era duplicado e nada foi feito */
     @Transactional
     public boolean apply(IntegrationEvent<FlightRouteEventPayload> event) {
         return idempotent.handle(event, this::applyOnce);
     }
 
-    /**
-     * Número de rotas por aeroporto (origem ou destino), como o antigo {@code count-by-airport} do Flight Routes:
-     * uma rota OPO→LIS conta 1 para OPO e 1 para LIS. Aeroportos sem rotas não aparecem.
-     */
     @Transactional(readOnly = true)
     public Map<String, Long> routeCountsByAirport() {
         Map<String, Long> counts = new TreeMap<>();

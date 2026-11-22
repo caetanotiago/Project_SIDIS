@@ -13,13 +13,9 @@ import java.util.TreeMap;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
-/**
- * US211 — aeroportos agrupados por região ou por país (lado de leitura: read model desta réplica).
- */
 @Service
 @RequiredArgsConstructor
 public class GroupAirportsService {
-
     static final String UNSPECIFIED = "Unspecified";
 
     private final SearchAirportsService searchService;

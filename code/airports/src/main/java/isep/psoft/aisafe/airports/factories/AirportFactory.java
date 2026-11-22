@@ -10,7 +10,6 @@ import java.util.List;
 
 @Component
 public class AirportFactory {
-
     public Airport create(CreateAirportDTO dto) {
         List<Runway> runways = dto.runways().stream()
                 .map(r -> new Runway(r.name(), r.lengthMeters(), r.orientation(), r.surface()))

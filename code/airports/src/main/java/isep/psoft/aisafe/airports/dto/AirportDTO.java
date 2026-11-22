@@ -5,7 +5,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import java.util.List;
 import java.util.Set;
 
-@JsonIgnoreProperties(ignoreUnknown = true) // tolera campos extra nas respostas de outras réplicas
+@JsonIgnoreProperties(ignoreUnknown = true)
 public record AirportDTO(
         String iataCode,
         String name,

@@ -7,14 +7,9 @@ import org.springframework.stereotype.Component;
 import java.time.Clock;
 import java.util.UUID;
 
-/**
- * {@link ProcessedEventStore} in this replica's database. Replaces the in-memory default of the common library,
- * so that "event applied" and "event id recorded" commit in the same transaction (ver {@code AirportProjection}).
- */
 @Component
 @RequiredArgsConstructor
 public class JpaProcessedEventStore implements ProcessedEventStore {
-
     private final ProcessedEventRepository repository;
 
     @Override

@@ -9,17 +9,11 @@ import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
-/**
- * Read model local das rotas do Flight Routes (tabela {@code KNOWN_ROUTE}), com SÓ o que a US210 precisa: os
- * aeroportos de origem e destino. Construído a partir dos eventos de rotas; substitui a chamada HTTP B5.
- * Uma linha por rota (upsert pelo id), por isso receber o mesmo evento duas vezes nunca conta a rota duas vezes.
- */
 @Entity
 @Table(name = "KNOWN_ROUTE")
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class KnownRoute {
-
     @Id
     private String routeId;
 
@@ -31,7 +25,6 @@ public class KnownRoute {
 
     private String status;
 
-    /** Versão da rota no Flight Routes (vem do evento). */
     private Long sourceVersion;
 
     KnownRoute(String routeId) {

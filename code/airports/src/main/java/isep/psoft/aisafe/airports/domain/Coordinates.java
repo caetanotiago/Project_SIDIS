@@ -12,7 +12,6 @@ import lombok.NoArgsConstructor;
 @EqualsAndHashCode
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class Coordinates {
-
     @Column(nullable = false)
     private double latitude;
 

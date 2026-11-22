@@ -6,7 +6,6 @@ import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 
-/** Pista, tanto no pedido de registo (US106) como na resposta. */
 @JsonIgnoreProperties(ignoreUnknown = true)
 public record RunwayDTO(
         @NotBlank(message = "Runway name is required")

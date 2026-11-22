@@ -10,23 +10,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-/**
- * Aplica os eventos de aeroportos ao read model {@code REPLICATED_AIRPORT} desta réplica.
- *
- * <ul>
- *   <li><b>Idempotente:</b> um {@code eventId} já processado por esta réplica é ignorado, e o registo do id
- *       fica gravado na mesma transação que a alteração ({@code JpaProcessedEventStore}).</li>
- *   <li><b>Eventos próprios:</b> a réplica dona aplica o seu evento dentro da transação de escrita
- *       (read-your-writes); quando o broker lho volta a entregar, o id já está registado e é ignorado.</li>
- *   <li><b>Ordem:</b> cada aeroporto só é escrito por uma réplica (a dona) e cada fila tem um consumidor, por isso
- *       os eventos de um aeroporto chegam por ordem. Por segurança, um evento com {@code version} inferior à
- *       guardada é ignorado (ex.: mensagem reenviada a partir da DLQ).</li>
- *   <li>Um {@code eventType} desconhecido é ignorado (fica no log), para o produtor poder acrescentar eventos.</li>
- * </ul>
- */
 @Service
 public class AirportProjection {
-
     private static final Logger log = LoggerFactory.getLogger(AirportProjection.class);
 
     private final ReplicatedAirportRepository repository;
@@ -37,7 +22,6 @@ public class AirportProjection {
         this.idempotent = new IdempotentEventHandler(processedEvents);
     }
 
-    /** @return {@code false} se o evento era duplicado e nada foi feito */
     @Transactional
     public boolean apply(IntegrationEvent<AirportEventPayload> event) {
         return idempotent.handle(event, this::applyOnce);
@@ -46,7 +30,6 @@ public class AirportProjection {
     private void applyOnce(IntegrationEvent<AirportEventPayload> event) {
         AirportEventPayload payload = event.payload();
         if (payload == null || payload.iataCode() == null) {
-            // Exceção = falha: a mensagem é repetida e depois vai para a DLQ.
             throw new IllegalArgumentException("Airport event " + event.eventId() + " has no iataCode");
         }
         switch (event.eventType()) {

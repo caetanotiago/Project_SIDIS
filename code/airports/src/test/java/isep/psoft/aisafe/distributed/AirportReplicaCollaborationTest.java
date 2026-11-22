@@ -29,19 +29,8 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-/**
- * Testes de colaboração entre réplicas do Airports.
- *
- * <p>Arranca DUAS réplicas reais do Airports (A e B, cada uma com a sua H2) configuradas como peers
- * uma da outra. Desenho CQRS do Assignment 2, SEM broker: os
- * eventos confirmados viajam pelo {@link InProcessEventBus} (JSON, uma entrega por réplica), tal como pelo
- * RabbitMQ. Cobre: leituras respondidas pelo read model local (sem forwarding de GET), unicidade do IATA no
- * read model, comandos encaminhados para a réplica dona (US106a, US109, US208) e propagados por evento a todas
- * as réplicas, US210 e US211, autenticação entre serviços, RBAC, falha de uma réplica e consistência eventual.
- */
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 class AirportReplicaCollaborationTest {
-
     private static final String SERVICE_KEY = "it-service-key";
     private static final JsonMapper JSON = JsonMapper.builder().build();
     private static final HttpClient HTTP = HttpClient.newHttpClient();
@@ -75,8 +64,6 @@ class AirportReplicaCollaborationTest {
         if (replicaB != null && replicaB.isActive()) replicaB.close();
     }
 
-    // ------------------------------------------------------------------ cenários
-
     @Test
     @Order(1)
     void eachReplicaStoresTheAirportsItReceives() throws Exception {
@@ -91,19 +78,16 @@ class AirportReplicaCollaborationTest {
         HttpResponse<String> mad = send("POST", urlB + "/api/airports", airport("MAD", "Madrid", "Spain", 40.4719, -3.5626), backoffice);
         assertEquals(201, mad.statusCode(), mad.body());
 
-        // Acesso local direto
         assertEquals(200, send("GET", urlA + "/api/airports/OPO", null, atcc).statusCode());
     }
 
     @Test
     @Order(2)
     void getByIataIsAnsweredFromTheLocalReadModel() throws Exception {
-        // LIS foi registado em B; A responde a partir do seu read model, alimentado pelo evento AirportCreated
         HttpResponse<String> response = send("GET", urlA + "/api/airports/lis", null, atcc);
 
         assertEquals(200, response.statusCode(), response.body());
         JsonNode body = json(response);
-        // Contrato B2 (Flight Routes): iataCode, latitude, longitude e status
         assertEquals("LIS", body.get("iataCode").asString());
         assertEquals(38.7742, body.get("latitude").asDouble(), 1e-6);
         assertEquals(-9.1342, body.get("longitude").asDouble(), 1e-6);
@@ -124,7 +108,6 @@ class AirportReplicaCollaborationTest {
             assertTrue(all.headers().firstValue(AisafeHeaders.PARTIAL_RESPONSE).isEmpty());
         }
 
-        // Filtros aplicados ao read model
         assertEquals(List.of("LIS", "OPO"), iatas(json(send("GET", urlA + "/api/airports?country=portugal", null, atcc))));
         assertEquals(List.of("LIS"), iatas(json(send("GET", urlA + "/api/airports?city=Lisbon", null, atcc))));
         assertEquals(List.of("MAD"), iatas(json(send("GET", urlA + "/api/airports?name=madrid", null, atcc))));
@@ -133,7 +116,6 @@ class AirportReplicaCollaborationTest {
     @Test
     @Order(4)
     void duplicateIataIsDetectedInTheReadModel() throws Exception {
-        // LIS é de B; A deteta o duplicado no seu read model, sem perguntar a B
         HttpResponse<String> response = send("POST", urlA + "/api/airports",
                 airport("LIS", "Lisbon", "Portugal", 38.7742, -9.1342), backoffice);
 
@@ -154,31 +136,26 @@ class AirportReplicaCollaborationTest {
     @Test
     @Order(6)
     void commandsAreForwardedToTheOwnerReplica() throws Exception {
-        // US109 pedido em A para um aeroporto guardado em B
         HttpResponse<String> status = send("PATCH", urlA + "/api/airports/LIS/status", "{\"status\":\"UNDER_MAINTENANCE\"}", backoffice);
         assertEquals(200, status.statusCode(), status.body());
         assertEquals("UNDER_MAINTENANCE", json(status).get("status").asString());
-        // A alteração foi feita na réplica dona (B) e chegou por evento (AirportStatusChanged) às duas réplicas
         assertEquals("UNDER_MAINTENANCE", json(send("GET", urlB + "/api/airports/LIS", null, atcc)).get("status").asString());
         assertEquals("UNDER_MAINTENANCE", json(send("GET", urlA + "/api/airports/LIS", null, atcc)).get("status").asString());
         assertTrue(BUS.delivered().stream().anyMatch(e -> e.eventType().equals("AirportStatusChanged")
                 && e.aggregateId().equals("LIS") && e.sourceInstance().equals("it-B")));
         assertEquals(400, send("PATCH", urlA + "/api/airports/LIS/status", "{\"status\":\"OPEN\"}", backoffice).statusCode());
 
-        // US106a: certificação via A; repetir → 409 vindo da dona e propagado
         HttpResponse<String> cert = send("POST", urlA + "/api/airports/LIS/certifications", "{\"aircraftModel\":\"A320\"}", atcc);
         assertEquals(201, cert.statusCode(), cert.body());
         assertEquals("A320", json(cert).get("certifiedModels").get(0).asString());
         assertEquals(409, send("POST", urlA + "/api/airports/LIS/certifications", "{\"aircraftModel\":\"a320\"}", atcc).statusCode());
 
-        // US208: atualização parcial via A
         HttpResponse<String> details = send("PATCH", urlA + "/api/airports/LIS", "{\"gates\":60,\"contactEmail\":\"info@lis.pt\"}", backoffice);
         assertEquals(200, details.statusCode(), details.body());
         assertEquals(60, json(details).get("gates").asInt());
         assertEquals("info@lis.pt", json(send("GET", urlB + "/api/airports/LIS", null, atcc)).get("contactEmail").asString());
         assertEquals(60, json(send("GET", urlA + "/api/airports/LIS", null, atcc)).get("gates").asInt());
 
-        // Nenhuma réplica tem o aeroporto → 404
         assertEquals(404, send("PATCH", urlA + "/api/airports/XXX/status", "{\"status\":\"CLOSED\"}", backoffice).statusCode());
     }
 
@@ -189,7 +166,7 @@ class AirportReplicaCollaborationTest {
 
         assertEquals(2, groups.size());
         assertEquals("Portugal", groups.get(0).get("group").asString());
-        assertEquals(2, groups.get(0).get("count").asInt()); // OPO (A) + LIS (B)
+        assertEquals(2, groups.get(0).get("count").asInt());
         assertEquals("Spain", groups.get(1).get("group").asString());
 
         JsonNode byRegion = json(send("GET", urlB + "/api/airports/grouped?by=region", null, atcc));
@@ -202,13 +179,10 @@ class AirportReplicaCollaborationTest {
     @Test
     @Order(8)
     void busiestAirportsAreComputedFromFlightRoutesEvents() throws Exception {
-        // Eventos RouteCreated do Flight Routes (como chegariam à fila <instanceId>.flightroutes de cada réplica).
-        // Contagens resultantes: LIS 3, OPO 2, MAD 2, ZZZ 1 (uma rota conta para a origem e para o destino).
         routeCreated("r1", "LIS", "OPO");
         routeCreated("r2", "LIS", "MAD");
         routeCreated("r3", "LIS", "ZZZ");
         IntegrationEvent<FlightRouteEventPayload> r4 = routeCreated("r4", "OPO", "MAD");
-        // O mesmo evento entregue outra vez (at-least-once) não conta a rota duas vezes
         assertFalse(replicaA.getBean(RouteCountProjection.class).apply(r4));
 
         HttpResponse<String> response = send("GET", urlA + "/api/airports/statistics/busiest?limit=3", null, backoffice);
@@ -218,13 +192,12 @@ class AirportReplicaCollaborationTest {
         assertEquals(3, ranking.size());
         assertEquals("LIS", ranking.get(0).get("iataCode").asString());
         assertEquals(3, ranking.get(0).get("routeCount").asLong());
-        assertEquals("Lisbon", ranking.get(0).get("city").asString()); // detalhes do read model (LIS é de B)
-        assertEquals("MAD", ranking.get(1).get("iataCode").asString()); // empate 2-2 → ordem do IATA
+        assertEquals("Lisbon", ranking.get(0).get("city").asString());
+        assertEquals("MAD", ranking.get(1).get("iataCode").asString());
         assertEquals("OPO", ranking.get(2).get("iataCode").asString());
         assertEquals(3, ranking.get(2).get("rank").asInt());
 
         assertEquals(400, send("GET", urlA + "/api/airports/statistics/busiest?limit=0", null, backoffice).statusCode());
-        // A réplica B tem o seu próprio read model de rotas, com as mesmas contagens
         assertEquals("LIS", json(send("GET", urlB + "/api/airports/statistics/busiest?limit=1", null, backoffice))
                 .get(0).get("iataCode").asString());
     }
@@ -232,7 +205,6 @@ class AirportReplicaCollaborationTest {
     @Test
     @Order(9)
     void peerRequestsRequireTheServiceKeyAndAreAnsweredLocally() throws Exception {
-        // Os GET já não são reencaminhados, mas os pedidos entre réplicas (comandos) continuam protegidos
         assertEquals(401, send("GET", urlB + "/api/airports", null, atcc,
                 Map.of(AisafeHeaders.PEER_HOPS, "1")).statusCode());
         assertEquals(401, send("GET", urlB + "/api/airports", null, atcc,
@@ -243,7 +215,7 @@ class AirportReplicaCollaborationTest {
         HttpResponse<String> local = send("GET", urlB + "/api/airports", null, atcc,
                 Map.of(AisafeHeaders.PEER_HOPS, "1", AisafeHeaders.SERVICE_KEY, SERVICE_KEY));
         assertEquals(200, local.statusCode());
-        assertEquals(List.of("LIS", "MAD", "OPO"), iatas(json(local))); // read model de B: todos os aeroportos
+        assertEquals(List.of("LIS", "MAD", "OPO"), iatas(json(local)));
     }
 
     @Test
@@ -253,16 +225,12 @@ class AirportReplicaCollaborationTest {
                 HttpResponse.BodyHandlers.ofString());
         assertEquals(401, noToken.statusCode());
 
-        // ATCC não regista aeroportos nem altera o estado (US106, US109: Backoffice Operator)
         assertEquals(403, send("POST", urlA + "/api/airports", airport("FNC", "Funchal", "Portugal", 32.69, -16.77), atcc).statusCode());
         assertEquals(403, send("PATCH", urlA + "/api/airports/OPO/status", "{\"status\":\"CLOSED\"}", atcc).statusCode());
-        // Backoffice Operator não pesquisa (US108) nem agrupa (US211); ATCC não vê estatísticas (US210)
         assertEquals(403, send("GET", urlA + "/api/airports", null, backoffice).statusCode());
         assertEquals(403, send("GET", urlA + "/api/airports/grouped", null, backoffice).statusCode());
         assertEquals(403, send("GET", urlA + "/api/airports/statistics/busiest", null, atcc).statusCode());
-        // Ambos veem os detalhes (US107)
         assertEquals(200, send("GET", urlA + "/api/airports/OPO", null, backoffice).statusCode());
-        // Método não previsto → recusado
         assertEquals(403, send("DELETE", urlA + "/api/airports/OPO", null, backoffice).statusCode());
 
         HttpResponse<String> health = HTTP.send(HttpRequest.newBuilder(URI.create(urlA + "/actuator/health")).GET().build(),
@@ -274,13 +242,11 @@ class AirportReplicaCollaborationTest {
     @Test
     @Order(11)
     void eventualConsistencyWhileAReplicaIsDisconnected() throws Exception {
-        // Partição: B deixa de receber eventos. Uma alteração feita em A não chega a B (B fica desatualizada)
         BUS.disconnect("B");
         assertEquals(200, send("PATCH", urlA + "/api/airports/OPO/status", "{\"status\":\"CLOSED\"}", backoffice).statusCode());
         assertEquals("CLOSED", json(send("GET", urlA + "/api/airports/OPO", null, atcc)).get("status").asString());
         assertEquals("OPERATIONAL", json(send("GET", urlB + "/api/airports/OPO", null, atcc)).get("status").asString());
 
-        // Volta a ligar-se: o próximo evento traz o estado COMPLETO (e a versão mais recente), por isso B converge
         BUS.reconnect("B");
         assertEquals(200, send("PATCH", urlA + "/api/airports/OPO/status", "{\"status\":\"OPERATIONAL\"}", backoffice).statusCode());
         assertEquals("OPERATIONAL", json(send("GET", urlB + "/api/airports/OPO", null, atcc)).get("status").asString());
@@ -289,22 +255,17 @@ class AirportReplicaCollaborationTest {
     @Test
     @Order(12)
     void whenAReplicaFailsTheOthersKeepServingFromTheirReadModel() throws Exception {
-        replicaB.close(); // simula a falha da réplica B
+        replicaB.close();
 
-        // A continua a responder com TODOS os aeroportos (incluindo os de B), sem resposta parcial
         HttpResponse<String> all = send("GET", urlA + "/api/airports", null, atcc);
         assertEquals(200, all.statusCode());
         assertEquals(List.of("LIS", "MAD", "OPO"), iatas(json(all)));
         assertTrue(all.headers().firstValue(AisafeHeaders.PARTIAL_RESPONSE).isEmpty());
         assertEquals(200, send("GET", urlA + "/api/airports/LIS", null, atcc).statusCode());
 
-        // Comando para um aeroporto da réplica em baixo: só a dona o pode alterar e não responde → 503
         assertEquals(503, send("PATCH", urlA + "/api/airports/LIS/status", "{\"status\":\"CLOSED\"}", backoffice).statusCode());
     }
 
-    // ------------------------------------------------------------------ infraestrutura do teste
-
-    /** Evento RouteCreated do Flight Routes, entregue às duas réplicas (cada uma tem a sua fila). */
     private static IntegrationEvent<FlightRouteEventPayload> routeCreated(String id, String origin, String destination) {
         IntegrationEvent<FlightRouteEventPayload> event = IntegrationEvent.create("RouteCreated", Instant.now(),
                 "flightroutes", "flightroutes-it", id, new FlightRouteEventPayload(id, origin, destination, "ACTIVE", 0L));
@@ -315,7 +276,6 @@ class AirportReplicaCollaborationTest {
     }
 
     private static ConfigurableApplicationContext startReplica(String name, int port, String peerUrl) {
-        // Argumentos de linha de comando: têm precedência sobre o application.properties
         return BUS.start(name,
                 "--server.port=" + port,
                 "--aisafe.instance-id=it-" + name,

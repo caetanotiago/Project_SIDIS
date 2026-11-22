@@ -13,10 +13,6 @@ import jakarta.validation.constraints.Pattern;
 import java.util.List;
 import java.util.Set;
 
-/**
- * US106: IATA, nome, cidade, país, fuso horário, coordenadas e pistas (obrigatórios).
- * US207: instalações e fotos (opcionais). Região e contactos (US208) também podem vir já no registo.
- */
 public record CreateAirportDTO(
         @NotBlank(message = "IATA code is required")
         @Pattern(regexp = "^[A-Za-z]{3}$", message = "IATA code must be exactly 3 letters")

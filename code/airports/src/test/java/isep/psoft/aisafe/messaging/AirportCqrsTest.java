@@ -40,25 +40,10 @@ import java.util.concurrent.CopyOnWriteArrayList;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-/**
- * CQRS do Airports numa réplica real (com a sua H2 em memória), SEM broker. Os eventos que o lado de escrita
- * publica depois do commit são capturados por um transporte de teste; os eventos "recebidos" são entregues
- * diretamente às projeções, tal como fazem os listeners do RabbitMQ. Cobre:
- * <ul>
- *   <li>projeção do read model: criação, idempotência, versões antigas, payload inválido, tipo desconhecido;</li>
- *   <li>lado de escrita: read-your-writes na réplica dona, um evento por comando, nada publicado em rollback;</li>
- *   <li>sincronização no arranque/a pedido: republicação dos aeroportos próprios, pedido próprio ignorado;</li>
- *   <li>listener: conversão do formato JSON "do fio" e encaminhamento pelo eventType;</li>
- *   <li>contagem de rotas por aeroporto (US210) a partir dos eventos do Flight Routes;</li>
- *   <li>com as mensagens desligadas (omissão nos testes) não existe nenhum bean AMQP.</li>
- * </ul>
- */
 class AirportCqrsTest {
-
     private static final String SELF = "it-cqrs";
     private static final JsonMapper JSON = EventMessageConverters.jsonMapper();
 
-    /** Transporte de teste: guarda os eventos que a réplica publicaria no RabbitMQ (só depois do commit). */
     private static final List<OutgoingIntegrationEvent> PUBLISHED = new CopyOnWriteArrayList<>();
     private static final IntegrationEventTransport CAPTURE = PUBLISHED::add;
 
@@ -73,7 +58,7 @@ class AirportCqrsTest {
                 .run("--server.port=0",
                         "--aisafe.instance-id=" + SELF,
                         "--spring.datasource.url=jdbc:h2:mem:airports-cqrs;DB_CLOSE_DELAY=-1",
-                        "--aisafe.peers.urls=http://localhost:1", // nenhum peer real: tudo é respondido localmente
+                        "--aisafe.peers.urls=http://localhost:1",
                         "--aisafe.bootstrap.enabled=false",
                         "--logging.file.name=target/it-logs/airports-cqrs.log");
         projection = replica.getBean(AirportProjection.class);
@@ -89,8 +74,6 @@ class AirportCqrsTest {
     void clearCaptured() {
         PUBLISHED.clear();
     }
-
-    // ------------------------------------------------------------------ projeção do read model
 
     @Test
     void airportCreatedFromAnotherReplicaIsStoredInTheReadModel() {
@@ -110,7 +93,6 @@ class AirportCqrsTest {
         IntegrationEvent<AirportEventPayload> created = event(AirportEvents.AIRPORT_CREATED, payload("BCN", "OPERATIONAL", 0L), "airports-9");
         assertTrue(projection.apply(created));
 
-        // Entretanto chega uma versão mais recente; depois o broker reentrega o evento antigo (at-least-once)
         assertTrue(projection.apply(event(AirportEvents.AIRPORT_STATUS_CHANGED, payload("BCN", "CLOSED", 1L), "airports-9")));
         assertFalse(projection.apply(created));
 
@@ -120,7 +102,6 @@ class AirportCqrsTest {
     @Test
     void olderVersionsAreIgnored() {
         assertTrue(projection.apply(event(AirportEvents.AIRPORT_UPDATED, payload("AMS", "UNDER_MAINTENANCE", 5L), "airports-9")));
-        // Evento diferente (outro eventId) mas com versão antiga, ex. reenviado a partir da DLQ
         projection.apply(event(AirportEvents.AIRPORT_UPDATED, payload("AMS", "OPERATIONAL", 3L), "airports-9"));
 
         ReplicatedAirport ams = readModel.findById("AMS").orElseThrow();
@@ -140,13 +121,10 @@ class AirportCqrsTest {
         assertTrue(readModel.findById("ORY").isEmpty());
     }
 
-    // ------------------------------------------------------------------ lado de escrita
-
     @Test
     void theOwnerReadsItsOwnWriteImmediatelyAndPublishesOneEventPerCommandAfterTheCommit() {
         replica.getBean(RegisterAirportService.class).register(createDto("OPO"));
 
-        // Read-your-writes: o read model local foi atualizado na mesma transação do write model
         ReplicatedAirport opo = readModel.findById("OPO").orElseThrow();
         assertEquals(SELF, opo.getOwnerInstance());
         assertEquals("OPERATIONAL", opo.getStatus());
@@ -165,7 +143,6 @@ class AirportCqrsTest {
         OutgoingIntegrationEvent statusChanged = PUBLISHED.get(1);
         assertEquals("airport.status-changed", statusChanged.routingKey());
         AirportEventPayload p = (AirportEventPayload) statusChanged.event().payload();
-        // Estado completo no evento (state-carrying), incluindo os campos que o Flight Routes lê
         assertEquals("CLOSED", p.status());
         assertEquals(1L, p.version());
         assertNotNull(p.latitude());
@@ -177,13 +154,10 @@ class AirportCqrsTest {
         replica.getBean(RegisterAirportService.class).register(createDto("LIS"));
         PUBLISHED.clear();
 
-        // Duplicado: a transação falha, por isso nenhum evento sai
         assertThrows(IllegalStateException.class,
                 () -> replica.getBean(RegisterAirportService.class).register(createDto("LIS")));
         assertTrue(PUBLISHED.isEmpty());
     }
-
-    // ------------------------------------------------------------------ sincronização
 
     @Test
     void republishingAnnouncesEveryOwnedAirportAsAirportUpdated() {
@@ -213,8 +187,6 @@ class AirportCqrsTest {
         assertFalse(PUBLISHED.isEmpty());
     }
 
-    // ------------------------------------------------------------------ listener (formato do fio)
-
     @Test
     void theListenerConvertsTheWireFormatAndRoutesByEventType() {
         AirportsEventsListener listener = new AirportsEventsListener(projection, replica.getBean(ReadModelSynchronizer.class));
@@ -230,18 +202,14 @@ class AirportCqrsTest {
         assertTrue(PUBLISHED.stream().anyMatch(o -> o.event().aggregateId().equals("LHR")));
     }
 
-    // ------------------------------------------------------------------ US210: rotas do Flight Routes
-
     @Test
     void routeCountsComeFromFlightRoutesEventsWithoutDoubleCounting() {
         RouteCountProjection routes = replica.getBean(RouteCountProjection.class);
         IntegrationEvent<FlightRouteEventPayload> created = routeEvent("RouteCreated", "r-1", "OPO", "LIS", 0L);
         assertTrue(routes.apply(created));
         assertTrue(routes.apply(routeEvent("RouteCreated", "r-2", "LIS", "MAD", 0L)));
-        // Duplicado e atualização da mesma rota: continua a contar uma vez
         assertFalse(routes.apply(created));
         assertTrue(routes.apply(routeEvent("RouteUpdated", "r-1", "OPO", "LIS", 1L)));
-        // Tipo que não interessa ao Airports
         assertTrue(routes.apply(routeEvent("ScheduledFlightCreated", "f-1", "OPO", "LIS", 0L)));
 
         Map<String, Long> counts = routes.routeCountsByAirport();
@@ -250,15 +218,11 @@ class AirportCqrsTest {
         assertEquals(1L, counts.get("MAD"));
     }
 
-    // ------------------------------------------------------------------ mensagens desligadas
-
     @Test
     void withMessagingOffThereIsNoBrokerBean() {
         assertTrue(replica.getBeansOfType(EventPublisher.class).isEmpty());
         assertTrue(replica.getBeansOfType(AirportsEventsListener.class).isEmpty());
     }
-
-    // ------------------------------------------------------------------ auxiliares
 
     private static IntegrationEvent<AirportEventPayload> event(String type, AirportEventPayload payload, String from) {
         String id = payload.iataCode() == null ? "unknown" : payload.iataCode();
@@ -271,7 +235,6 @@ class AirportCqrsTest {
                 new FlightRouteEventPayload(id, origin, destination, "ACTIVE", version));
     }
 
-    /** Serializa e volta a ler o envelope como o listener o recebe do RabbitMQ (payload em árvore JSON). */
     private static IntegrationEvent<JsonNode> overTheWire(IntegrationEvent<?> event) {
         return JSON.readValue(JSON.writeValueAsString(event), new TypeReference<IntegrationEvent<JsonNode>>() { });
     }

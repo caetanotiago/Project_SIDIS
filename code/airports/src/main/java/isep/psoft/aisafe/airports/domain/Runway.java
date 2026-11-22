@@ -12,7 +12,6 @@ import lombok.NoArgsConstructor;
 @EqualsAndHashCode
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class Runway {
-
     @Column(name = "runway_name", nullable = false)
     private String name;
 

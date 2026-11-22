@@ -7,16 +7,8 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
 
-/**
- * Publica os eventos do lado de escrita DEPOIS do commit da transação local.
- *
- * <p>Limitação conhecida (sem transactional outbox): se o transporte falhar nesse momento (ex.: broker em baixo),
- * a alteração já está gravada e visível nesta réplica, mas o evento perde-se para as outras. Fica registado como
- * erro no log e o pedido HTTP termina com sucesso na mesma.
- */
 @Component
 public class IntegrationEventRelay {
-
     private static final Logger log = LoggerFactory.getLogger(IntegrationEventRelay.class);
 
     private final ObjectProvider<IntegrationEventTransport> transports;

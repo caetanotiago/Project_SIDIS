@@ -14,22 +14,10 @@ import org.springframework.stereotype.Component;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 
-/**
- * Consome a fila DESTA réplica, {@code <instanceId>.airports} (declarada em {@code AirportsMessagingConfiguration}).
- * A fila traz dois tipos de mensagem, por isso o payload é lido como árvore JSON e convertido conforme o
- * {@code eventType}:
- * <ul>
- *   <li>eventos de aeroportos → {@link AirportProjection} (read model {@code REPLICATED_AIRPORT});</li>
- *   <li>{@code AirportSyncRequested} → {@link ReadModelSynchronizer} (volta a publicar os aeroportos desta réplica).</li>
- * </ul>
- * A mensagem só é confirmada (ack) quando este método termina; uma exceção faz o container repetir (com back-off,
- * número limitado de tentativas) e depois envia-a para {@code <fila>.dlq} (política da common).
- */
 @Component
 @ConditionalOnProperty(prefix = "aisafe.messaging", name = "enabled", havingValue = "true")
 @RequiredArgsConstructor
 public class AirportsEventsListener {
-
     private static final JsonMapper JSON = EventMessageConverters.jsonMapper();
 
     private final AirportProjection projection;
@@ -45,7 +33,6 @@ public class AirportsEventsListener {
         projection.apply(withPayload(event, AirportEventPayload.class));
     }
 
-    /** O mesmo envelope com o payload convertido para {@code type}. */
     static <T> IntegrationEvent<T> withPayload(IntegrationEvent<JsonNode> event, Class<T> type) {
         T payload = event.payload() == null ? null : JSON.convertValue(event.payload(), type);
         return new IntegrationEvent<>(event.eventId(), event.eventType(), event.timestamp(), event.sourceService(),

@@ -25,10 +25,8 @@ import java.util.Set;
 @ConditionalOnProperty(prefix = "aisafe.bootstrap", name = "enabled", havingValue = "true")
 @RequiredArgsConstructor
 public class DemoDataBootstrap implements ApplicationRunner {
-
     private static final Logger log = LoggerFactory.getLogger(DemoDataBootstrap.class);
 
-    /** Catálogo de aeroportos de demonstração (dados reais aproximados). */
     private static final Map<String, CreateAirportDTO> CATALOG = Map.of(
             "OPO", airport("OPO", "Francisco Sá Carneiro Airport", "Porto", "Portugal", "Europe/Lisbon",
                     41.2481, -8.6814, List.of(new RunwayDTO("17/35", 3480, 170, "ASPHALT")),
@@ -53,12 +51,10 @@ public class DemoDataBootstrap implements ApplicationRunner {
                     32.6979, -16.7745, List.of(new RunwayDTO("05/23", 2781, 50, "ASPHALT")),
                     1, 13, Set.of("WIFI"), "06:00-24:00", null));
 
-    /** Modelos certificados em todos os aeroportos de demonstração (US106a). */
     private static final List<String> DEMO_CERTIFIED_MODELS = List.of("A320", "A321");
 
     private final AirportRepository airportRepository;
     private final AirportFactory airportFactory;
-    /** Os aeroportos de demo são anunciados como qualquer outra escrita (AirportCreated), pela réplica que os insere. */
     private final AirportEventEmitter events;
 
     @Value("${aisafe.bootstrap.airports:}")

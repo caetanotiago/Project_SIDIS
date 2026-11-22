@@ -6,9 +6,6 @@ import jakarta.validation.constraints.Min;
 import java.util.List;
 import java.util.Set;
 
-/**
- * US208 — atualização parcial dos detalhes do aeroporto: horário, contactos e instalações.
- */
 public record UpdateAirportDetailsDTO(
         String operationalHours,
 

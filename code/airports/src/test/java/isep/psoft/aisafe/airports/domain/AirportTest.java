@@ -7,16 +7,12 @@ import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-/** Testes unitários do agregado Airport e dos seus value objects (sem Spring). */
 class AirportTest {
-
     private static Airport porto() {
         return new Airport("opo", "Francisco Sá Carneiro", "Porto", "Portugal", "Europe",
                 "Europe/Lisbon", new Coordinates(41.2481, -8.6814),
                 List.of(new Runway("17/35", 3480, 170, "asphalt")));
     }
-
-    // ------------------------------------------------------------------ IATA
 
     @Test
     void iataCodeIsNormalisedToUpperCase() {
@@ -31,14 +27,12 @@ class AirportTest {
         assertThrows(IllegalArgumentException.class, () -> IataCode.normalize(null));
     }
 
-    // ------------------------------------------------------------------ value objects
-
     @Test
     void coordinatesMustBeWithinRange() {
         assertThrows(IllegalArgumentException.class, () -> new Coordinates(91.0, 0.0));
         assertThrows(IllegalArgumentException.class, () -> new Coordinates(0.0, -181.0));
         assertThrows(IllegalArgumentException.class, () -> new Coordinates(null, 0.0));
-        assertEquals(new Coordinates(41.0, -8.0), new Coordinates(41.0, -8.0)); // value object
+        assertEquals(new Coordinates(41.0, -8.0), new Coordinates(41.0, -8.0));
     }
 
     @Test
@@ -48,8 +42,6 @@ class AirportTest {
         assertThrows(IllegalArgumentException.class, () -> new Runway(" ", 3000, 170, null));
         assertEquals("ASPHALT", new Runway("17/35", 3000, 170, "asphalt").getSurface());
     }
-
-    // ------------------------------------------------------------------ registo (US106)
 
     @Test
     void newAirportIsOperationalWithNormalisedIata() {
@@ -88,8 +80,6 @@ class AirportTest {
                 () -> airport.getRunways().add(new Runway("05/23", 2000, 50, null)));
     }
 
-    // ------------------------------------------------------------------ US106a
-
     @Test
     void certifyingTheSameModelTwiceIsAConflict() {
         Airport airport = porto();
@@ -101,8 +91,6 @@ class AirportTest {
         assertThrows(IllegalArgumentException.class, () -> airport.certifyModel(" "));
     }
 
-    // ------------------------------------------------------------------ US109
-
     @Test
     void statusCanChangeToAnyKnownValue() {
         Airport airport = porto();
@@ -113,8 +101,6 @@ class AirportTest {
         assertThrows(IllegalArgumentException.class, () -> AirportStatus.from("OPEN"));
         assertThrows(IllegalArgumentException.class, () -> airport.changeStatus(null));
     }
-
-    // ------------------------------------------------------------------ US207 / US208
 
     @Test
     void facilitiesAreOptionalButCannotBeNegative() {
@@ -134,14 +120,14 @@ class AirportTest {
 
         airport.updateDetails(null, null, "+351 229 432 400", null, 40, null, null);
 
-        assertEquals("00:00-24:00", airport.getOperationalHours()); // não enviado → mantém
+        assertEquals("00:00-24:00", airport.getOperationalHours());
         assertEquals("info@opo.pt", airport.getContactEmail());
         assertEquals("+351 229 432 400", airport.getContactPhone());
         assertEquals(1, airport.getTerminals());
         assertEquals(40, airport.getGates());
         assertEquals(Set.of("WIFI"), airport.getServices());
 
-        airport.updateDetails("", null, null, null, null, Set.of(), null); // vazio → limpa
+        airport.updateDetails("", null, null, null, null, Set.of(), null);
         assertNull(airport.getOperationalHours());
         assertTrue(airport.getServices().isEmpty());
     }
