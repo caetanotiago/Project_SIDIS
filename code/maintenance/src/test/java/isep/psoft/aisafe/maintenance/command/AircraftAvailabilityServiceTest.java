@@ -1,8 +1,10 @@
-package isep.psoft.aisafe.maintenance.services;
+package isep.psoft.aisafe.maintenance.command;
 
 import isep.psoft.aisafe.maintenance.clients.AircraftClient;
 import isep.psoft.aisafe.maintenance.clients.AircraftSnapshot;
-import isep.psoft.aisafe.maintenance.dto.MaintenanceRecordDTO;
+import isep.psoft.aisafe.maintenance.query.ReadModelFixtures;
+import isep.psoft.aisafe.maintenance.query.ReplicatedMaintenanceRecord;
+import isep.psoft.aisafe.maintenance.query.ReplicatedMaintenanceRecordRepository;
 import isep.sidis.common.remote.RemoteServiceUnavailableException;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -20,39 +22,24 @@ import static org.mockito.Mockito.*;
 class AircraftAvailabilityServiceTest {
 
     @Mock AircraftClient aircraftClient;
-    @Mock MaintenanceReplicaQueries replicas;
+    @Mock ReplicatedMaintenanceRecordRepository readModel;
     @InjectMocks AircraftAvailabilityService service;
 
-    private static MaintenanceRecordDTO record(String id) {
-        MaintenanceRecordDTO dto = new MaintenanceRecordDTO();
-        dto.setId(id);
-        return dto;
-    }
-
-    private void ongoing(boolean complete, MaintenanceRecordDTO... records) {
-        when(replicas.searchRecordsWithStatus(RecordFilter.ongoingOf("CS-TUA")))
-                .thenReturn(new MaintenanceReplicaQueries.RecordSearch(List.of(records), complete));
+    private void ongoing(ReplicatedMaintenanceRecord... records) {
+        when(readModel.findByAircraftRegistrationIgnoreCaseAndStatus("CS-TUA", "IN_PROGRESS")).thenReturn(List.of(records));
     }
 
     @Test
-    void releasesWhenNoOtherRecordIsOngoingInAnyReplica() {
-        ongoing(true, record("rec-1"));
+    void releasesWhenTheReadModelHasNoOtherOngoingRecordOfTheAircraft() {
+        ongoing(ReadModelFixtures.ongoing("rec-1", "CS-TUA", "A320", "t", 60));
 
         assertTrue(service.releaseIfNoOtherOngoing("CS-TUA", "rec-1"));
         verify(aircraftClient).updateStatus("CS-TUA", "AVAILABLE");
     }
 
     @Test
-    void keepsTheAircraftUnderMaintenanceWhileAnotherRecordIsOngoing() {
-        ongoing(true, record("rec-2"));
-
-        assertFalse(service.releaseIfNoOtherOngoing("CS-TUA", "rec-1"));
-        verifyNoInteractions(aircraftClient);
-    }
-
-    @Test
-    void keepsTheAircraftUnderMaintenanceWhenAReplicaDidNotAnswer() {
-        ongoing(false);
+    void keepsTheAircraftUnderMaintenanceWhileAnotherRecordOfAnyReplicaIsOngoing() {
+        ongoing(ReadModelFixtures.ongoing("rec-2", "CS-TUA", "A320", "t", 60));
 
         assertFalse(service.releaseIfNoOtherOngoing("CS-TUA", "rec-1"));
         verifyNoInteractions(aircraftClient);
@@ -60,7 +47,7 @@ class AircraftAvailabilityServiceTest {
 
     @Test
     void aFailedReleaseDoesNotFailTheCompletion() {
-        ongoing(true);
+        ongoing();
         when(aircraftClient.updateStatus("CS-TUA", "AVAILABLE"))
                 .thenThrow(new RemoteServiceUnavailableException("Aircraft Management", null));
 

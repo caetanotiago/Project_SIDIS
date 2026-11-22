@@ -2,10 +2,12 @@ package isep.psoft.aisafe.distributed;
 
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
-import isep.psoft.aisafe.MaintenanceApplication;
 import isep.psoft.aisafe.maintenance.bootstrap.ReferenceTemplatesBootstrap;
+import isep.psoft.aisafe.maintenance.command.MaintenanceStateRepublisher;
 import isep.psoft.aisafe.maintenance.domain.MaintenanceTemplate;
+import isep.psoft.aisafe.support.InProcessEventBus;
 import isep.sidis.common.http.AisafeHeaders;
+import isep.sidis.common.messaging.IntegrationEvent;
 import isep.sidis.common.security.JwtTokenProvider;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -13,7 +15,6 @@ import org.junit.jupiter.api.MethodOrderer;
 import org.junit.jupiter.api.Order;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestMethodOrder;
-import org.springframework.boot.builder.SpringApplicationBuilder;
 import org.springframework.context.ConfigurableApplicationContext;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
@@ -27,11 +28,15 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -44,8 +49,11 @@ class MaintenanceReplicaCollaborationTest {
     private static final String A_CHECK_ID = MaintenanceTemplate.referenceId(ReferenceTemplatesBootstrap.A_CHECK);
 
     private static final Map<String, String> AIRCRAFT_STATUS = new ConcurrentHashMap<>();
+    private static final AtomicInteger AIRCRAFT_GETS = new AtomicInteger();
 
+    private static final InProcessEventBus BUS = new InProcessEventBus();
     private static HttpServer aircraftManagement;
+    private static String am;
     private static ConfigurableApplicationContext replicaA;
     private static ConfigurableApplicationContext replicaB;
     private static String urlA;
@@ -64,14 +72,14 @@ class MaintenanceReplicaCollaborationTest {
         AIRCRAFT_STATUS.put("CS-TUE", "AVAILABLE");
         AIRCRAFT_STATUS.put("CS-TUF", "IN_FLIGHT");
         aircraftManagement = startAircraftManagementStub();
-        String am = "http://localhost:" + aircraftManagement.getAddress().getPort();
+        am = "http://localhost:" + aircraftManagement.getAddress().getPort();
 
         int portA = freePort();
         int portB = freePort();
         urlA = "http://localhost:" + portA;
         urlB = "http://localhost:" + portB;
-        replicaA = startReplica("A", portA, urlB, am);
-        replicaB = startReplica("B", portB, urlA, am);
+        replicaA = startReplica("A", portA, urlB);
+        replicaB = startReplica("B", portB, urlA);
 
         JwtTokenProvider jwt = replicaA.getBean(JwtTokenProvider.class);
         tech = jwt.generateToken("tech-it", List.of("ROLE_MAINTENANCE_TECHNICIAN"));
@@ -88,10 +96,8 @@ class MaintenanceReplicaCollaborationTest {
 
     @Test
     @Order(1)
-    void templatesAreCreatedInOneReplicaAndFoundFromAnyReplica() throws Exception {
-
-        JsonNode list = json(send("GET", urlA + "/api/maintenance-templates", null, tech));
-        assertEquals(4, list.size());
+    void aTemplateCreatedOnOneReplicaReachesTheReadModelOfTheOther() throws Exception {
+        assertEquals(4, json(send("GET", urlA + "/api/maintenance-templates", null, tech)).size());
 
         HttpResponse<String> created = send("POST", urlB + "/api/maintenance-templates",
                 "{\"name\":\"Avionics Software Update\",\"type\":\"modification\",\"applicableModels\":[\"A320\"],"
@@ -104,6 +110,8 @@ class MaintenanceReplicaCollaborationTest {
         assertEquals(200, fromA.statusCode());
         assertEquals("MODIFICATION", json(fromA).get("type").asString());
         assertEquals(5, json(send("GET", urlA + "/api/maintenance-templates", null, tech)).size());
+        assertTrue(BUS.published().stream().anyMatch(e -> e.eventType().equals("MaintenanceTemplateCreated")
+                && e.aggregateId().equals(templateOnB) && e.sourceInstance().equals("it-maintenance-B")));
 
         assertEquals(400, send("POST", urlA + "/api/maintenance-templates",
                 "{\"name\":\"avionics software update\",\"type\":\"INSPECTION\",\"applicableModels\":[\"A320\"],\"checklist\":[\"x\"]}",
@@ -115,22 +123,22 @@ class MaintenanceReplicaCollaborationTest {
 
     @Test
     @Order(2)
-    void recordsAreStoredWhereTheyAreCreatedAndTheAircraftGoesUnderMaintenance() throws Exception {
-
+    void recordsAreWrittenByTheReplicaThatReceivesThemAndTheAircraftGoesUnderMaintenance() throws Exception {
         HttpResponse<String> onA = send("POST", urlA + "/api/maintenance-records", record("CS-TUA", A_CHECK_ID, null), tech);
         assertEquals(201, onA.statusCode(), onA.body());
         recordOnA = json(onA).get("id").asString();
         assertEquals("IN_PROGRESS", json(onA).get("status").asString());
+        assertEquals("it-maintenance-A", json(onA).get("ownerInstance").asString());
         assertEquals(4, json(onA).get("checklist").size());
         assertEquals("UNDER_MAINTENANCE", AIRCRAFT_STATUS.get("CS-TUA"));
 
         HttpResponse<String> secondOnA = send("POST", urlA + "/api/maintenance-records", record("cs-tua", templateOnB, "avionics"), tech);
         assertEquals(201, secondOnA.statusCode(), secondOnA.body());
-        recordOnB = json(send("POST", urlB + "/api/maintenance-records", record("CS-TUA", templateOnB, null), tech)).get("id").asString();
-        assertEquals(200, send("GET", urlB + "/api/maintenance-records/" + recordOnB, null, tech).statusCode());
+        HttpResponse<String> onB = send("POST", urlB + "/api/maintenance-records", record("CS-TUA", templateOnB, null), tech);
+        assertEquals(201, onB.statusCode(), onB.body());
+        recordOnB = json(onB).get("id").asString();
 
         assertEquals(409, send("POST", urlA + "/api/maintenance-records", record("CS-TUF", A_CHECK_ID, null), tech).statusCode());
-
         assertEquals(404, send("POST", urlA + "/api/maintenance-records", record("CS-XXX", A_CHECK_ID, null), tech).statusCode());
         assertEquals(400, send("POST", urlA + "/api/maintenance-records", record("CS-TUE", templateOnB, null), tech).statusCode());
         assertEquals(400, send("POST", urlA + "/api/maintenance-records",
@@ -141,17 +149,30 @@ class MaintenanceReplicaCollaborationTest {
 
     @Test
     @Order(3)
-    void getByIdIsForwardedAndCollectionsAreAggregated() throws Exception {
-        HttpResponse<String> forwarded = send("GET", urlA + "/api/maintenance-records/" + recordOnB, null, tech);
-        assertEquals(200, forwarded.statusCode());
-        assertEquals(recordOnB, json(forwarded).get("id").asString());
-        assertTrue(json(forwarded).get("_links").get("self").get("href").asString().startsWith(urlA));
+    void aircraftEventsKeepTheLocalCopySoAircraftManagementIsNotAskedAgain() throws Exception {
+        BUS.deliverFromOtherService(aircraftEvent("AircraftStatusChanged", "CS-TUA", "A320", "UNDER_MAINTENANCE", 7));
+        int before = AIRCRAFT_GETS.get();
+
+        assertEquals(200, send("GET", urlA + "/api/maintenance-records/aircraft/CS-TUA", null, tech).statusCode());
+        assertEquals(200, send("GET", urlB + "/api/maintenance-records/aircraft/CS-TUA", null, tech).statusCode());
+
+        assertEquals(before, AIRCRAFT_GETS.get());
+    }
+
+    @Test
+    @Order(4)
+    void everyReplicaAnswersEveryQueryFromItsOwnReadModel() throws Exception {
+        HttpResponse<String> fromA = send("GET", urlA + "/api/maintenance-records/" + recordOnB, null, tech);
+        assertEquals(200, fromA.statusCode());
+        assertEquals("it-maintenance-B", json(fromA).get("ownerInstance").asString());
+        assertTrue(json(fromA).get("_links").get("self").get("href").asString().startsWith(urlA));
+        assertTrue(fromA.headers().firstValue(AisafeHeaders.PARTIAL_RESPONSE).isEmpty());
         assertEquals(404, send("GET", urlA + "/api/maintenance-records/missing-id", null, tech).statusCode());
 
-        List<String> fromA = ids(json(send("GET", urlA + "/api/maintenance-records/ongoing", null, supervisor)).get("content"));
-        List<String> fromB = ids(json(send("GET", urlB + "/api/maintenance-records/ongoing", null, supervisor)).get("content"));
-        assertEquals(3, fromA.size());
-        assertEquals(fromA, fromB);
+        List<String> ongoingA = ids(json(send("GET", urlA + "/api/maintenance-records/ongoing", null, supervisor)).get("content"));
+        List<String> ongoingB = ids(json(send("GET", urlB + "/api/maintenance-records/ongoing", null, supervisor)).get("content"));
+        assertEquals(3, ongoingA.size());
+        assertEquals(ongoingA, ongoingB);
 
         JsonNode page = json(send("GET", urlB + "/api/maintenance-records/aircraft/CS-TUA?page=0&size=2", null, tech));
         assertEquals(3, page.get("totalElements").asInt());
@@ -166,12 +187,14 @@ class MaintenanceReplicaCollaborationTest {
     }
 
     @Test
-    @Order(4)
-    void commandsAreExecutedByTheOwnerReplica() throws Exception {
+    @Order(5)
+    void commandsAreExecutedByTheOwnerAndTheirEventsReachEveryReplica() throws Exception {
         HttpResponse<String> categorized = send("PATCH", urlA + "/api/maintenance-records/" + recordOnB + "/component",
                 "{\"component\":\"engine\"}", tech);
         assertEquals(200, categorized.statusCode(), categorized.body());
-        assertEquals("ENGINE", json(send("GET", urlB + "/api/maintenance-records/" + recordOnB, null, tech)).get("component").asString());
+        assertEquals("ENGINE", json(send("GET", urlA + "/api/maintenance-records/" + recordOnB, null, tech)).get("component").asString());
+        assertTrue(BUS.published().stream().anyMatch(e -> e.eventType().equals("MaintenanceRecordCategorized")
+                && e.sourceInstance().equals("it-maintenance-B")));
 
         HttpResponse<String> completed = send("PATCH", urlA + "/api/maintenance-records/" + recordOnB + "/complete",
                 "{\"notes\":\"Software updated\",\"cost\":1200.50,\"actualDurationMinutes\":90,\"aircraftFlightHours\":1500}", tech);
@@ -179,28 +202,26 @@ class MaintenanceReplicaCollaborationTest {
         assertEquals("COMPLETED", json(completed).get("status").asString());
         assertEquals("false", completed.headers().firstValue("X-Aircraft-Released").orElse(null));
         assertEquals("UNDER_MAINTENANCE", AIRCRAFT_STATUS.get("CS-TUA"));
+        assertEquals("COMPLETED", json(send("GET", urlA + "/api/maintenance-records/" + recordOnB, null, tech)).get("status").asString());
 
         assertEquals(409, send("PATCH", urlA + "/api/maintenance-records/" + recordOnB + "/complete",
                 "{\"notes\":\"again\",\"cost\":1,\"actualDurationMinutes\":1}", tech).statusCode());
         assertEquals(409, send("PATCH", urlA + "/api/maintenance-records/" + recordOnB + "/component",
                 "{\"component\":\"ENGINE\"}", tech).statusCode());
-
         assertEquals(400, send("PATCH", urlA + "/api/maintenance-records/" + recordOnA + "/complete",
                 "{\"notes\":\"x\",\"cost\":-1,\"actualDurationMinutes\":10}", tech).statusCode());
     }
 
     @Test
-    @Order(5)
+    @Order(6)
     void theAircraftIsReleasedWhenItsLastOngoingRecordIsCompleted() throws Exception {
         List<String> ongoing = ids(json(send("GET", urlA + "/api/maintenance-records/ongoing", null, supervisor)).get("content"));
         assertEquals(2, ongoing.size());
 
-        String first = ongoing.get(0);
-        String second = ongoing.get(1);
-        HttpResponse<String> r1 = send("PATCH", urlB + "/api/maintenance-records/" + first + "/complete",
+        HttpResponse<String> r1 = send("PATCH", urlB + "/api/maintenance-records/" + ongoing.get(0) + "/complete",
                 "{\"notes\":\"done\",\"cost\":5000,\"actualDurationMinutes\":600,\"aircraftFlightHours\":1500}", tech);
         assertEquals("false", r1.headers().firstValue("X-Aircraft-Released").orElse(null));
-        HttpResponse<String> r2 = send("PATCH", urlB + "/api/maintenance-records/" + second + "/complete",
+        HttpResponse<String> r2 = send("PATCH", urlB + "/api/maintenance-records/" + ongoing.get(1) + "/complete",
                 "{\"notes\":\"done\",\"cost\":800,\"actualDurationMinutes\":300,\"aircraftFlightHours\":1500}", tech);
         assertEquals(200, r2.statusCode(), r2.body());
         assertEquals("true", r2.headers().firstValue("X-Aircraft-Released").orElse(null));
@@ -208,8 +229,8 @@ class MaintenanceReplicaCollaborationTest {
     }
 
     @Test
-    @Order(6)
-    void statisticsAddThePartialResultsOfEveryReplica() throws Exception {
+    @Order(7)
+    void statisticsAreComputedOnAnyReplicaFromItsReadModel() throws Exception {
         JsonNode hours = json(send("GET", urlB + "/api/maintenance-records/statistics/hours", null, atcc));
         assertEquals(90 + 600 + 300, hours.get("totalMinutes").asLong());
         assertEquals(16.5, hours.get("totalHours").asDouble());
@@ -225,8 +246,12 @@ class MaintenanceReplicaCollaborationTest {
     }
 
     @Test
-    @Order(7)
-    void alertsUseTheFleetFlightHoursTemplatesAndCompletionsOfAllReplicas() throws Exception {
+    @Order(8)
+    void alertsUseTheLocalCopiesOfTheFleetAndOfTheScheduledFlights() throws Exception {
+        BUS.deliverFromOtherService(IntegrationEvent.create("ScheduledFlightCreated", Instant.now(), "flightroutes",
+                "flightroutes-1", "f-1", Map.of("flightId", "f-1", "aircraftRegistration", "CS-TUE",
+                        "estimatedFlightTime", 30000, "status", "SCHEDULED", "version", 0)));
+
         JsonNode alerts = json(send("GET", urlA + "/api/maintenance-alerts", null, atcc));
         List<String> keys = new ArrayList<>();
         alerts.forEach(a -> keys.add(a.get("aircraftRegistration").asString() + "|" + a.get("templateName").asString()
@@ -234,53 +259,81 @@ class MaintenanceReplicaCollaborationTest {
 
         assertTrue(keys.contains("CS-TUA|C-Check Heavy Maintenance|CALENDAR_DAYS"), keys.toString());
         assertFalse(keys.stream().anyMatch(k -> k.startsWith("CS-TUA|A-Check")), keys.toString());
-        assertFalse(keys.stream().anyMatch(k -> k.startsWith("CS-TUA|Avionics")), keys.toString());
-
         assertTrue(keys.contains("CS-TUE|A-Check Inspection|CALENDAR_DAYS"), keys.toString());
+        assertTrue(keys.contains("CS-TUE|A-Check Inspection|FLIGHT_HOURS"), keys.toString());
         assertFalse(keys.contains("CS-TUE|C-Check Heavy Maintenance|CALENDAR_DAYS"), keys.toString());
-
         assertFalse(keys.stream().anyMatch(k -> k.startsWith("CS-TUG")), keys.toString());
     }
 
     @Test
-    @Order(8)
+    @Order(9)
     void securityRulesAndPeerAuthentication() throws Exception {
-        String uri = "/api/maintenance-records/search";
-        assertEquals(401, send("GET", urlB + uri, null, tech, Map.of(AisafeHeaders.PEER_HOPS, "1")).statusCode());
-        assertEquals(401, send("GET", urlB + uri, null, tech,
+        String uri = "/api/maintenance-records/ongoing";
+        assertEquals(401, send("GET", urlB + uri, null, supervisor, Map.of(AisafeHeaders.PEER_HOPS, "1")).statusCode());
+        assertEquals(401, send("GET", urlB + uri, null, supervisor,
                 Map.of(AisafeHeaders.PEER_HOPS, "1", AisafeHeaders.SERVICE_KEY, "wrong")).statusCode());
-        assertEquals(400, send("GET", urlB + uri, null, tech,
+        assertEquals(400, send("GET", urlB + uri, null, supervisor,
                 Map.of(AisafeHeaders.PEER_HOPS, "2", AisafeHeaders.SERVICE_KEY, SERVICE_KEY)).statusCode());
-        HttpResponse<String> local = send("GET", urlB + uri, null, tech,
-                Map.of(AisafeHeaders.PEER_HOPS, "1", AisafeHeaders.SERVICE_KEY, SERVICE_KEY));
-        assertEquals(200, local.statusCode());
-        assertEquals(List.of(recordOnB), ids(json(local)));
+        assertEquals(200, send("GET", urlB + uri, null, supervisor,
+                Map.of(AisafeHeaders.PEER_HOPS, "1", AisafeHeaders.SERVICE_KEY, SERVICE_KEY)).statusCode());
 
         HttpResponse<String> noToken = HTTP.send(HttpRequest.newBuilder(URI.create(urlA + uri)).GET().build(),
                 HttpResponse.BodyHandlers.ofString());
         assertEquals(401, noToken.statusCode());
         assertEquals(403, send("POST", urlA + "/api/maintenance-records", record("CS-TUA", A_CHECK_ID, null), atcc).statusCode());
         assertEquals(403, send("GET", urlA + "/api/maintenance-alerts", null, tech).statusCode());
-        assertEquals(403, send("GET", urlA + "/api/maintenance-records/ongoing", null, tech).statusCode());
+        assertEquals(403, send("GET", urlA + uri, null, tech).statusCode());
     }
 
     @Test
-    @Order(9)
-    void whenAReplicaFailsTheOthersKeepServingSafely() throws Exception {
+    @Order(10)
+    void aNewReplicaCatchesUpWhenTheOthersRepublishTheirState() throws Exception {
+        int portC = freePort();
+        String urlC = "http://localhost:" + portC;
+        ConfigurableApplicationContext replicaC = startReplica("C", portC, urlA + "," + urlB);
+        try {
+            assertEquals(0, json(send("GET", urlC + "/api/maintenance-records/aircraft/CS-TUA", null, tech)).get("totalElements").asInt());
+
+            replicaA.getBean(MaintenanceStateRepublisher.class).republishOwnedState("sync requested by it-maintenance-C");
+            replicaB.getBean(MaintenanceStateRepublisher.class).republishOwnedState("sync requested by it-maintenance-C");
+
+            assertEquals(3, json(send("GET", urlC + "/api/maintenance-records/aircraft/CS-TUA", null, tech)).get("totalElements").asInt());
+            assertEquals(json(send("GET", urlA + "/api/maintenance-records/reports/turnaround", null, supervisor)),
+                    json(send("GET", urlC + "/api/maintenance-records/reports/turnaround", null, supervisor)));
+        } finally {
+            replicaC.close();
+        }
+    }
+
+    @Test
+    @Order(11)
+    void whenTheOwnerIsDownItsDataIsStillReadableButItsRecordsCannotBeChanged() throws Exception {
         replicaB.close();
 
-        HttpResponse<String> search = send("GET", urlA + "/api/maintenance-records/aircraft/CS-TUA", null, tech);
-        assertEquals(200, search.statusCode());
-        assertEquals("true", search.headers().firstValue(AisafeHeaders.PARTIAL_RESPONSE).orElse(null));
-        assertEquals(404, send("GET", urlA + "/api/maintenance-records/" + recordOnB, null, tech).statusCode());
-        assertEquals(200, send("GET", urlA + "/api/maintenance-records/" + recordOnA, null, tech).statusCode());
+        HttpResponse<String> read = send("GET", urlA + "/api/maintenance-records/" + recordOnB, null, tech);
+        assertEquals(200, read.statusCode());
+        assertTrue(read.headers().firstValue(AisafeHeaders.PARTIAL_RESPONSE).isEmpty());
+        assertEquals(3, json(send("GET", urlA + "/api/maintenance-records/aircraft/CS-TUA", null, tech)).get("totalElements").asInt());
+
+        assertEquals(503, send("PATCH", urlA + "/api/maintenance-records/" + recordOnB + "/component",
+                "{\"component\":\"ENGINE\"}", tech).statusCode());
 
         String id = json(send("POST", urlA + "/api/maintenance-records", record("CS-TUE", A_CHECK_ID, null), tech)).get("id").asString();
         HttpResponse<String> completed = send("PATCH", urlA + "/api/maintenance-records/" + id + "/complete",
                 "{\"notes\":\"done\",\"cost\":100,\"actualDurationMinutes\":60}", tech);
         assertEquals(200, completed.statusCode(), completed.body());
-        assertEquals("false", completed.headers().firstValue("X-Aircraft-Released").orElse(null));
-        assertEquals("UNDER_MAINTENANCE", AIRCRAFT_STATUS.get("CS-TUE"));
+        assertEquals("true", completed.headers().firstValue("X-Aircraft-Released").orElse(null));
+        assertEquals("AVAILABLE", AIRCRAFT_STATUS.get("CS-TUE"));
+    }
+
+    private static IntegrationEvent<Map<String, Object>> aircraftEvent(String type, String reg, String model,
+                                                                       String status, long version) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("registrationNumber", reg);
+        payload.put("modelName", model);
+        payload.put("status", status);
+        payload.put("version", version);
+        return IntegrationEvent.create(type, Instant.now(), "aircraftmanagement", "aircraftmanagement-1", reg, payload);
     }
 
     private static String record(String registration, String templateId, String component) {
@@ -289,11 +342,11 @@ class MaintenanceReplicaCollaborationTest {
                 + (component == null ? "" : ",\"component\":\"" + component + "\"") + "}";
     }
 
-    private static ConfigurableApplicationContext startReplica(String name, int port, String peerUrl, String am) {
-        return new SpringApplicationBuilder(MaintenanceApplication.class).run(
+    private static ConfigurableApplicationContext startReplica(String name, int port, String peerUrl) {
+        return BUS.start(name,
                 "--server.port=" + port,
                 "--aisafe.instance-id=it-maintenance-" + name,
-                "--spring.datasource.url=jdbc:h2:mem:it-maintenance-" + name + ";DB_CLOSE_DELAY=-1",
+                "--spring.datasource.url=jdbc:h2:mem:it-maintenance-" + name + "-" + UUID.randomUUID() + ";DB_CLOSE_DELAY=-1",
                 "--aisafe.peers.urls=" + peerUrl,
                 "--services.aircraft.urls=" + am,
                 "--aisafe.security.service-key=" + SERVICE_KEY,
@@ -316,6 +369,9 @@ class MaintenanceReplicaCollaborationTest {
         server.createContext("/", exchange -> {
             String path = exchange.getRequestURI().getPath();
             String method = exchange.getRequestMethod();
+            if ("GET".equals(method) && path.startsWith("/api/aircrafts")) {
+                AIRCRAFT_GETS.incrementAndGet();
+            }
             if (path.equals("/api/aircrafts/operational-hours")) {
                 List<String> rows = new ArrayList<>();
                 aircraft.forEach((reg, a) -> rows.add("{\"registrationNumber\":\"" + reg + "\",\"modelName\":\"" + a[0]

@@ -1,12 +1,13 @@
-package isep.psoft.aisafe.maintenance.services;
+package isep.psoft.aisafe.maintenance.command;
 
-import isep.psoft.aisafe.maintenance.clients.AircraftClient;
 import isep.psoft.aisafe.maintenance.clients.AircraftSnapshot;
 import isep.psoft.aisafe.maintenance.domain.MaintenanceComponent;
 import isep.psoft.aisafe.maintenance.domain.MaintenanceRecord;
 import isep.psoft.aisafe.maintenance.dto.CreateMaintenanceRecordDTO;
-import isep.psoft.aisafe.maintenance.dto.MaintenanceTemplateDTO;
 import isep.psoft.aisafe.maintenance.factories.MaintenanceRecordFactory;
+import isep.psoft.aisafe.maintenance.query.ReadModelFixtures;
+import isep.psoft.aisafe.maintenance.query.ReplicatedMaintenanceTemplateRepository;
+import isep.psoft.aisafe.maintenance.query.external.FleetDirectory;
 import isep.psoft.aisafe.maintenance.repositories.MaintenanceRecordRepository;
 import isep.sidis.common.remote.RemoteServiceUnavailableException;
 import jakarta.persistence.EntityNotFoundException;
@@ -21,17 +22,22 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.*;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.inOrder;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 class CreateMaintenanceRecordServiceTest {
 
-    @Mock AircraftClient aircraftClient;
-    @Mock MaintenanceReplicaQueries replicas;
+    @Mock FleetDirectory fleet;
+    @Mock ReplicatedMaintenanceTemplateRepository templates;
     @Mock MaintenanceRecordRepository repository;
     @Mock AircraftAvailabilityService availability;
+    @Mock MaintenanceEventEmitter events;
 
     private CreateMaintenanceRecordService service;
 
@@ -39,18 +45,8 @@ class CreateMaintenanceRecordServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new CreateMaintenanceRecordService(aircraftClient, replicas, new MaintenanceRecordFactory(),
-                repository, availability);
-    }
-
-    static MaintenanceTemplateDTO template(String... models) {
-        MaintenanceTemplateDTO t = new MaintenanceTemplateDTO();
-        t.setId("tpl-1");
-        t.setName("A-Check");
-        t.setType("INSPECTION");
-        t.setApplicableModels(List.of(models));
-        t.setChecklist(List.of("Inspect tyres", "Check oil"));
-        return t;
+        service = new CreateMaintenanceRecordService(fleet, templates, new MaintenanceRecordFactory(), repository,
+                availability, events);
     }
 
     static CreateMaintenanceRecordDTO request(String component) {
@@ -58,9 +54,9 @@ class CreateMaintenanceRecordServiceTest {
     }
 
     @Test
-    void createsTheRecordThenPutsTheAircraftUnderMaintenance() {
-        when(aircraftClient.getAircraft("CS-TUA")).thenReturn(A320);
-        when(replicas.findTemplate("tpl-1")).thenReturn(Optional.of(template("A320")));
+    void savesTheRecordPutsTheAircraftUnderMaintenanceAndThenEmitsTheEvent() {
+        when(fleet.aircraft("CS-TUA")).thenReturn(A320);
+        when(templates.findById("tpl-1")).thenReturn(Optional.of(ReadModelFixtures.template("tpl-1", "A-Check", 500, 120, "A320")));
         when(repository.saveAndFlush(any(MaintenanceRecord.class))).thenAnswer(i -> i.getArgument(0));
 
         MaintenanceRecord created = service.create(request("engine"));
@@ -69,48 +65,41 @@ class CreateMaintenanceRecordServiceTest {
         assertEquals("A320", created.getAircraftModel());
         assertEquals(List.of("Inspect tyres", "Check oil"), created.getChecklist());
         assertEquals(MaintenanceComponent.ENGINE, created.getComponent());
-        InOrder order = inOrder(aircraftClient, repository, availability);
-        order.verify(aircraftClient).getAircraft("CS-TUA");
+        InOrder order = inOrder(fleet, repository, availability, events);
+        order.verify(fleet).aircraft("CS-TUA");
         order.verify(repository).saveAndFlush(any(MaintenanceRecord.class));
         order.verify(availability).markUnderMaintenance(A320);
+        order.verify(events).recordCreated(created);
     }
 
     @Test
-    void unknownAircraftCreatesNothing() {
-        when(aircraftClient.getAircraft("CS-TUA")).thenThrow(new EntityNotFoundException("Aircraft not found: CS-TUA"));
+    void unknownAircraftCreatesNothingAndEmitsNothing() {
+        when(fleet.aircraft("CS-TUA")).thenThrow(new EntityNotFoundException("Aircraft not found: CS-TUA"));
 
         assertThrows(EntityNotFoundException.class, () -> service.create(request(null)));
-        verifyNoInteractions(repository, availability);
+        verifyNoInteractions(repository, availability, events);
     }
 
     @Test
     void unknownTemplateOrTemplateNotApplicableToTheModelIsRejected() {
-        when(aircraftClient.getAircraft("CS-TUA")).thenReturn(A320);
-        when(replicas.findTemplate("tpl-1")).thenReturn(Optional.empty());
+        when(fleet.aircraft("CS-TUA")).thenReturn(A320);
+        when(templates.findById("tpl-1")).thenReturn(Optional.empty());
         assertThrows(EntityNotFoundException.class, () -> service.create(request(null)));
 
-        when(replicas.findTemplate("tpl-1")).thenReturn(Optional.of(template("E190")));
+        when(templates.findById("tpl-1")).thenReturn(Optional.of(ReadModelFixtures.template("tpl-1", "E-Check", 500, 120, "E190")));
         assertThrows(IllegalArgumentException.class, () -> service.create(request(null)));
-        verifyNoInteractions(repository, availability);
+        verifyNoInteractions(repository, availability, events);
     }
 
     @Test
-    void invalidComponentIsRejectedBeforeSaving() {
-        when(aircraftClient.getAircraft("CS-TUA")).thenReturn(A320);
-        when(replicas.findTemplate("tpl-1")).thenReturn(Optional.of(template("A320")));
-
-        assertThrows(IllegalArgumentException.class, () -> service.create(request("wings")));
-        verifyNoInteractions(repository, availability);
-    }
-
-    @Test
-    void whenAircraftManagementIsDownTheExceptionPropagatesSoTheTransactionRollsBack() {
-        when(aircraftClient.getAircraft("CS-TUA")).thenReturn(A320);
-        when(replicas.findTemplate("tpl-1")).thenReturn(Optional.of(template("A320")));
+    void whenAircraftManagementRefusesNoEventIsEmittedAndTheExceptionRollsBack() {
+        when(fleet.aircraft("CS-TUA")).thenReturn(A320);
+        when(templates.findById("tpl-1")).thenReturn(Optional.of(ReadModelFixtures.template("tpl-1", "A-Check", 500, 120, "A320")));
         when(repository.saveAndFlush(any(MaintenanceRecord.class))).thenAnswer(i -> i.getArgument(0));
         doThrow(new RemoteServiceUnavailableException("Aircraft Management", null))
                 .when(availability).markUnderMaintenance(A320);
 
         assertThrows(RemoteServiceUnavailableException.class, () -> service.create(request(null)));
+        verifyNoInteractions(events);
     }
 }
