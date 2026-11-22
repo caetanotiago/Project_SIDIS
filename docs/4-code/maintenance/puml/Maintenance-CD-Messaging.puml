@@ -1,0 +1,126 @@
+@startuml Maintenance-CD-Messaging
+!pragma layout smetana
+skinparam classAttributeIconSize 0
+skinparam packageStyle rectangle
+hide empty members
+title Events, projections and read models (CQRS + AMQP)
+
+package "events (published language of Maintenance)" {
+    class MaintenanceEvents <<Contract>> {
+        TEMPLATE_CREATED, RECORD_CREATED,
+        RECORD_CATEGORIZED, RECORD_COMPLETED,
+        SYNC_REQUESTED + routing keys
+    }
+    class MaintenanceTemplateEventPayload <<Payload>> {
+        templateId, name, type, applicableModels,
+        checklist, intervals, version
+        + of(template)
+    }
+    class MaintenanceRecordEventPayload <<Payload>> {
+        recordId, aircraft, model, template,
+        details, checklist, component, status,
+        completion, version
+        + of(record)
+    }
+}
+
+package "events.external (ACL of other services)" {
+    class AircraftPayload <<Payload>>
+    class AircraftModelPayload <<Payload>>
+    class ScheduledFlightPayload <<Payload>>
+}
+
+package "command" {
+    class MaintenanceEventEmitter <<Component>> {
+        - emit(type, key, id, payload)
+    }
+    class OutgoingIntegrationEvent <<Spring event>> {
+        routingKey, event
+    }
+    class IntegrationEventRelay <<Component>> {
+        + afterCommit(outgoing)
+    }
+    interface IntegrationEventTransport {
+        + send(outgoing)
+    }
+    class ReadModelSynchronizer <<Component>> {
+        + onStartup()
+        + onSyncRequested(requestedBy)
+    }
+    class MaintenanceStateRepublisher <<Service>> {
+        + republishOwnedState(reason)
+    }
+}
+
+package "query" {
+    class MaintenanceEventRouter <<Component>> {
+        + apply(event) : boolean
+    }
+    class MaintenanceEventsListener <<RabbitListener>>
+    class MaintenanceTemplateProjection <<Projection>>
+    class MaintenanceRecordProjection <<Projection>>
+    class ReplicatedMaintenanceTemplate <<Read Model>>
+    class ReplicatedMaintenanceRecord <<Read Model>> {
+        + isNewerThan(version)
+        + apply(payload, owner, eventId, at)
+    }
+}
+
+package "query.external" {
+    class AircraftManagementEventsListener <<RabbitListener>>
+    class FlightRoutesEventsListener <<RabbitListener>>
+    class ExternalEventsProjection <<Projection>>
+    class KnownAircraft <<Read Model>>
+    class KnownAircraftModel <<Read Model>>
+    class KnownScheduledFlight <<Read Model>>
+    class FleetDirectory <<Component>>
+}
+
+package "infrastructure.messaging" {
+    class MaintenanceMessagingConfiguration <<Configuration>> {
+        + maintenanceEventsSubscription()
+        + aircraftManagementEventsSubscription()
+        + flightRoutesEventsSubscription()
+    }
+    class RabbitIntegrationEventTransport
+    class JpaProcessedEventStore
+}
+
+package "common" #EEEEEE {
+    class EventPublisher
+    class IdempotentEventHandler
+    interface ProcessedEventStore
+    class "IntegrationEvent<T>" as IntegrationEvent
+}
+
+MaintenanceEventEmitter ..> IntegrationEvent : create
+MaintenanceEventEmitter --> MaintenanceEventRouter : apply locally\n(same transaction)
+MaintenanceEventEmitter ..> OutgoingIntegrationEvent : publishEvent
+IntegrationEventRelay ..> OutgoingIntegrationEvent : AFTER_COMMIT
+IntegrationEventRelay --> IntegrationEventTransport
+IntegrationEventTransport <|.. RabbitIntegrationEventTransport
+RabbitIntegrationEventTransport --> EventPublisher
+ReadModelSynchronizer --> MaintenanceStateRepublisher
+ReadModelSynchronizer --> EventPublisher : MaintenanceSyncRequested
+MaintenanceStateRepublisher --> MaintenanceEventEmitter
+MaintenanceEventsListener --> MaintenanceEventRouter
+MaintenanceEventsListener --> ReadModelSynchronizer : sync request
+MaintenanceEventRouter --> MaintenanceTemplateProjection
+MaintenanceEventRouter --> MaintenanceRecordProjection
+MaintenanceTemplateProjection --> ReplicatedMaintenanceTemplate : upsert
+MaintenanceRecordProjection --> ReplicatedMaintenanceRecord : upsert
+MaintenanceRecordProjection --> IdempotentEventHandler
+IdempotentEventHandler --> ProcessedEventStore
+ProcessedEventStore <|.. JpaProcessedEventStore
+AircraftManagementEventsListener --> ExternalEventsProjection
+FlightRoutesEventsListener --> ExternalEventsProjection
+ExternalEventsProjection --> KnownAircraft
+ExternalEventsProjection --> KnownAircraftModel
+ExternalEventsProjection --> KnownScheduledFlight
+ExternalEventsProjection ..> AircraftPayload
+ExternalEventsProjection ..> ScheduledFlightPayload
+FleetDirectory --> KnownAircraft
+FleetDirectory --> KnownScheduledFlight
+MaintenanceRecordProjection ..> MaintenanceRecordEventPayload
+MaintenanceTemplateProjection ..> MaintenanceTemplateEventPayload
+@enduml

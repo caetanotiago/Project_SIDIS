@@ -12,14 +12,14 @@ Person(maint, "Maintenance Technician / Supervisor")
 
 System_Boundary(aisafe, "AISafe Flight Management System") {
     Container(am, "Aircraft Management Service", "Java 21, Spring Boot — 3 replicas :8081/:8181/:8281", "Aircraft models and aircraft, operational status (WP#1).")
-    Container(mt, "Maintenance Service", "Java 21, Spring Boot — 3 replicas :8082/:8182/:8282", "Maintenance templates, records, reports and alerts (WP#4).")
+    Container(mt, "Maintenance Service", "Java 21, Spring Boot, Spring AMQP — 3 replicas :8082/:8182/:8282", "Maintenance templates, records, reports and alerts (WP#4). CQRS: commands on the owner's write model, queries on local read models built from events.")
     Container(ap, "Airports Service", "Java 21, Spring Boot — 3 replicas :8083/:8183/:8283", "Airports, runways and certification data (WP#2).")
     Container(fr, "Flight Routes Service", "Java 21, Spring Boot, Spring AMQP — 3 replicas :8084/:8184/:8284", "Flight routes, history, scheduled flights, network queries (WP#3). CQRS: commands on the owner's write model, queries on local read models built from events.")
 
     ContainerQueue(mq, "Message broker", "RabbitMQ 3 (Docker) — AMQP :5672", "Topic exchange per producer (aisafe.<service>.events), one durable queue per consuming replica (<instanceId>.<source>), dead-letter queues.")
 
     ContainerDb(amdb, "aircraftManagementdb-1..3", "H2 file", "One database per replica: write model + read models")
-    ContainerDb(mtdb, "maintenancedb-1..3", "H2 in-memory", "One database per replica")
+    ContainerDb(mtdb, "maintenancedb-1..3", "H2 file (code/data/)", "One database per replica: write model + read models (all replicas) + KNOWN_* copies")
     ContainerDb(apdb, "airportsdb-1..3", "H2 in-memory", "One database per replica")
     ContainerDb(frdb, "flightRoutesdb-1..3", "H2 file (code/data/)", "One database per replica: write model (owned rows) + read models (all replicas) + processed event ids")
 }
@@ -39,17 +39,18 @@ Rel(maint, am, "Reads aircraft and models; status (US105)", "REST, JSON/HTTPS + 
 Rel(fr, ap, "B2: GET /api/airports/{iata} (until Airports publishes events)", "JSON/HTTPS")
 Rel(fr, am, "B1: GET aircraft / model (events available; consumer off by default)", "JSON/HTTPS")
 Rel(ap, fr, "B5: routes per airport (answered from read model)", "JSON/HTTPS, service-only")
-Rel(mt, am, "B3: aircraft, models, fleet + hours; PATCH status (command)", "JSON/HTTPS")
+Rel(mt, am, "B3b: PATCH status (command); B3a/c/d only as fallback", "JSON/HTTPS")
 Rel(fr, fr, "Commands forwarded to the replica that owns the entity", "JSON/HTTPS, X-Peer-Hops + X-Service-Key")
 
 ' Events (Assignment 2)
 Rel(fr, mq, "Publishes RouteCreated, RouteUpdated, ScheduledFlightCreated (after commit)", "AMQP", $tags="amqp")
 Rel(mq, fr, "Delivers every Flight Routes event to every replica's queue → read models", "AMQP", $tags="amqp")
 Rel(am, mq, "AircraftRegistered, AircraftStatusChanged, AircraftModelCreated/Updated; consumes route.*, scheduled-flight.* (replaces B4b, B6)", "AMQP", $tags="amqp")
+Rel(mt, mq, "Maintenance*Created/Categorized/Completed; consumes aircraft.*, aircraft-model.*, scheduled-flight.*", "AMQP", $tags="amqp")
 Rel(ap, mq, "AirportCreated, AirportUpdated, AirportStatusChanged (to implement)", "AMQP", $tags="planned")
 
 Rel(am, amdb, "Reads/writes", "JPA/JDBC")
-Rel(mt, mtdb, "Reads/writes", "JPA/JDBC")
+Rel(mt, mtdb, "Writes owned rows; projects events; reads read models", "JPA/JDBC")
 Rel(ap, apdb, "Reads/writes", "JPA/JDBC")
 Rel(fr, frdb, "Writes owned rows; projects events; reads read models", "JPA/JDBC")
 

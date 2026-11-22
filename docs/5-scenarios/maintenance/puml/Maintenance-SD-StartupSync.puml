@@ -1,0 +1,30 @@
+@startuml Maintenance-SD-StartupSync
+autonumber
+title Startup synchronisation of the read models (new, late or erased replica)
+participant "maintenance-3\n(starting, empty database)" as M3
+participant ": ReadModelSynchronizer\n(replica 3)" as Sync3
+queue "aisafe.maintenance.events" as EX
+participant "maintenance-1\n: ReadModelSynchronizer" as Sync1
+participant "maintenance-1\n: MaintenanceStateRepublisher" as Rep1
+participant "maintenance-2\n: MaintenanceStateRepublisher" as Rep2
+
+M3 -> M3 : listeners start: queue maintenance-3.maintenance declared
+M3 -> M3 : ReferenceTemplatesBootstrap, DemoDataBootstrap (own rows, own events)
+M3 -> Sync3 : ApplicationReadyEvent
+activate Sync3
+Sync3 -> EX : republish the templates and records replica 3 OWNS (current version)
+Sync3 -> EX : MaintenanceSyncRequested {requestedBy: maintenance-3}\n(key maintenance-sync.requested)
+deactivate Sync3
+EX -> Sync1 : sync request (replica 2 receives it too)
+activate Sync1
+Sync1 -> Rep1 : republishOwnedState("sync requested by maintenance-3")
+Rep1 -> EX : MaintenanceTemplateCreated / MaintenanceRecordCreated|Completed\nfor every row replica 1 owns
+deactivate Sync1
+EX -> Rep2 : (same on replica 2)
+Rep2 -> EX : events of every row replica 2 owns
+EX -> M3 : all of them → projections → read models complete
+note over M3, Rep2
+  Replicas that already have a row apply an identical upsert (same version); older versions are ignored.
+  The request uses another "aggregate" (maintenance-sync), so it does not match maintenance-record.*.
+end note
+@enduml

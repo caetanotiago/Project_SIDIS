@@ -11,7 +11,7 @@ The monolith was decomposed by **bounded context** (domain-driven segregation). 
 | Container | Technology | Replicas (port) | Data (one database per replica) | Responsibility (bounded context) | Details |
 |---|---|---|---|---|---|
 | **Aircraft Management Service** | Java 21, Spring Boot 4 | 8081 / 8181 / 8281 | H2 file `code/data/aircraftManagementdb-N` (write model + read models) | *Fleet*: aircraft models, aircraft, operational status (WP#1) | [L3](../3-components/aircraftmanagement/AircraftManagement-Components.md) |
-| **Maintenance Service** | Java 21, Spring Boot 4 | 8082 / 8182 / 8282 | H2 `maintenancedb-N` (in memory) | *Maintenance*: templates, records, reports and due-maintenance alerts (WP#4) | [L3](../3-components/maintenance/Maintenance-Components.md) |
+| **Maintenance Service** | Java 21, Spring Boot 4, Spring AMQP | 8082 / 8182 / 8282 | H2 **file** `code/data/maintenancedb-N`: write model + CQRS read models | *Maintenance*: templates, records, reports and due-maintenance alerts (WP#4) | [L3](../3-components/maintenance/Maintenance-Components.md) |
 | **Airports Service** | Java 21, Spring Boot 4 | 8083 / 8183 / 8283 | H2 `airportsdb-N` (file, one per instance) | *Airport infrastructure*: airports, runways, certification (WP#2) | [L3](../3-components/airports/Airports-Components.md) |
 | **Flight Routes Service** | Java 21, Spring Boot 4, Spring AMQP | 8084 / 8184 / 8284 | H2 **file** `code/data/flightRoutesdb-N`: write model + CQRS read models | *Flight operations*: routes, history, scheduled flights, network queries (WP#3) | [L3](../3-components/flightroutes/FlightRoutes-Components.md) |
 | **Message broker** | RabbitMQ 3 (Docker, `infra/docker-compose.rabbitmq.yml`) | 1 (AMQP 5672, UI 15672) | durable queues in the volume `aisafe_rabbitmq-data` | Topic exchange per producing service, one durable queue per consuming replica, dead-letter queues ([Integration-Contracts §9.2](Integration-Contracts.md#92-exchanges-routing-keys-and-queues)) | — |
@@ -45,21 +45,22 @@ The `ADMIN` role exists in the token, but no endpoint requires it.
 | Aircraft Management | Flight Routes | ~~B4b~~ **replaced by events** (`ScheduledFlightCreated` → `KNOWN_SCHEDULED_FLIGHT`) | Flight minutes per aircraft for US204 and US206. The HTTP endpoint is still provided by Flight Routes, no longer called |
 | Aircraft Management | Flight Routes | ~~B6~~ **replaced by events** (`RouteCreated`/`RouteUpdated` → `KNOWN_ROUTE`) | Active routes compatible with an aircraft (US203). The HTTP endpoint is still provided by Flight Routes, no longer called |
 | Airports | Flight Routes | B5 — **replaced by events** (`route.*` → `KNOWN_ROUTE`) | Route counts per airport (US210); the endpoint stays, unused |
-| Maintenance | Aircraft Management | B3a: `GET /api/aircrafts/{reg}` | Aircraft exists, its model and status (US115, US116) |
+| Maintenance | Aircraft Management | B3a: `GET /api/aircrafts/{reg}` — **replaced by events** (`AircraftRegistered`/`AircraftStatusChanged` → `KNOWN_AIRCRAFT`); HTTP only for an aircraft not received yet | Aircraft exists, its model and status (US115, US116) |
 | Maintenance | Aircraft Management | B3b: `PATCH /api/aircrafts/{reg}/status` | `UNDER_MAINTENANCE` when a record starts (US115), `AVAILABLE` when the last ongoing record is completed (US119); kept synchronous (a command) |
-| Maintenance | Aircraft Management | B3c: `GET /api/aircraft-models/{model}` | Applicable models of a template exist (US115 templates) |
-| Maintenance | Aircraft Management | B3d: `GET /api/aircrafts?page=&size=100`, `GET /api/aircrafts/operational-hours?page=&size=100` | Fleet and flight hours for due-maintenance alerts (US222) |
-| Replica | other replicas of the **same** service | Flight Routes and Airports: only **commands** for an entity they do not own (`PATCH /api/routes/{id}`, `POST`/`PATCH /api/airports/{iata}/...`). Other services: also GET forwarding/aggregation (section 3.2) | One owner per entity |
+| Maintenance | Aircraft Management | B3c: `GET /api/aircraft-models/{model}` — **replaced by events** (`AircraftModel*` → `KNOWN_AIRCRAFT_MODEL`); HTTP fallback | Applicable models of a template exist (US115 templates) |
+| Maintenance | Aircraft Management | B3d: `GET /api/aircrafts?page=&size=100`, `GET /api/aircrafts/operational-hours?page=&size=100` — **replaced by events** (fleet from `KNOWN_AIRCRAFT`, hours from Flight Routes' `ScheduledFlightCreated` → `KNOWN_SCHEDULED_FLIGHT`); HTTP only to seed the fleet once and while no flight event was received | Fleet and flight hours for due-maintenance alerts (US222) |
+| Replica | other replicas of the **same** service | Only **commands** for an entity they do not own (`PATCH /api/routes/{id}`, `POST`/`PATCH /api/airports/{iata}/...`, `PATCH /api/aircrafts/{reg}/status`, `PATCH /api/maintenance-records/{id}/...`). No GET goes to another replica (section 3.2) | One owner per entity |
 
 **Events (AMQP):**
 
 | Publisher → exchange | Events | Consumers |
 |---|---|---|
-| Flight Routes → `aisafe.flightroutes.events` | `RouteCreated`, `RouteUpdated`, `ScheduledFlightCreated` | every Flight Routes replica (queue `<instanceId>.flightroutes`): read models `REPLICATED_ROUTE`, `REPLICATED_SCHEDULED_FLIGHT`. Airports (queue `<instanceId>.flightroutes`, `route.*` → `KNOWN_ROUTE`, replaces B5). Every Aircraft Management replica (queue `<instanceId>.flightroutes`, `route.*` + `scheduled-flight.*` → `KNOWN_ROUTE`, `KNOWN_SCHEDULED_FLIGHT`, replace B4b and B6) |
-| Aircraft Management → `aisafe.aircraftmanagement.events` | `AircraftRegistered`, `AircraftStatusChanged`, `AircraftModelCreated`, `AircraftModelUpdated` (+ internal `AircraftSyncRequested`) | every Aircraft Management replica (queue `<instanceId>.aircraftmanagement`): `REPLICATED_AIRCRAFT`, `REPLICATED_AIRCRAFT_MODEL`, `AIRCRAFT_MOOD`; Flight Routes (`KNOWN_AIRCRAFT*`, switch on with `AISAFE_EXTERNAL_EVENTS=true`); Maintenance (possible) |
+| Flight Routes → `aisafe.flightroutes.events` | `RouteCreated`, `RouteUpdated`, `ScheduledFlightCreated` | every Flight Routes replica (queue `<instanceId>.flightroutes`): read models `REPLICATED_ROUTE`, `REPLICATED_SCHEDULED_FLIGHT`. Airports (queue `<instanceId>.flightroutes`, `route.*` → `KNOWN_ROUTE`, replaces B5). Every Aircraft Management replica (queue `<instanceId>.flightroutes`, `route.*` + `scheduled-flight.*` → `KNOWN_ROUTE`, `KNOWN_SCHEDULED_FLIGHT`, replace B4b and B6). Every Maintenance replica (queue `<instanceId>.flightroutes`, `scheduled-flight.*` → `KNOWN_SCHEDULED_FLIGHT`, flight hours of US222) |
+| Aircraft Management → `aisafe.aircraftmanagement.events` | `AircraftRegistered`, `AircraftStatusChanged`, `AircraftModelCreated`, `AircraftModelUpdated` (+ internal `AircraftSyncRequested`) | every Aircraft Management replica (queue `<instanceId>.aircraftmanagement`): `REPLICATED_AIRCRAFT`, `REPLICATED_AIRCRAFT_MODEL`, `AIRCRAFT_MOOD`; Flight Routes (`KNOWN_AIRCRAFT*`, switch on with `AISAFE_EXTERNAL_EVENTS=true`); every Maintenance replica (queue `<instanceId>.aircraftmanagement`: `KNOWN_AIRCRAFT`, `KNOWN_AIRCRAFT_MODEL`, replace B3a, B3c and the fleet of B3d) |
 | Airports → `aisafe.airports.events` | `AirportCreated`, `AirportUpdated`, `AirportStatusChanged` (+ internal `AirportSyncRequested`) | every Airports replica (queue `<instanceId>.airports`): read model `REPLICATED_AIRPORT`; Flight Routes (`KNOWN_AIRPORT`, switch on with `AISAFE_EXTERNAL_EVENTS=true`) |
+| Maintenance → `aisafe.maintenance.events` | `MaintenanceTemplateCreated`, `MaintenanceRecordCreated`, `MaintenanceRecordCategorized`, `MaintenanceRecordCompleted` (+ internal `MaintenanceSyncRequested`) | every Maintenance replica (queue `<instanceId>.maintenance`): read models `REPLICATED_MAINTENANCE_TEMPLATE`, `REPLICATED_MAINTENANCE_RECORD`. No other service needs them today |
 
-The B4b, B5 and B6 endpoints are **service-only** (section 3.7): a user calling them directly gets `401`, even with a valid JWT. Flight Routes also provides `GET /api/scheduled-flights/operational-hours` (B4a), but no other service calls it. Maintenance is only a consumer: the aircraft status in Aircraft Management is the single source of truth for availability.
+The B4b, B5 and B6 endpoints are **service-only** (section 3.7): a user calling them directly gets `401`, even with a valid JWT. Flight Routes also provides `GET /api/scheduled-flights/operational-hours` (B4a), but no other service calls it. Maintenance calls Aircraft Management over HTTP only for B3b (a command) and as a fallback; the aircraft status in Aircraft Management is the single source of truth for availability.
 
 Exact schemas, status codes, roles and replica behaviour: [Integration-Contracts.md](Integration-Contracts.md) (REST in sections 2–8; events in [section 9](Integration-Contracts.md#9-assignment-2--event-contracts): envelope, exchanges and queues, event catalogue, how to publish and consume). Messaging reliability and limitations: sections 3.4–3.6 below. The `/api/v2/unicorns` mock (read-model contract, served by a Postman mock server): [Unicorns-Mock.md](Unicorns-Mock.md).
 
@@ -74,18 +75,18 @@ Exact schemas, status codes, roles and replica behaviour: [Integration-Contracts
 | `X-Peer-Hops` | request | Present only in replica-to-replica calls; the receiver does not forward again |
 | `X-Service-Key` | request | Shared secret that authenticates the calling service. Sent automatically by `common` on every inter-service and peer call; **required** on peer calls and on the service-only Flight Routes endpoints |
 | `X-Caller-Instance` | request | Calling replica/service (audit) |
-| `X-Partial-Response`, `X-Unavailable-Peers` | response | A peer did not answer an aggregated GET (Maintenance). Flight Routes', Airports' and Aircraft Management's GETs never need it: they read local read models |
+| `X-Partial-Response`, `X-Unavailable-Peers` | response | Assignment 1: a peer did not answer an aggregated GET. Since Assignment 2 every GET reads local read models, so it is only used by Maintenance US222 when a copy of another service's data is not available yet and that service is down |
 
 ## 3. Distribution design decisions
 
 ### 3.1 Instance replication and data partitioning
 
 - **Cloning:** the same JAR runs three times with the Spring profiles `instance1`, `instance2`, `instance3` (port, instance id, database, peer list in `application-instanceN.properties`). The scripts start 1–3 replicas per service (`start-all`, `start-replicas`, `run-instance`).
-- **Database per replica:** no shared database. A record's **write model** is stored in the replica that received the write (partitioning by write location). Flight Routes and Aircraft Management use a **file** database per replica (`code/data/flightRoutesdb-N`, `code/data/aircraftManagementdb-N`), so data and read models survive a restart; the other services still use in-memory H2.
+- **Database per replica:** no shared database. A record's **write model** is stored in the replica that received the write (partitioning by write location). Every service uses a **file** database per replica (`code/data/flightRoutesdb-N`, `code/data/aircraftManagementdb-N`, `code/data/maintenancedb-N`, Airports' `airportsdb-N`), so data and read models survive a restart.
 - **Single owner per record:** a write to an existing record is executed by the replica that stores it; other replicas forward the command to it (unicast). Each record has exactly one writer, so there are no write conflicts between replicas, and its events come from one producer, in order.
 - **Peer discovery:** static peer list per replica (`aisafe.peers.urls`), full mesh, excluding the replica itself.
 
-### 3.2 Queries: CQRS read models (Flight Routes, Airports) and peer aggregation (Assignment 1)
+### 3.2 Queries: CQRS read models (every service) and peer aggregation (Assignment 1)
 
 **Flight Routes (Assignment 2, CQRS).** The service is split into a **command side** (`command` package: create/update routes, schedule flights, on the owner's write model) and a **query side** (`query` package). Every change is published as a state-carrying event; **every replica projects every event** into its own read models (`REPLICATED_ROUTE` with history, `REPLICATED_SCHEDULED_FLIGHT`). All GET endpoints — including the ones other services call (B4a, B4b, B5, B6) — read only those local tables: no peer call, no aggregation, no `X-Partial-Response`. The owner applies its own event inside the write transaction, so it reads its writes at once; the event delivered back to it is skipped as a duplicate. Flow and tables: [Flight Routes L3 §6](../3-components/flightroutes/FlightRoutes-Components.md#6-cqrs-flow-write--event--projection-on-every-replica).
 
@@ -93,7 +94,9 @@ Exact schemas, status codes, roles and replica behaviour: [Integration-Contracts
 
 **Aircraft Management (Assignment 2, CQRS).** Same design as Flight Routes: `command` package (US101, US102, US105/B3b, US201 on the owner's write model) and `query` package (every GET, including B1, B3 and `/api/v2/unicorns`, on `REPLICATED_AIRCRAFT`, `REPLICATED_AIRCRAFT_MODEL`, `AIRCRAFT_MOOD`). It also consumes Flight Routes' events into `KNOWN_ROUTE` / `KNOWN_SCHEDULED_FLIGHT`, so US203, US204 and US206 no longer call Flight Routes. Like Airports, a starting replica republishes the aircraft and models it owns and asks the others to do the same (`AircraftSyncRequested`). Flow: [Aircraft Management L3 §6](../3-components/aircraftmanagement/AircraftManagement-Components.md#6-cqrs-flow-write--event--projection-on-every-replica-and-on-flight-routes).
 
-**Maintenance (Assignment 1, still in use).** When a GET reaches a replica that does not hold all the data, the replica forwards the query to its peers and aggregates the answers (`PeerClient` of `common`):
+**Maintenance (Assignment 2, CQRS).** Same design: the `command` package changes the owner's write model (`MAINTENANCE_TEMPLATE`, `MAINTENANCE_RECORD`), calls B3b when a record starts or ends, and publishes `MaintenanceTemplateCreated` / `MaintenanceRecordCreated` / `…Categorized` / `…Completed` after the commit; every replica projects them into `REPLICATED_MAINTENANCE_TEMPLATE` and `REPLICATED_MAINTENANCE_RECORD`. It also keeps `KNOWN_AIRCRAFT`, `KNOWN_AIRCRAFT_MODEL` (Aircraft Management events) and `KNOWN_SCHEDULED_FLIGHT` (Flight Routes events). All GETs — templates, records, US116–US221 and the US222 alerts — read these local tables; a starting replica republishes what it owns and asks the others to do the same (`MaintenanceSyncRequested`). Details: [Maintenance L3 §6](../3-components/maintenance/Maintenance-Components.md#6-cqrs-flow-write--event--projection-on-every-replica).
+
+**Assignment 1 approach (replaced in every service).** A replica that did not hold all the data forwarded the GET to its peers and aggregated the answers (`PeerClient` of `common`):
 
 | Kind of GET | Strategy |
 |---|---|
@@ -101,13 +104,13 @@ Exact schemas, status codes, roles and replica behaviour: [Integration-Contracts
 | Collections | Local query + the **same GET** to all peers in parallel; merge **by id** (local copy wins); paginate **after** merging |
 | Statistics / counts | Each replica computes over its own data; results are **summed** (each record lives in exactly one replica) |
 
-Peer calls carry `X-Peer-Hops: 1`; a peer request is never forwarded again, and `X-Peer-Hops > 1` is rejected. Peers are called on the same endpoint with the user's JWT, so they apply the same access rules.
+Peer calls carried `X-Peer-Hops: 1`; a peer request is never forwarded again, and `X-Peer-Hops > 1` is rejected. These rules still apply to the **commands** forwarded to the owner replica.
 
 ### 3.3 Consistency model (CAP)
 
 AISafe favours **Availability and Partition tolerance (AP)** with **eventual consistency**.
 
-**Assignment 2 model (Flight Routes; the target for every service):**
+**Assignment 2 model (every service):**
 
 | Aspect | Decision |
 |---|---|
@@ -122,7 +125,7 @@ AISafe favours **Availability and Partition tolerance (AP)** with **eventual con
 
 | Alternative | Why not (or not yet) |
 |---|---|
-| **HTTP forwarding and aggregation on every GET** (Assignment 1, still used by the other services) | Always fresh, but a read needs every peer: latency grows with the replicas, a peer down gives partial answers (`X-Partial-Response`) and an entity of a stopped replica is invisible (`404`). With read models a single replica answers everything, even with all its peers down. |
+| **HTTP forwarding and aggregation on every GET** (Assignment 1) | Always fresh, but a read needs every peer: latency grows with the replicas, a peer down gives partial answers (`X-Partial-Response`) and an entity of a stopped replica is invisible (`404`). With read models a single replica answers everything, even with all its peers down. |
 | **One shared database, or a single writer for everything / quorum / consensus** | Strong consistency, but it blocks writes during a partition (CP) and contradicts *database per instance*. |
 | **Fanout exchange** | Also broadcasts to every replica, but cannot filter by event type; topic gives broadcast **plus** per-consumer filtering with one exchange per service (section 3.5). |
 | **Competing consumers** (one queue shared by the replicas of a service) | Each event would reach only one replica, but every replica needs every event to build its own read model. Used per *instance* queues instead. |
@@ -136,7 +139,7 @@ AISafe favours **Availability and Partition tolerance (AP)** with **eventual con
 | **Retry with exponential backoff** (only I/O errors, timeouts, 5xx; never 4xx) | `http.max-retries=2`, `http.initial-backoff=100ms` |
 | **Circuit breaker** per target (CLOSED → OPEN after N failures → HALF_OPEN after the open time) | `circuit-breaker.failure-threshold=3`, `circuit-breaker.open-duration=10s` |
 | **Load balancing + failover** to other services (round-robin over all their replicas) | `services.<service>.urls` |
-| **Graceful degradation** — partial responses instead of errors (aggregated GETs) | `X-Partial-Response` |
+| **Graceful degradation** — partial responses instead of errors (Assignment 1 aggregated GETs; Maintenance US222 when an external copy is missing) | `X-Partial-Response` |
 | **Health checks** — liveness (JVM serves HTTP), readiness (includes RabbitMQ), full health (peers and circuits) | `/actuator/health/liveness`, `/actuator/health/readiness`, `/actuator/health` |
 | `503 Service Unavailable` only when **no** replica of a remote service (or the owner of an entity) answers | — |
 

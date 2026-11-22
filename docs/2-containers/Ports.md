@@ -5,9 +5,9 @@ The last digit identifies the service, the hundreds digit identifies the replica
 | Service | Module | WP | Replica 1 (`instance1`) | Replica 2 (`instance2`) | Replica 3 (`instance3`) | H2 database (one per replica) |
 |---|---|---|---|---|---|---|
 | Aircraft Management | `aircraftmanagement` | WP#1 | 8081 | 8181 | 8281 | `aircraftManagementdb-N` |
-| Maintenance | `maintenance` | WP#4 | 8082 | 8182 | 8282 | `maintenancedb-N` |
+| Maintenance | `maintenance` | WP#4 | 8082 | 8182 | 8282 | `maintenancedb-N` (file `code/data/`) |
 | Airports | `airports` | WP#2 | 8083 | 8183 | 8283 | `airportsdb-N` |
-| Flight Routes | `flightroutes` | WP#3 | 8084 | 8184 | 8284 | `flightRoutesdb-N`, **file** `code/data/flightRoutesdb-N.mv.db` (the others are in memory) |
+| Flight Routes | `flightroutes` | WP#3 | 8084 | 8184 | 8284 | `flightRoutesdb-N`, **file** `code/data/flightRoutesdb-N.mv.db` |
 | RabbitMQ (broker, Docker) | `infra/` | — | AMQP 5672, management UI 15672 | — | — | volume `aisafe_rabbitmq-data`; one queue per consuming replica (`<instanceId>.<sourceService>`) |
 
 ## Configuration

@@ -93,7 +93,7 @@ package "Due-maintenance policy (US222, domain service)" {
     DueCriterion <|.. CalendarDaysCriterion
 }
 
-package "Read Models (not persisted)" {
+package "Computed views (not persisted)" {
     class MaintenanceAlert <<Read Model>> {
         registration, model, templateId,
         templateName, trigger, limit, current
@@ -101,6 +101,26 @@ package "Read Models (not persisted)" {
     class LastCompletion <<Read Model>> {
         registration, templateId, completionDate,
         aircraftFlightHours, ongoing
+    }
+}
+
+package "CQRS read models (persisted, one copy per replica, built from events)" #F5F5F5 {
+    class ReplicatedMaintenanceTemplate <<Read Model>> {
+        templateId, name, type, applicableModels,
+        checklist, intervals, sourceVersion, ownerInstance
+    }
+    class ReplicatedMaintenanceRecord <<Read Model>> {
+        recordId, aircraft, model, template snapshot,
+        details, checklist, component, status, completion,
+        sourceVersion, ownerInstance
+    }
+    class KnownAircraft <<Read Model>> {
+        registrationNumber, modelName,
+        manufacturingDate, status, sourceVersion
+    }
+    class KnownScheduledFlight <<Read Model>> {
+        flightId, aircraftRegistration,
+        estimatedFlightTime
     }
 }
 
@@ -115,7 +135,10 @@ package "Aircraft Management BC (remote)" #EEEEEE {
     }
 }
 
-TemplateReference "0..*" ..> "1" MaintenanceTemplate : templateId\n(by identity; template may be\nstored in another replica)
+TemplateReference "0..*" ..> "1" MaintenanceTemplate : templateId\n(by identity; template may be\nowned by another replica)
+MaintenanceTemplate ..> ReplicatedMaintenanceTemplate : MaintenanceTemplateCreated
+MaintenanceRecord ..> ReplicatedMaintenanceRecord : MaintenanceRecord*\nevents
+Aircraft ..> KnownAircraft : AircraftRegistered /\nAircraftStatusChanged
 MaintenanceRecord "0..*" ..> "1" Aircraft : aircraftRegistration\n(by identity + model snapshot)
 MaintenanceTemplate "0..*" ..> "1..*" AircraftModel : applicableModels\n(by model name)
 MaintenanceDuePolicy ..> MaintenanceAlert : creates

@@ -1,0 +1,46 @@
+@startuml Maintenance-SD-WriteEventProjection
+autonumber
+title CQRS — a write on one replica reaches the read models of every replica (and of other services)
+participant "maintenance-2\n(owner)" as M2
+queue "aisafe.maintenance.events\n(topic exchange)" as EX
+queue "maintenance-1.maintenance" as Q1
+queue "maintenance-2.maintenance" as Q2
+queue "maintenance-3.maintenance" as Q3
+participant "maintenance-1\n: MaintenanceEventsListener\n→ MaintenanceRecordProjection" as M1
+participant "maintenance-3\n: MaintenanceEventsListener\n→ MaintenanceRecordProjection" as M3
+participant "Aircraft Management\n(owner of the aircraft)" as AM
+queue "aisafe.aircraftmanagement.events" as AMX
+
+M2 -> M2 : command committed: write model +\nREPLICATED_MAINTENANCE_RECORD + PROCESSED_EVENT(eventId)
+M2 -> EX : publish MaintenanceRecordCreated\n(key maintenance-record.created, persistent, confirm)
+EX -> Q1 : copy (binding maintenance-record.*)
+EX -> Q2 : copy
+EX -> Q3 : copy
+Q2 -> M2 : deliver
+M2 -> M2 : eventId already processed → skip (ack)
+Q1 -> M1 : deliver
+activate M1
+M1 -> M1 : idempotent? version newer?\nupsert REPLICATED_MAINTENANCE_RECORD +\nPROCESSED_EVENT (one transaction)
+M1 --> Q1 : ack (after commit)
+deactivate M1
+Q3 -> M3 : deliver
+activate M3
+M3 -> M3 : same projection
+alt projection throws
+    M3 --> Q3 : reject → retry 3x with back-off → DLQ maintenance-3.maintenance.dlq
+else ok
+    M3 --> Q3 : ack
+end
+deactivate M3
+
+== Aircraft status, set by B3b during the command ==
+AM -> AMX : AircraftStatusChanged (CS-TUA, UNDER_MAINTENANCE, version n)
+AMX -> M1 : queue maintenance-1.aircraftmanagement → KNOWN_AIRCRAFT
+AMX -> M3 : queue maintenance-3.aircraftmanagement → KNOWN_AIRCRAFT
+AMX -> AM : its own queues → REPLICATED_AIRCRAFT, AIRCRAFT_MOOD (/api/v2/unicorns)
+
+note over M2, AMX
+  A replica that is down keeps receiving into its durable queue and applies the events when it comes back.
+  Consistency: strong on the owner (same transaction), eventual on the others (normally milliseconds).
+end note
+@enduml

@@ -2,7 +2,7 @@
 
 **ISEP — Instituto Superior de Engenharia do Porto**
 
-**Generated:** 2026-11-21
+**Generated:** 2026-11-22
 
 | Student | Number | Work package |
 |---|---|---|
@@ -49,7 +49,7 @@
   - [AISafe - Aircraft Management (SIDIS)](#sec-aisafe-aircraft-management-sidis)
   - [AISafe - Airports (Assignment 2: CQRS + AMQP)](#sec-aisafe-airports-assignment-2-cqrs-amqp)
   - [AISafe - Flight Routes (distributed)](#sec-aisafe-flight-routes-distributed)
-  - [AISafe - Maintenance Service (WP#4)](#sec-aisafe-maintenance-service-wp-4)
+  - [AISafe - Maintenance Service (WP#4, Assignment 2: CQRS + AMQP)](#sec-aisafe-maintenance-service-wp-4-assignment-2-cqrs-amqp)
   - [AISafe - Unicorns Mock](#sec-aisafe-unicorns-mock)
 - [Appendix B — Source files](#sec-appendix-b-source-files)
 
@@ -90,7 +90,7 @@ The architecture is documented with the **C4 model** (Simon Brown) plus a fifth 
 | Container | Owner | Status | L3 Components | L4 Code | +1 Scenarios |
 |---|---|---|---|---|---|
 | **Aircraft Management (WP#1)** | Tiago Moreira | complete (Assignment 2: CQRS + events) | [Components](#src-3-components-aircraftmanagement-aircraftmanagement-component) | [Code](#src-4-code-aircraftmanagement-aircraftmanagement-code) | [Scenarios](#src-5-scenarios-aircraftmanagement-aircraftmanagement-scenarios) |
-| **Maintenance (WP#4)** | Diogo Fernandes | complete | [Components](#src-3-components-maintenance-maintenance-components) | [Code](#src-4-code-maintenance-maintenance-code) | [Scenarios](#src-5-scenarios-maintenance-maintenance-scenarios) |
+| **Maintenance (WP#4)** | Diogo Fernandes | complete (Assignment 2: CQRS + events) | [Components](#src-3-components-maintenance-maintenance-components) | [Code](#src-4-code-maintenance-maintenance-code) | [Scenarios](#src-5-scenarios-maintenance-maintenance-scenarios) |
 | **Airports (WP#2)** | Afonso Ribeiro | complete | [Components](#src-3-components-airports-airports-components) | [Code](#src-4-code-airports-airports-code) | [Scenarios](#src-5-scenarios-airports-airports-scenarios) |
 | **Flight Routes (WP#3)** | Tiago Caetano | complete | [Components](#src-3-components-flightroutes-flightroutes-components) | [Code](#src-4-code-flightroutes-flightroutes-code) | [Scenarios](#src-5-scenarios-flightroutes-flightroutes-scenarios) |
 | *common library* (shared) | Tiago Caetano | — | [Components](#src-3-components-common-common-components) | [Code](#src-4-code-common-common-code) | (exercised by every scenario) |
@@ -136,7 +136,7 @@ docker compose -f infra/docker-compose.rabbitmq.yml --env-file infra/.env up -d 
 - **Running without a broker:** set `AISAFE_MESSAGING_ENABLED=false` before `start-all` (or `java -jar`). The service then neither publishes nor consumes events; Flight Routes still answers from its own read models, which then contain only the writes made on that replica. Event contracts: [Integration-Contracts §9](#sec-9-assignment-2-event-contracts); reliability and known limitations: [Containers §3.4–3.6](#sec-3-4-fault-tolerance).
 - **`start-all`** starts every service with `replicas` (1–3, default 3) replicas, extra Spring `profiles` (default none) and JVM options (default `-Xmx320m`). It builds the jars first if they are missing, writes logs and PID files to `code/logs/`, waits for **`/actuator/health/liveness`** and prints the URL of each replica (`/actuator/health/readiness` also includes RabbitMQ). **`stop-all`** stops them. 12 JVMs need several GB of RAM; use 1 or 2 replicas per service on a small machine. One service only: `scripts/start-replicas.* <service> [profiles] [replicas]`; one replica: `scripts/run-instance.*`.
 - **Databases:** one per replica. Flight Routes and Aircraft Management use H2 **files** in `code/data/` (git-ignored; delete the folder, and purge the queues, to start again from the demo data); the other services use in-memory H2.
-- **Profiles:** `demo` loads demonstration data (different in each replica) in Aircraft Management, Airports, Flight Routes and Maintenance. Flight Routes and Aircraft Management insert it only once and publish it as events (Aircraft Management also re-announces the state each replica owns at every start). `tls` switches every replica and every inter-service call to HTTPS. Before the first `tls` run, create the development certificate with `./scripts/generate-dev-certs.sh` (or `.\scripts\generate-dev-certs.ps1`) and rebuild; it is not stored in git.
+- **Profiles:** `demo` loads demonstration data (different in each replica) in Aircraft Management, Airports, Flight Routes and Maintenance. Flight Routes, Aircraft Management and Maintenance insert it only once and publish it as events (Aircraft Management and Maintenance also re-announce the state each replica owns at every start). `tls` switches every replica and every inter-service call to HTTPS. Before the first `tls` run, create the development certificate with `./scripts/generate-dev-certs.sh` (or `.\scripts\generate-dev-certs.ps1`) and rebuild; it is not stored in git.
 - **Tokens:** `POST /auth/dev-token` on any replica with `{"username": "atcc1", "roles": ["ATCC"]}` returns a JWT for Postman or Swagger (`/swagger-ui.html`).
 - **Postman:** one collection and environment per service in `5-scenarios/<container>/postman/` (`AircraftManagement`, `Airports`, `FlightRoutes`, `Maintenance`), plus the **`/api/v2/unicorns` mock** in `5-scenarios/unicorns/postman/` ([Unicorns-Mock.md](#src-2-containers-unicorns-mock): how to create the Postman mock server). Run them in the Postman app (Collection Runner) or with `npx newman run <collection>.json -e <environment>.json`; each collection's description lists the services and profiles it needs. FlightRoutes folder 9 measures eventual consistency across the replicas; folders 6 and 10 need replicas stopped by hand first.
 - **Full document:** `Documentation.md` contains all of this documentation in one file (for PDF export). Regenerate it after any change with `powershell -ExecutionPolicy Bypass -File docs\tools\build-full-doc.ps1` or `bash docs/tools/build-full-doc.sh` (from the repository root).
@@ -265,7 +265,7 @@ The monolith was decomposed by **bounded context** (domain-driven segregation). 
 | Container | Technology | Replicas (port) | Data (one database per replica) | Responsibility (bounded context) | Details |
 |---|---|---|---|---|---|
 | **Aircraft Management Service** | Java 21, Spring Boot 4 | 8081 / 8181 / 8281 | H2 file `code/data/aircraftManagementdb-N` (write model + read models) | *Fleet*: aircraft models, aircraft, operational status (WP#1) | [L3](#src-3-components-aircraftmanagement-aircraftmanagement-component) |
-| **Maintenance Service** | Java 21, Spring Boot 4 | 8082 / 8182 / 8282 | H2 `maintenancedb-N` (in memory) | *Maintenance*: templates, records, reports and due-maintenance alerts (WP#4) | [L3](#src-3-components-maintenance-maintenance-components) |
+| **Maintenance Service** | Java 21, Spring Boot 4, Spring AMQP | 8082 / 8182 / 8282 | H2 **file** `code/data/maintenancedb-N`: write model + CQRS read models | *Maintenance*: templates, records, reports and due-maintenance alerts (WP#4) | [L3](#src-3-components-maintenance-maintenance-components) |
 | **Airports Service** | Java 21, Spring Boot 4 | 8083 / 8183 / 8283 | H2 `airportsdb-N` (file, one per instance) | *Airport infrastructure*: airports, runways, certification (WP#2) | [L3](#src-3-components-airports-airports-components) |
 | **Flight Routes Service** | Java 21, Spring Boot 4, Spring AMQP | 8084 / 8184 / 8284 | H2 **file** `code/data/flightRoutesdb-N`: write model + CQRS read models | *Flight operations*: routes, history, scheduled flights, network queries (WP#3) | [L3](#src-3-components-flightroutes-flightroutes-components) |
 | **Message broker** | RabbitMQ 3 (Docker, `infra/docker-compose.rabbitmq.yml`) | 1 (AMQP 5672, UI 15672) | durable queues in the volume `aisafe_rabbitmq-data` | Topic exchange per producing service, one durable queue per consuming replica, dead-letter queues ([Integration-Contracts §9.2](#sec-9-2-exchanges-routing-keys-and-queues)) | — |
@@ -302,21 +302,22 @@ The `ADMIN` role exists in the token, but no endpoint requires it.
 | Aircraft Management | Flight Routes | ~~B4b~~ **replaced by events** (`ScheduledFlightCreated` → `KNOWN_SCHEDULED_FLIGHT`) | Flight minutes per aircraft for US204 and US206. The HTTP endpoint is still provided by Flight Routes, no longer called |
 | Aircraft Management | Flight Routes | ~~B6~~ **replaced by events** (`RouteCreated`/`RouteUpdated` → `KNOWN_ROUTE`) | Active routes compatible with an aircraft (US203). The HTTP endpoint is still provided by Flight Routes, no longer called |
 | Airports | Flight Routes | B5 — **replaced by events** (`route.*` → `KNOWN_ROUTE`) | Route counts per airport (US210); the endpoint stays, unused |
-| Maintenance | Aircraft Management | B3a: `GET /api/aircrafts/{reg}` | Aircraft exists, its model and status (US115, US116) |
+| Maintenance | Aircraft Management | B3a: `GET /api/aircrafts/{reg}` — **replaced by events** (`AircraftRegistered`/`AircraftStatusChanged` → `KNOWN_AIRCRAFT`); HTTP only for an aircraft not received yet | Aircraft exists, its model and status (US115, US116) |
 | Maintenance | Aircraft Management | B3b: `PATCH /api/aircrafts/{reg}/status` | `UNDER_MAINTENANCE` when a record starts (US115), `AVAILABLE` when the last ongoing record is completed (US119); kept synchronous (a command) |
-| Maintenance | Aircraft Management | B3c: `GET /api/aircraft-models/{model}` | Applicable models of a template exist (US115 templates) |
-| Maintenance | Aircraft Management | B3d: `GET /api/aircrafts?page=&size=100`, `GET /api/aircrafts/operational-hours?page=&size=100` | Fleet and flight hours for due-maintenance alerts (US222) |
-| Replica | other replicas of the **same** service | Flight Routes and Airports: only **commands** for an entity they do not own (`PATCH /api/routes/{id}`, `POST`/`PATCH /api/airports/{iata}/...`). Other services: also GET forwarding/aggregation (section 3.2) | One owner per entity |
+| Maintenance | Aircraft Management | B3c: `GET /api/aircraft-models/{model}` — **replaced by events** (`AircraftModel*` → `KNOWN_AIRCRAFT_MODEL`); HTTP fallback | Applicable models of a template exist (US115 templates) |
+| Maintenance | Aircraft Management | B3d: `GET /api/aircrafts?page=&size=100`, `GET /api/aircrafts/operational-hours?page=&size=100` — **replaced by events** (fleet from `KNOWN_AIRCRAFT`, hours from Flight Routes' `ScheduledFlightCreated` → `KNOWN_SCHEDULED_FLIGHT`); HTTP only to seed the fleet once and while no flight event was received | Fleet and flight hours for due-maintenance alerts (US222) |
+| Replica | other replicas of the **same** service | Only **commands** for an entity they do not own (`PATCH /api/routes/{id}`, `POST`/`PATCH /api/airports/{iata}/...`, `PATCH /api/aircrafts/{reg}/status`, `PATCH /api/maintenance-records/{id}/...`). No GET goes to another replica (section 3.2) | One owner per entity |
 
 **Events (AMQP):**
 
 | Publisher → exchange | Events | Consumers |
 |---|---|---|
-| Flight Routes → `aisafe.flightroutes.events` | `RouteCreated`, `RouteUpdated`, `ScheduledFlightCreated` | every Flight Routes replica (queue `<instanceId>.flightroutes`): read models `REPLICATED_ROUTE`, `REPLICATED_SCHEDULED_FLIGHT`. Airports (queue `<instanceId>.flightroutes`, `route.*` → `KNOWN_ROUTE`, replaces B5). Every Aircraft Management replica (queue `<instanceId>.flightroutes`, `route.*` + `scheduled-flight.*` → `KNOWN_ROUTE`, `KNOWN_SCHEDULED_FLIGHT`, replace B4b and B6) |
-| Aircraft Management → `aisafe.aircraftmanagement.events` | `AircraftRegistered`, `AircraftStatusChanged`, `AircraftModelCreated`, `AircraftModelUpdated` (+ internal `AircraftSyncRequested`) | every Aircraft Management replica (queue `<instanceId>.aircraftmanagement`): `REPLICATED_AIRCRAFT`, `REPLICATED_AIRCRAFT_MODEL`, `AIRCRAFT_MOOD`; Flight Routes (`KNOWN_AIRCRAFT*`, switch on with `AISAFE_EXTERNAL_EVENTS=true`); Maintenance (possible) |
+| Flight Routes → `aisafe.flightroutes.events` | `RouteCreated`, `RouteUpdated`, `ScheduledFlightCreated` | every Flight Routes replica (queue `<instanceId>.flightroutes`): read models `REPLICATED_ROUTE`, `REPLICATED_SCHEDULED_FLIGHT`. Airports (queue `<instanceId>.flightroutes`, `route.*` → `KNOWN_ROUTE`, replaces B5). Every Aircraft Management replica (queue `<instanceId>.flightroutes`, `route.*` + `scheduled-flight.*` → `KNOWN_ROUTE`, `KNOWN_SCHEDULED_FLIGHT`, replace B4b and B6). Every Maintenance replica (queue `<instanceId>.flightroutes`, `scheduled-flight.*` → `KNOWN_SCHEDULED_FLIGHT`, flight hours of US222) |
+| Aircraft Management → `aisafe.aircraftmanagement.events` | `AircraftRegistered`, `AircraftStatusChanged`, `AircraftModelCreated`, `AircraftModelUpdated` (+ internal `AircraftSyncRequested`) | every Aircraft Management replica (queue `<instanceId>.aircraftmanagement`): `REPLICATED_AIRCRAFT`, `REPLICATED_AIRCRAFT_MODEL`, `AIRCRAFT_MOOD`; Flight Routes (`KNOWN_AIRCRAFT*`, switch on with `AISAFE_EXTERNAL_EVENTS=true`); every Maintenance replica (queue `<instanceId>.aircraftmanagement`: `KNOWN_AIRCRAFT`, `KNOWN_AIRCRAFT_MODEL`, replace B3a, B3c and the fleet of B3d) |
 | Airports → `aisafe.airports.events` | `AirportCreated`, `AirportUpdated`, `AirportStatusChanged` (+ internal `AirportSyncRequested`) | every Airports replica (queue `<instanceId>.airports`): read model `REPLICATED_AIRPORT`; Flight Routes (`KNOWN_AIRPORT`, switch on with `AISAFE_EXTERNAL_EVENTS=true`) |
+| Maintenance → `aisafe.maintenance.events` | `MaintenanceTemplateCreated`, `MaintenanceRecordCreated`, `MaintenanceRecordCategorized`, `MaintenanceRecordCompleted` (+ internal `MaintenanceSyncRequested`) | every Maintenance replica (queue `<instanceId>.maintenance`): read models `REPLICATED_MAINTENANCE_TEMPLATE`, `REPLICATED_MAINTENANCE_RECORD`. No other service needs them today |
 
-The B4b, B5 and B6 endpoints are **service-only** (section 3.7): a user calling them directly gets `401`, even with a valid JWT. Flight Routes also provides `GET /api/scheduled-flights/operational-hours` (B4a), but no other service calls it. Maintenance is only a consumer: the aircraft status in Aircraft Management is the single source of truth for availability.
+The B4b, B5 and B6 endpoints are **service-only** (section 3.7): a user calling them directly gets `401`, even with a valid JWT. Flight Routes also provides `GET /api/scheduled-flights/operational-hours` (B4a), but no other service calls it. Maintenance calls Aircraft Management over HTTP only for B3b (a command) and as a fallback; the aircraft status in Aircraft Management is the single source of truth for availability.
 
 Exact schemas, status codes, roles and replica behaviour: [Integration-Contracts.md](#src-2-containers-integration-contracts) (REST in sections 2–8; events in [section 9](#sec-9-assignment-2-event-contracts): envelope, exchanges and queues, event catalogue, how to publish and consume). Messaging reliability and limitations: sections 3.4–3.6 below. The `/api/v2/unicorns` mock (read-model contract, served by a Postman mock server): [Unicorns-Mock.md](#src-2-containers-unicorns-mock).
 
@@ -331,7 +332,7 @@ Exact schemas, status codes, roles and replica behaviour: [Integration-Contracts
 | `X-Peer-Hops` | request | Present only in replica-to-replica calls; the receiver does not forward again |
 | `X-Service-Key` | request | Shared secret that authenticates the calling service. Sent automatically by `common` on every inter-service and peer call; **required** on peer calls and on the service-only Flight Routes endpoints |
 | `X-Caller-Instance` | request | Calling replica/service (audit) |
-| `X-Partial-Response`, `X-Unavailable-Peers` | response | A peer did not answer an aggregated GET (Maintenance). Flight Routes', Airports' and Aircraft Management's GETs never need it: they read local read models |
+| `X-Partial-Response`, `X-Unavailable-Peers` | response | Assignment 1: a peer did not answer an aggregated GET. Since Assignment 2 every GET reads local read models, so it is only used by Maintenance US222 when a copy of another service's data is not available yet and that service is down |
 
 
 <a id="sec-3-distribution-design-decisions"></a>
@@ -344,14 +345,14 @@ Exact schemas, status codes, roles and replica behaviour: [Integration-Contracts
 ##### 3.1 Instance replication and data partitioning
 
 - **Cloning:** the same JAR runs three times with the Spring profiles `instance1`, `instance2`, `instance3` (port, instance id, database, peer list in `application-instanceN.properties`). The scripts start 1–3 replicas per service (`start-all`, `start-replicas`, `run-instance`).
-- **Database per replica:** no shared database. A record's **write model** is stored in the replica that received the write (partitioning by write location). Flight Routes and Aircraft Management use a **file** database per replica (`code/data/flightRoutesdb-N`, `code/data/aircraftManagementdb-N`), so data and read models survive a restart; the other services still use in-memory H2.
+- **Database per replica:** no shared database. A record's **write model** is stored in the replica that received the write (partitioning by write location). Every service uses a **file** database per replica (`code/data/flightRoutesdb-N`, `code/data/aircraftManagementdb-N`, `code/data/maintenancedb-N`, Airports' `airportsdb-N`), so data and read models survive a restart.
 - **Single owner per record:** a write to an existing record is executed by the replica that stores it; other replicas forward the command to it (unicast). Each record has exactly one writer, so there are no write conflicts between replicas, and its events come from one producer, in order.
 - **Peer discovery:** static peer list per replica (`aisafe.peers.urls`), full mesh, excluding the replica itself.
 
 
-<a id="sec-3-2-queries-cqrs-read-models-flight-routes-airports-and-peer"></a>
+<a id="sec-3-2-queries-cqrs-read-models-every-service-and-peer-aggregat"></a>
 
-##### 3.2 Queries: CQRS read models (Flight Routes, Airports) and peer aggregation (Assignment 1)
+##### 3.2 Queries: CQRS read models (every service) and peer aggregation (Assignment 1)
 
 **Flight Routes (Assignment 2, CQRS).** The service is split into a **command side** (`command` package: create/update routes, schedule flights, on the owner's write model) and a **query side** (`query` package). Every change is published as a state-carrying event; **every replica projects every event** into its own read models (`REPLICATED_ROUTE` with history, `REPLICATED_SCHEDULED_FLIGHT`). All GET endpoints — including the ones other services call (B4a, B4b, B5, B6) — read only those local tables: no peer call, no aggregation, no `X-Partial-Response`. The owner applies its own event inside the write transaction, so it reads its writes at once; the event delivered back to it is skipped as a duplicate. Flow and tables: [Flight Routes L3 §6](#sec-6-cqrs-flow-write-event-projection-on-every-replica-2).
 
@@ -359,7 +360,9 @@ Exact schemas, status codes, roles and replica behaviour: [Integration-Contracts
 
 **Aircraft Management (Assignment 2, CQRS).** Same design as Flight Routes: `command` package (US101, US102, US105/B3b, US201 on the owner's write model) and `query` package (every GET, including B1, B3 and `/api/v2/unicorns`, on `REPLICATED_AIRCRAFT`, `REPLICATED_AIRCRAFT_MODEL`, `AIRCRAFT_MOOD`). It also consumes Flight Routes' events into `KNOWN_ROUTE` / `KNOWN_SCHEDULED_FLIGHT`, so US203, US204 and US206 no longer call Flight Routes. Like Airports, a starting replica republishes the aircraft and models it owns and asks the others to do the same (`AircraftSyncRequested`). Flow: [Aircraft Management L3 §6](#sec-6-cqrs-flow-write-event-projection-on-every-replica-and-on-f).
 
-**Maintenance (Assignment 1, still in use).** When a GET reaches a replica that does not hold all the data, the replica forwards the query to its peers and aggregates the answers (`PeerClient` of `common`):
+**Maintenance (Assignment 2, CQRS).** Same design: the `command` package changes the owner's write model (`MAINTENANCE_TEMPLATE`, `MAINTENANCE_RECORD`), calls B3b when a record starts or ends, and publishes `MaintenanceTemplateCreated` / `MaintenanceRecordCreated` / `…Categorized` / `…Completed` after the commit; every replica projects them into `REPLICATED_MAINTENANCE_TEMPLATE` and `REPLICATED_MAINTENANCE_RECORD`. It also keeps `KNOWN_AIRCRAFT`, `KNOWN_AIRCRAFT_MODEL` (Aircraft Management events) and `KNOWN_SCHEDULED_FLIGHT` (Flight Routes events). All GETs — templates, records, US116–US221 and the US222 alerts — read these local tables; a starting replica republishes what it owns and asks the others to do the same (`MaintenanceSyncRequested`). Details: [Maintenance L3 §6](#sec-6-cqrs-flow-write-event-projection-on-every-replica-3).
+
+**Assignment 1 approach (replaced in every service).** A replica that did not hold all the data forwarded the GET to its peers and aggregated the answers (`PeerClient` of `common`):
 
 | Kind of GET | Strategy |
 |---|---|
@@ -367,7 +370,7 @@ Exact schemas, status codes, roles and replica behaviour: [Integration-Contracts
 | Collections | Local query + the **same GET** to all peers in parallel; merge **by id** (local copy wins); paginate **after** merging |
 | Statistics / counts | Each replica computes over its own data; results are **summed** (each record lives in exactly one replica) |
 
-Peer calls carry `X-Peer-Hops: 1`; a peer request is never forwarded again, and `X-Peer-Hops > 1` is rejected. Peers are called on the same endpoint with the user's JWT, so they apply the same access rules.
+Peer calls carried `X-Peer-Hops: 1`; a peer request is never forwarded again, and `X-Peer-Hops > 1` is rejected. These rules still apply to the **commands** forwarded to the owner replica.
 
 
 <a id="sec-3-3-consistency-model-cap"></a>
@@ -376,7 +379,7 @@ Peer calls carry `X-Peer-Hops: 1`; a peer request is never forwarded again, and 
 
 AISafe favours **Availability and Partition tolerance (AP)** with **eventual consistency**.
 
-**Assignment 2 model (Flight Routes; the target for every service):**
+**Assignment 2 model (every service):**
 
 | Aspect | Decision |
 |---|---|
@@ -391,7 +394,7 @@ AISafe favours **Availability and Partition tolerance (AP)** with **eventual con
 
 | Alternative | Why not (or not yet) |
 |---|---|
-| **HTTP forwarding and aggregation on every GET** (Assignment 1, still used by the other services) | Always fresh, but a read needs every peer: latency grows with the replicas, a peer down gives partial answers (`X-Partial-Response`) and an entity of a stopped replica is invisible (`404`). With read models a single replica answers everything, even with all its peers down. |
+| **HTTP forwarding and aggregation on every GET** (Assignment 1) | Always fresh, but a read needs every peer: latency grows with the replicas, a peer down gives partial answers (`X-Partial-Response`) and an entity of a stopped replica is invisible (`404`). With read models a single replica answers everything, even with all its peers down. |
 | **One shared database, or a single writer for everything / quorum / consensus** | Strong consistency, but it blocks writes during a partition (CP) and contradicts *database per instance*. |
 | **Fanout exchange** | Also broadcasts to every replica, but cannot filter by event type; topic gives broadcast **plus** per-consumer filtering with one exchange per service (section 3.5). |
 | **Competing consumers** (one queue shared by the replicas of a service) | Each event would reach only one replica, but every replica needs every event to build its own read model. Used per *instance* queues instead. |
@@ -408,7 +411,7 @@ AISafe favours **Availability and Partition tolerance (AP)** with **eventual con
 | **Retry with exponential backoff** (only I/O errors, timeouts, 5xx; never 4xx) | `http.max-retries=2`, `http.initial-backoff=100ms` |
 | **Circuit breaker** per target (CLOSED → OPEN after N failures → HALF_OPEN after the open time) | `circuit-breaker.failure-threshold=3`, `circuit-breaker.open-duration=10s` |
 | **Load balancing + failover** to other services (round-robin over all their replicas) | `services.<service>.urls` |
-| **Graceful degradation** — partial responses instead of errors (aggregated GETs) | `X-Partial-Response` |
+| **Graceful degradation** — partial responses instead of errors (Assignment 1 aggregated GETs; Maintenance US222 when an external copy is missing) | `X-Partial-Response` |
 | **Health checks** — liveness (JVM serves HTTP), readiness (includes RabbitMQ), full health (peers and circuits) | `/actuator/health/liveness`, `/actuator/health/readiness`, `/actuator/health` |
 | `503 Service Unavailable` only when **no** replica of a remote service (or the owner of an entity) answers | — |
 
@@ -512,9 +515,9 @@ The last digit identifies the service, the hundreds digit identifies the replica
 | Service | Module | WP | Replica 1 (`instance1`) | Replica 2 (`instance2`) | Replica 3 (`instance3`) | H2 database (one per replica) |
 |---|---|---|---|---|---|---|
 | Aircraft Management | `aircraftmanagement` | WP#1 | 8081 | 8181 | 8281 | `aircraftManagementdb-N` |
-| Maintenance | `maintenance` | WP#4 | 8082 | 8182 | 8282 | `maintenancedb-N` |
+| Maintenance | `maintenance` | WP#4 | 8082 | 8182 | 8282 | `maintenancedb-N` (file `code/data/`) |
 | Airports | `airports` | WP#2 | 8083 | 8183 | 8283 | `airportsdb-N` |
-| Flight Routes | `flightroutes` | WP#3 | 8084 | 8184 | 8284 | `flightRoutesdb-N`, **file** `code/data/flightRoutesdb-N.mv.db` (the others are in memory) |
+| Flight Routes | `flightroutes` | WP#3 | 8084 | 8184 | 8284 | `flightRoutesdb-N`, **file** `code/data/flightRoutesdb-N.mv.db` |
 | RabbitMQ (broker, Docker) | `infra/` | — | AMQP 5672, management UI 15672 | — | — | volume `aisafe_rabbitmq-data`; one queue per consuming replica (`<instanceId>.<sourceService>`) |
 
 
@@ -785,10 +788,10 @@ Source: `COMMON/security/ServiceKeyFilter.java`, `COMMON/config/AisafeProperties
 | B1a | Flight Routes → Aircraft Management | Aircraft status, capacity and model (US212, US213) | `GET /api/aircrafts/{registrationNumber}` | `IMPLEMENTED` | `HTTP` (Aircraft Management publishes the events; Flight Routes' consumer is off by default) |
 | B1b | Flight Routes → Aircraft Management | Maximum range of the aircraft model (US212) | `GET /api/aircraft-models/{modelName}` | `IMPLEMENTED` | `HTTP` (Aircraft Management publishes the events; Flight Routes' consumer is off by default) |
 | B2 | Flight Routes → Airports | Coordinates, existence, operational status (US110, US209, US212, US216) | `GET /api/airports/{iataCode}` | `IMPLEMENTED` | `EVENT-BASED available`: Airports publishes its events; Flight Routes uses them with `AISAFE_EXTERNAL_EVENTS=true` (HTTP fallback for unseen airports) |
-| B3a | Maintenance → Aircraft Management | Aircraft exists and its model, for template applicability (US115, US116) | reuse B1a (`GET /api/aircrafts/{registrationNumber}`) | `IMPLEMENTED` | `HTTP` (Aircraft Management events available; Maintenance consumer not implemented) |
+| B3a | Maintenance → Aircraft Management | Aircraft exists and its model, for template applicability (US115, US116) | reuse B1a (`GET /api/aircrafts/{registrationNumber}`) | `IMPLEMENTED` | **`EVENT-BASED`** (implemented): `KNOWN_AIRCRAFT` from `aircraft.*`; HTTP only for an aircraft not received yet |
 | B3b | Maintenance → Aircraft Management | Set the status to `UNDER_MAINTENANCE` / back to `AVAILABLE` (US115, US119) | `PATCH /api/aircrafts/{registrationNumber}/status` (US105) | `IMPLEMENTED` | `HTTP (kept)`: a command |
-| B3c | Maintenance → Aircraft Management | Applicable models of a template exist (US115 templates) | reuse B1b (`GET /api/aircraft-models/{modelName}`) | `IMPLEMENTED` | `HTTP` (Aircraft Management events available; Maintenance consumer not implemented) |
-| B3d | Maintenance → Aircraft Management | Fleet and flight hours per aircraft (US222) | `GET /api/aircrafts?page=&size=` (US104), `GET /api/aircrafts/operational-hours?page=&size=` (US206) | `IMPLEMENTED` | `HTTP` (Aircraft Management events available; Maintenance consumer not implemented) |
+| B3c | Maintenance → Aircraft Management | Applicable models of a template exist (US115 templates) | reuse B1b (`GET /api/aircraft-models/{modelName}`) | `IMPLEMENTED` | **`EVENT-BASED`** (implemented): `KNOWN_AIRCRAFT_MODEL` from `aircraft-model.*`; HTTP fallback |
+| B3d | Maintenance → Aircraft Management | Fleet and flight hours per aircraft (US222) | `GET /api/aircrafts?page=&size=` (US104), `GET /api/aircrafts/operational-hours?page=&size=` (US206) | `IMPLEMENTED` | **`EVENT-BASED`** (implemented): fleet from `KNOWN_AIRCRAFT`, hours from Flight Routes' `scheduled-flight.*` (`KNOWN_SCHEDULED_FLIGHT`); HTTP only to seed the fleet once / while no flight event was received |
 | B4a | (none) → Flight Routes | Paged operational hours per aircraft | `GET /api/scheduled-flights/operational-hours` (service-only) | `IMPLEMENTED (provider only)`: no service calls it; Aircraft Management computes US206 from B4b | `HTTP (provider uses read model)` |
 | B4b | Aircraft Management → Flight Routes | Flight minutes per aircraft: US204 (top models) and US206 (operational hours) | `GET /api/scheduled-flights/statistics/minutes-by-aircraft` (service-only) | `IMPLEMENTED` (provider) | **`EVENT-BASED`**: Aircraft Management consumes `ScheduledFlightCreated` and no longer calls it |
 | B5 | Airports → Flight Routes | Number of routes per airport (US210) | `GET /api/routes/statistics/count-by-airport` (service-only) | `IMPLEMENTED (provider)`; Airports no longer calls it | `EVENT-BASED` (**implemented**): Airports counts from `route.*` events (`KNOWN_ROUTE`) |
@@ -949,14 +952,16 @@ US212 then answers **409** `"Origin airport <IATA> is not operational."` (or Des
 
 **Consumer:** Maintenance — `AircraftClient` (`code/maintenance/.../maintenance/clients/AircraftClient.java`), translated into `AircraftSnapshot`. **Provider:** Aircraft Management (B3a reuses B1a, B3b is US105, B3c reuses B1b, B3d reuses US104 and US206).
 
+> **Assignment 2:** B3b is still called on every record start/end. B3a, B3c and B3d are now answered by Maintenance's local copies fed by the events of Aircraft Management and Flight Routes (section 9.6); the HTTP calls below are only the **fallback** of `FleetDirectory` for data that has not arrived by event yet (an aircraft or model never seen, the first fleet listing, the hours while no flight event was received). Their contract is unchanged.
+
 **Use cases that trigger the calls:**
 
 | Use case | Maintenance service | Call | What it does with the result |
 |---|---|---|---|
 | US115 create template | `CreateMaintenanceTemplateService` | B3c per applicable model | existence (404 → template rejected with 400) |
 | US115 create record | `CreateMaintenanceRecordService` | B3a, then B3b `UNDER_MAINTENANCE` | `modelName` (template applicability, model snapshot), `status` (previous status, for compensation) |
-| US116 records of an aircraft | `ViewMaintenanceRecordsService` | B3a (only on the replica that received the client request) | existence (404 → 404, not an empty history) |
-| US119 complete record | `CompleteMaintenanceRecordService` → `AircraftAvailabilityService` (replica that received the client request) | B3b `AVAILABLE` (only if no other record of the aircraft is ongoing in any replica and every replica answered) | — (failure keeps the aircraft `UNDER_MAINTENANCE`; header `X-Aircraft-Released: false`) |
+| US116 records of an aircraft | `ViewMaintenanceRecordsService` | B3a only if the aircraft is not in `KNOWN_AIRCRAFT` | existence (404 → 404, not an empty history) |
+| US119 complete record | `CompleteMaintenanceRecordService` → `AircraftAvailabilityService` (replica that received the client request) | B3b `AVAILABLE` (only if the read model has no other ongoing record of the aircraft, from any replica) | — (failure keeps the aircraft `UNDER_MAINTENANCE`; header `X-Aircraft-Released: false`) |
 | US222 alerts | `MaintenanceAlertService` | B3d (all pages) | fleet (`registrationNumber`, `modelName`, `manufacturingDate`, `status`) and `totalHours` per aircraft |
 
 
@@ -1348,10 +1353,10 @@ Binding patterns (topic syntax): `*` = exactly one word, `#` = zero or more word
 
 | Exchange (topic, durable) | Publisher | Routing keys | Queue per consuming instance |
 |---|---|---|---|
-| `aisafe.flightroutes.events` | Flight Routes (owner replica of the entity) | `route.created`, `route.updated`, `scheduled-flight.created`, `scheduled-flight.status-changed` (reserved) | `<instanceId>.flightroutes`, e.g. `flightroutes-2.flightroutes`, `airports-1.flightroutes`, `aircraftmanagement-1.flightroutes` |
-| `aisafe.aircraftmanagement.events` | Aircraft Management (owner replica of the entity; **implemented**) | `aircraft.registered`, `aircraft.status-changed`, `aircraft-model.created`, `aircraft-model.updated`; `aircraft-sync.requested` (internal to Aircraft Management, see 9.4) | `<instanceId>.aircraftmanagement`, e.g. `aircraftmanagement-2.aircraftmanagement` (implemented), `flightroutes-1.aircraftmanagement` (when enabled), `maintenance-1.aircraftmanagement` |
+| `aisafe.flightroutes.events` | Flight Routes (owner replica of the entity) | `route.created`, `route.updated`, `scheduled-flight.created`, `scheduled-flight.status-changed` (reserved) | `<instanceId>.flightroutes`, e.g. `flightroutes-2.flightroutes`, `airports-1.flightroutes`, `aircraftmanagement-1.flightroutes`, `maintenance-1.flightroutes` |
+| `aisafe.aircraftmanagement.events` | Aircraft Management (owner replica of the entity; **implemented**) | `aircraft.registered`, `aircraft.status-changed`, `aircraft-model.created`, `aircraft-model.updated`; `aircraft-sync.requested` (internal to Aircraft Management, see 9.4) | `<instanceId>.aircraftmanagement`, e.g. `aircraftmanagement-2.aircraftmanagement` (implemented), `flightroutes-1.aircraftmanagement` (when enabled), `maintenance-1.aircraftmanagement` (**implemented**) |
 | `aisafe.airports.events` | Airports (owner replica of the airport) — **implemented** | `airport.created`, `airport.updated`, `airport.status-changed`; `airport-sync.requested` (internal to Airports, see 9.4) | `<instanceId>.airports`, e.g. `airports-2.airports`, `flightroutes-1.airports` |
-| `aisafe.maintenance.events` | Maintenance (optional, not needed by any bridge) | e.g. `maintenance-record.started`, `maintenance-record.completed` | — |
+| `aisafe.maintenance.events` | Maintenance (owner replica of the record/template) — **implemented** | `maintenance-template.created`, `maintenance-record.created`, `maintenance-record.categorized`, `maintenance-record.completed`; `maintenance-sync.requested` (internal to Maintenance) | `<instanceId>.maintenance`, e.g. `maintenance-2.maintenance` |
 | `aisafe.dlx` (direct, shared) | the broker (dead-lettering) | the consumer queue name | `<queue>.dlq` |
 
 Picture for Flight Routes with 3 replicas:
@@ -1380,7 +1385,7 @@ Published today, on `aisafe.flightroutes.events`, after the commit, only by the 
 |---|---|---|---|---|
 | `RouteCreated` | `route.created` | US110 `POST /api/routes` (and demo bootstrap), by the replica that stored the route (its owner) | `RouteEventPayload`: `routeId`, `originIata`, `destinationIata`, `distance` (km), `minRange` (km), `minCapacity`, `estimatedFlightTime` (min), `status` (`ACTIVE`/`INACTIVE`), `version`, `history[]` (`changeDate`, `description`, `previous*`/`new*` of the attributes that changed) | Flight Routes replicas: `REPLICATED_ROUTE` (**implemented**). Airports: `KNOWN_ROUTE`, count per airport, replaces B5 (**implemented**). Aircraft Management: `KNOWN_ROUTE`, replaces B6 (**implemented**) |
 | `RouteUpdated` | `route.updated` | US112 `PATCH /api/routes/{id}` (details or `ACTIVE`/`INACTIVE`), by the **owner** | same | same |
-| `ScheduledFlightCreated` | `scheduled-flight.created` | US212 `POST /api/scheduled-flights` (and demo bootstrap), by the replica that stored the flight | `ScheduledFlightEventPayload`: `flightId`, `aircraftRegistration`, `routeId`, `originIata`, `destinationIata`, `estimatedFlightTime` (min, copied from the route), `date` (`yyyy-MM-dd`), `time` (`HH:mm:ss`), `status`, `version` | Flight Routes replicas: `REPLICATED_SCHEDULED_FLIGHT` (**implemented**). Aircraft Management: `KNOWN_SCHEDULED_FLIGHT`, minutes per aircraft, replaces B4b (**implemented**). Maintenance: flight hours of B3d (**possible now**) |
+| `ScheduledFlightCreated` | `scheduled-flight.created` | US212 `POST /api/scheduled-flights` (and demo bootstrap), by the replica that stored the flight | `ScheduledFlightEventPayload`: `flightId`, `aircraftRegistration`, `routeId`, `originIata`, `destinationIata`, `estimatedFlightTime` (min, copied from the route), `date` (`yyyy-MM-dd`), `time` (`HH:mm:ss`), `status`, `version` | Flight Routes replicas: `REPLICATED_SCHEDULED_FLIGHT` (**implemented**). Aircraft Management: `KNOWN_SCHEDULED_FLIGHT`, minutes per aircraft, replaces B4b (**implemented**). Maintenance: `KNOWN_SCHEDULED_FLIGHT`, flight hours of US222, replaces the hours of B3d (**implemented**) |
 | `ScheduledFlightStatusChanged` | `scheduled-flight.status-changed` | **reserved**: the API cannot change a flight's status yet. The read model already applies it | same | same |
 
 There is **no `RouteDeleted`**: routes are never deleted. Deactivating a route is a `RouteUpdated` with `status = "INACTIVE"`. Code: `flightroutes/.../events/RouteEvents.java`, `RouteEventPayload.java`, `ScheduledFlightEvents.java`, `ScheduledFlightEventPayload.java`.
@@ -1394,9 +1399,9 @@ There is **no `RouteDeleted`**: routes are never deleted. Deactivating a route i
 
 | Producer → exchange | `eventType` | Routing key | When | Payload (all fields required unless marked) | Consumers (status) |
 |---|---|---|---|---|---|
-| Aircraft Management → `aisafe.aircraftmanagement.events` | `AircraftRegistered` | `aircraft.registered` | US101/US102 aircraft registered | `registrationNumber`, `modelName`, `seatingCapacity`, `status` (`AVAILABLE`, `IN_FLIGHT`, `UNDER_MAINTENANCE`, `INACTIVE`), `version` | Aircraft Management replicas: `REPLICATED_AIRCRAFT` + `AIRCRAFT_MOOD` (unicorns, [Unicorns-Mock.md](#src-2-containers-unicorns-mock)) (**implemented**). Flight Routes: `KNOWN_AIRCRAFT`, replaces B1a (**consumer ready, off**). Maintenance: replaces B3a and the fleet of B3d. Extra payload field: `manufacturingDate` |
+| Aircraft Management → `aisafe.aircraftmanagement.events` | `AircraftRegistered` | `aircraft.registered` | US101/US102 aircraft registered | `registrationNumber`, `modelName`, `seatingCapacity`, `status` (`AVAILABLE`, `IN_FLIGHT`, `UNDER_MAINTENANCE`, `INACTIVE`), `version` | Aircraft Management replicas: `REPLICATED_AIRCRAFT` + `AIRCRAFT_MOOD` (unicorns, [Unicorns-Mock.md](#src-2-containers-unicorns-mock)) (**implemented**). Flight Routes: `KNOWN_AIRCRAFT`, replaces B1a (**consumer ready, off**). Maintenance: `KNOWN_AIRCRAFT`, replaces B3a and the fleet of B3d (**implemented**; reads `manufacturingDate`). Extra payload field: `manufacturingDate` |
 | | `AircraftStatusChanged` | `aircraft.status-changed` | US105 status changed, including the change requested by Maintenance (B3b) | same fields; `modelName` and `seatingCapacity` may be omitted (null keeps the stored value) | same |
-| | `AircraftModelCreated` | `aircraft-model.created` | US101 aircraft model registered | `modelName`, `maximumRange` (km), `version`; extra: `manufacturer`, `seatingCapacity`, `fuelCapacity`, `cruisingSpeed` | Aircraft Management replicas: `REPLICATED_AIRCRAFT_MODEL` (**implemented**). Flight Routes: `KNOWN_AIRCRAFT_MODEL`, replaces B1b (**consumer ready, off**). Maintenance: replaces B3c |
+| | `AircraftModelCreated` | `aircraft-model.created` | US101 aircraft model registered | `modelName`, `maximumRange` (km), `version`; extra: `manufacturer`, `seatingCapacity`, `fuelCapacity`, `cruisingSpeed` | Aircraft Management replicas: `REPLICATED_AIRCRAFT_MODEL` (**implemented**). Flight Routes: `KNOWN_AIRCRAFT_MODEL`, replaces B1b (**consumer ready, off**). Maintenance: `KNOWN_AIRCRAFT_MODEL`, replaces B3c (**implemented**) |
 | | `AircraftModelUpdated` (**added in Assignment 2**) | `aircraft-model.updated` | US201 specifications updated (e.g. `maximumRange`) | same as `AircraftModelCreated` | Aircraft Management replicas (**implemented**). Flight Routes: `KNOWN_AIRCRAFT_MODEL` (**consumer updated**, it was bound to `aircraft-model.*` already) |
 | Airports → `aisafe.airports.events` | `AirportCreated` | `airport.created` | US107 airport registered | `iataCode`, `latitude`, `longitude`, `status` (`OPERATIONAL`, `CLOSED`, `UNDER_MAINTENANCE`), `version` | Airports replicas: `REPLICATED_AIRPORT` (**implemented**). Flight Routes: `KNOWN_AIRPORT`, replaces B2 (consumer ready, switch on with `AISAFE_EXTERNAL_EVENTS=true`) |
 | | `AirportUpdated` | `airport.updated` | airport details updated | same | same |
@@ -1405,6 +1410,16 @@ There is **no `RouteDeleted`**: routes are never deleted. Deactivating a route i
 `aggregateId` = `registrationNumber`, `modelName` or `iataCode`. `version` = the entity's `@Version` (older events are ignored).
 
 **Airports — extra fields and the synchronisation message.** The Airports payload (`AirportEventPayload`) carries the **full state** of the airport, not only the fields above: `name`, `city`, `country`, `region`, `timezone`, `runways[]` (`name`, `lengthMeters`, `orientation`, `surface`), `certifiedModels`, `terminals`, `gates`, `services`, `photoUrls`, `operationalHours`, `contactEmail`, `contactPhone` (tolerant readers ignore them). `AirportCertificationAdded` was not needed: a certification (US106a) and a details update (US208) are `AirportUpdated`. Internally, a starting replica publishes `AirportSyncRequested` (routing key `airport-sync.requested`, payload `{requestedBy}`); the other Airports replicas answer by republishing their airports as `AirportUpdated`. Its routing key does not match `airport.*`, so it never reaches other services.
+
+**Maintenance — events it publishes (implemented).** Published on `aisafe.maintenance.events` by the replica that owns the entity, after the commit, with the full state (`MaintenanceRecordEventPayload`: `recordId`, `aircraftRegistration`, `aircraftModel`, `templateId`, `templateName`, `templateType`, `description`, `startDate`, `expectedDurationMinutes`, `checklist`, `component`, `status`, `completionDate`, `completionNotes`, `cost`, `actualDurationMinutes`, `aircraftFlightHours`, `version`; `MaintenanceTemplateEventPayload`: `templateId`, `name`, `type`, `applicableModels`, `checklist`, `flightHoursInterval`, `calendarDaysInterval`, `version`).
+
+| `eventType` | Routing key | When | Consumers |
+|---|---|---|---|
+| `MaintenanceTemplateCreated` | `maintenance-template.created` | US115 template created; reference templates (WP#0A) at start-up | every Maintenance replica: `REPLICATED_MAINTENANCE_TEMPLATE` |
+| `MaintenanceRecordCreated` | `maintenance-record.created` | US115 record created (after B3b succeeded) | every Maintenance replica: `REPLICATED_MAINTENANCE_RECORD` |
+| `MaintenanceRecordCategorized` | `maintenance-record.categorized` | US217, on the owner | same |
+| `MaintenanceRecordCompleted` | `maintenance-record.completed` | US119, on the owner | same |
+| `MaintenanceSyncRequested` | `maintenance-sync.requested` | a replica starts (payload `{requestedBy}`); the others republish what they own | Maintenance replicas only (does not match `maintenance-record.*`) |
 
 
 <a id="sec-9-5-how-to-publish-and-consume-events"></a>
@@ -1579,9 +1594,9 @@ Reference: `flightroutes/.../infrastructure/messaging/FlightRoutesMessagingConfi
 |---|---|---|
 | B1a, B1b (Flight Routes → Aircraft Management) | `HTTP` (events available; Flight Routes' consumer off by default) | Aircraft Management **publishes** `AircraftRegistered`, `AircraftStatusChanged`, `AircraftModelCreated` and `AircraftModelUpdated` with the agreed payloads. Flight Routes' consumer (`KNOWN_AIRCRAFT`, `KNOWN_AIRCRAFT_MODEL`) is switched on with `AISAFE_EXTERNAL_EVENTS=true`. Note: then US212 checks availability on Flight Routes' copy; Aircraft Management stays the source of truth (an aircraft that went `UNDER_MAINTENANCE` a few ms earlier can still be scheduled, see section 9.7). |
 | B2 (Flight Routes → Airports) | `EVENT-BASED available` | Airports publishes `AirportCreated`, `AirportUpdated`, `AirportStatusChanged` (full state, including `latitude`, `longitude`, `status`, `version`). Flight Routes switches its `KNOWN_AIRPORT` consumer on with `AISAFE_EXTERNAL_EVENTS=true`; airports registered before its queue existed are re-announced by Airports' startup synchronisation (`AirportUpdated`). |
-| B3a, B3c (Maintenance → Aircraft Management) | `HTTP` (events available) | Aircraft Management answers from its read models (never partial). Maintenance could keep a local copy fed by the aircraft events (same consumer pattern as Flight Routes). |
+| B3a, B3c (Maintenance → Aircraft Management) | **`EVENT-BASED`** (implemented) | Maintenance consumes `aircraft.*` and `aircraft-model.*` (queue `<instanceId>.aircraftmanagement`) into `KNOWN_AIRCRAFT` / `KNOWN_AIRCRAFT_MODEL` and reads them first (`FleetDirectory`). HTTP only for an entity not received yet (it is then remembered), so switching to events never makes a request fail. |
 | B3b (Maintenance → Aircraft Management, status change) | `HTTP (kept)` | It is a **command** on Aircraft Management's aggregate with an immediate answer (409 if the transition is invalid, e.g. `IN_FLIGHT` → `UNDER_MAINTENANCE`) and a compensation on rollback (Q7). An event would make the outcome asynchronous and lose that answer. Aircraft Management then publishes `AircraftStatusChanged`, so the *effect* reaches everyone by event. |
-| B3d (Maintenance → Aircraft Management, fleet and hours) | `HTTP` (events available) | Aircraft Management answers from its read models: the fleet from `REPLICATED_AIRCRAFT`, the hours from `KNOWN_SCHEDULED_FLIGHT` (Flight Routes events). |
+| B3d (Maintenance → Aircraft Management, fleet and hours) | **`EVENT-BASED`** (implemented) | Fleet from `KNOWN_AIRCRAFT` (seeded once over HTTP on the first US222 of a replica, then kept by events); flight hours from Flight Routes' `ScheduledFlightCreated` (queue `<instanceId>.flightroutes`) summed per aircraft in `KNOWN_SCHEDULED_FLIGHT`; while no flight event was received, the hours are asked to Aircraft Management (it has them all, see 9.7). |
 | B4a (→ Flight Routes, operational hours page) | `HTTP (provider uses read model)` | No consumer; answered from `REPLICATED_SCHEDULED_FLIGHT`. |
 | B4b (Aircraft Management → Flight Routes, minutes per aircraft) | **`EVENT-BASED`** (implemented) | Aircraft Management consumes `ScheduledFlightCreated` (queue `<instanceId>.flightroutes`) into `KNOWN_SCHEDULED_FLIGHT` and sums `estimatedFlightTime` per `aircraftRegistration` (`FlightMinutesService`). The Flight Routes endpoint still exists, with no consumer. |
 | B5 (Airports → Flight Routes, routes per airport) | `EVENT-BASED` (**implemented**) | Airports counts `originIata`/`destinationIata` of `RouteCreated`/`RouteUpdated` in `KNOWN_ROUTE` (upsert by `routeId`, so duplicates never count twice). Limitation: routes published before the queue `airports-N.flightroutes` existed are not received (Flight Routes has no replay). |
@@ -1595,6 +1610,8 @@ Reference: `flightroutes/.../infrastructure/messaging/FlightRoutesMessagingConfi
 A consumer that decides on its local copy decides on data that may be **milliseconds old**. Where that matters, the **owner re-validates**:
 - US212 (scheduling) on Flight Routes' copy of an aircraft: if Aircraft Management has just set it `UNDER_MAINTENANCE`, the flight can still be accepted. Accepted risk for the assignment; the fix is a compensation (Flight Routes consuming `AircraftStatusChanged` and flagging the future flights of that aircraft, or Maintenance refusing to start while flights are scheduled).
 - Counts and statistics (B4b, B5) are informative: a slightly stale value is acceptable.
+- Maintenance US115 on its copy of an aircraft (`KNOWN_AIRCRAFT`): the copy gives the model (template applicability), but the status change is the B3b **command**, validated by Aircraft Management (the owner): an aircraft that went `IN_FLIGHT` a few ms earlier is refused with `409` and nothing is saved.
+- Maintenance US222 (fleet and flight hours from its copies) is informative, like the statistics above. Flights scheduled before Maintenance's queue `<instanceId>.flightroutes` existed are not in its copy (Flight Routes has no replay); while no flight event was received at all, Maintenance asks Aircraft Management for the hours.
 
 <a id="src-2-containers-unicorns-mock"></a>
 
@@ -3354,11 +3371,14 @@ H2 console: `http://localhost:8084/h2-console` (JDBC URL `jdbc:h2:file:./data/fl
 |---|---|
 | Bounded context | *Maintenance* — owns the `MaintenanceTemplate` and `MaintenanceRecord` aggregates (WP#4: US115, US116, US117, US119, US217–US222; WP#0A: preloaded templates) |
 | Replicas | `maintenance-1` :8082, `maintenance-2` :8182, `maintenance-3` :8282 |
-| Database | H2 in-memory per replica: `maintenancedb-1/2/3` |
+| Database | One H2 **file** database per replica: `code/data/maintenancedb-1/2/3` (write model + read models + processed event ids) |
+| Architecture (Assignment 2) | **CQRS**: `command` package (writes on the owner's write model, events published to RabbitMQ) and `query` package (every GET on local read models) |
 | Source code | [code/maintenance](../code/maintenance) |
-| API | `http://localhost:8082/swagger-ui.html` (any replica) |
-| Supplies to other containers | Nothing — no other service calls Maintenance (*Flight Routes never calls Maintenance*, [Integration-Contracts §3](#sec-3-bridge-catalogue)) |
-| Consumes from other containers | Aircraft Management: aircraft lookup (B3a), aircraft status update (B3b), aircraft model lookup (B3c), fleet and operational hours (B3d) |
+| API | `http://localhost:8082/swagger-ui.html` (any replica). The external API is unchanged: HTTP REST |
+| Publishes | `aisafe.maintenance.events`: `MaintenanceTemplateCreated`, `MaintenanceRecordCreated`, `MaintenanceRecordCategorized`, `MaintenanceRecordCompleted` (+ internal `MaintenanceSyncRequested`) |
+| Consumes | Its own events (queue `<instanceId>.maintenance`); Aircraft Management `aircraft.*`, `aircraft-model.*` (queue `<instanceId>.aircraftmanagement`); Flight Routes `scheduled-flight.*` (queue `<instanceId>.flightroutes`) |
+| HTTP to other services | Aircraft Management **B3b** (status change, a command: kept synchronous). B3a, B3c and B3d only as a **fallback** while the local copy does not have the data yet |
+| Supplies to other containers | Nothing by HTTP. Its events are available to any service that wants them (none subscribes today) |
 
 
 <a id="sec-2-components-4"></a>
@@ -3367,26 +3387,22 @@ H2 console: `http://localhost:8084/h2-console` (JDBC URL `jdbc:h2:file:./data/fl
 
 | Component | Technology / classes | Responsibility |
 |---|---|---|
-| **Security & Observability filters** | `common` filters + [`MaintenanceAuthorizationRules`](../code/maintenance/src/main/java/isep/psoft/aisafe/infrastructure/security/MaintenanceAuthorizationRules.java) | Correlation id, audit log, `X-Service-Key` check, JWT authentication, role rules per endpoint (section 3). The rules also accept the roles whose requests reach this replica **as peer calls** (the user's JWT is forwarded) |
-| **Template controller** | [`MaintenanceTemplateController`](../code/maintenance/src/main/java/isep/psoft/aisafe/maintenance/controllers/MaintenanceTemplateController.java) (Spring REST) | `/api/maintenance-templates` — US115 (templates), template lookup and listing |
-| **Record controller** | [`MaintenanceRecordController`](../code/maintenance/src/main/java/isep/psoft/aisafe/maintenance/controllers/MaintenanceRecordController.java) (Spring REST) | `/api/maintenance-records` — US115 (records), US116, US119, US217, US218, US219 |
-| **Statistics controller** | [`MaintenanceStatisticsController`](../code/maintenance/src/main/java/isep/psoft/aisafe/maintenance/controllers/MaintenanceStatisticsController.java) (Spring REST) | `/api/maintenance-records/statistics/**`, `/reports/**` — US117, US220, US221 and the per-replica summary used by US222 |
-| **Alert controller** | [`MaintenanceAlertController`](../code/maintenance/src/main/java/isep/psoft/aisafe/maintenance/controllers/MaintenanceAlertController.java) (Spring REST) | `/api/maintenance-alerts` — US222 (check triggered manually by the user, conversation 016) |
-| **Template application services** | `CreateMaintenanceTemplateService`, `ViewMaintenanceTemplatesService` | Create a template (models validated in Aircraft Management, unique name in every replica that answers), get/list templates of all replicas |
-| **Record application services** | `CreateMaintenanceRecordService`, `CompleteMaintenanceRecordService`, `CategorizeMaintenanceRecordService`, `ViewMaintenanceRecordsService` | One service per use case: transactions, orchestration, forwarding of commands to the owner replica |
-| **Aircraft availability coordinator** | [`AircraftAvailabilityService`](../code/maintenance/src/main/java/isep/psoft/aisafe/maintenance/services/AircraftAvailabilityService.java) | US115: puts the aircraft `UNDER_MAINTENANCE` through B3b **after the record was flushed and before the commit** (B3b fails → nothing saved; commit fails afterwards → **compensating PATCH**). US119: releases it to `AVAILABLE` only when **no other record of the aircraft is ongoing in any replica** and every replica answered; otherwise the aircraft stays `UNDER_MAINTENANCE` (safe side) |
-| **Statistics and alerts services** | `MaintenanceStatisticsService`, `MaintenanceAlertService` | Partial results per replica (sums and counts) combined into a fleet-wide result; due-maintenance check (US222), which still answers with calendar-day alerts (flagged partial) when flight hours are unavailable |
-| **Replica queries** | [`MaintenanceReplicaQueries`](../code/maintenance/src/main/java/isep/psoft/aisafe/maintenance/services/MaintenanceReplicaQueries.java), `Pages` | Combine local data with the peer replicas: find a record/template in any replica, merge collections **by id**, paginate **after** merging, encode peer URIs |
-| **Domain model** | `domain` + `factories` packages | Aggregates `MaintenanceTemplate` and `MaintenanceRecord`, Value Objects, read models, the due-maintenance policy (`MaintenanceDuePolicy` + `DueCriterion` strategies) — see [L4](#src-4-code-maintenance-maintenance-code) |
-| **Repositories** | `MaintenanceTemplateRepository`, `MaintenanceRecordRepository` (Spring Data JPA) | Access to the data of **this** replica only; local grouping queries for statistics |
-| **Anti-Corruption Layer** | [`AircraftClient`](../code/maintenance/src/main/java/isep/psoft/aisafe/maintenance/clients/AircraftClient.java) → `AircraftSnapshot`; `RestClientConfig` | Translates the Aircraft Management API (B3a–B3d) into local read-only views; `404` → `EntityNotFoundException`, `401/403/409` → same status, no replica → `503` |
-| **Assemblers / DTOs** | `MaintenanceRecordAssembler`, `MaintenanceTemplateAssembler`, `dto` package, `PageDTO` | Published language: API contract separate from the domain; HATEOAS links (also on records received from peers); stable page format |
-| **PeerClient** *(common)* | `PeerClient` | GET to the peer replicas (first answer / aggregation) and command forwarding to the owner replica |
-| **ReplicatedServiceClient** *(common)* | `ReplicatedServiceClient`, `ReplicatedServiceClientFactory` | Round-robin + failover over the replicas of Aircraft Management |
-| **ResilientExecutor** *(common)* | `ResilientExecutor`, `CircuitBreaker` | Timeouts, retry with exponential backoff, circuit breaker per target |
-| **Error mapping / OpenAPI** | `GlobalExceptionHandler`, `OpenApiConfig` | Exception → HTTP status; Swagger UI with the JWT *Authorize* button |
-| *Reference data* | `ReferenceTemplatesBootstrap` (every replica) | WP#0A: preloads the standard maintenance templates **with deterministic ids**, so the copies in the three replicas are the same template |
-| *Demo data* | `DemoDataBootstrap` (profile `demo`) | Loads **different** maintenance records in each replica, to demonstrate peer-to-peer behaviour |
+| **Security & Observability filters** | `common` filters + [`MaintenanceAuthorizationRules`](../code/maintenance/src/main/java/isep/psoft/aisafe/infrastructure/security/MaintenanceAuthorizationRules.java) | Correlation id, audit log, `X-Service-Key` check (forwarded commands), JWT authentication, role rules per endpoint (section 3) |
+| **REST controllers** | `MaintenanceTemplateController`, `MaintenanceRecordController`, `MaintenanceStatisticsController`, `MaintenanceAlertController` | The external API (unchanged from Assignment 1). POST/PATCH go to the command side; GET to the query side |
+| **Command services** (`command`) | `CreateMaintenanceTemplateService`, `CreateMaintenanceRecordService`, `CompleteMaintenanceRecordService`, `CategorizeMaintenanceRecordService` | One service per use case. Change the **write model of the replica that owns the entity** in a local ACID transaction (optimistic locking `@Version`); a command for a record of another replica is forwarded to its owner (`PeerClient.forwardToOwner`); if no peer executes it but the read model knows the record, its owner is down → `503` (`RecordOwnership`) |
+| **Event emitter + relay** (`command`) | [`MaintenanceEventEmitter`](../code/maintenance/src/main/java/isep/psoft/aisafe/maintenance/command/MaintenanceEventEmitter.java), `IntegrationEventRelay`, `OutgoingIntegrationEvent`, `IntegrationEventTransport` | Builds **one** state-carrying `IntegrationEvent`, applies it to this replica's read model **in the write transaction** (read-your-writes on the owner), and publishes it **after the commit** (a rolled-back change is never announced) |
+| **Aircraft availability coordinator** (`command`) | [`AircraftAvailabilityService`](../code/maintenance/src/main/java/isep/psoft/aisafe/maintenance/command/AircraftAvailabilityService.java) | US115: B3b `UNDER_MAINTENANCE` after the record is flushed and before the commit (B3b fails → nothing saved, no event; commit fails afterwards → **compensating PATCH**). US119: `AVAILABLE` only when the **read model** has no other ongoing record of the aircraft |
+| **Startup synchronisation** (`command`) | `ReadModelSynchronizer`, `MaintenanceStateRepublisher` | On start: republish the templates and records this replica owns and publish `MaintenanceSyncRequested`; the other replicas answer by republishing theirs. Fills a new or late replica |
+| **Projections** (`query`) | `MaintenanceEventRouter`, `MaintenanceTemplateProjection`, `MaintenanceRecordProjection`, `MaintenanceEventsListener` | Apply Maintenance events to `REPLICATED_MAINTENANCE_TEMPLATE` / `REPLICATED_MAINTENANCE_RECORD`: idempotent by `eventId` (recorded in the same transaction), older `version` ignored, unknown types ignored |
+| **Query services** (`query`) | `ViewMaintenanceTemplatesService`, `ViewMaintenanceRecordsService`, `MaintenanceStatisticsService`, `MaintenanceAlertService`, `RecordFilter` | Every GET, on local tables only: no peer call, no aggregation, never `X-Partial-Response` (except US222 when an external copy is not available, below) |
+| **External read models** (`query.external`) | `ExternalEventsProjection`, `AircraftManagementEventsListener`, `FlightRoutesEventsListener`, `KnownAircraft`, `KnownAircraftModel`, `KnownScheduledFlight` | Local copies of the data of other services, fed by their events: `KNOWN_AIRCRAFT` (B3a, fleet of B3d), `KNOWN_AIRCRAFT_MODEL` (B3c), `KNOWN_SCHEDULED_FLIGHT` (flight minutes, hours of B3d) |
+| **Fleet directory** (`query.external`) | [`FleetDirectory`](../code/maintenance/src/main/java/isep/psoft/aisafe/maintenance/query/external/FleetDirectory.java), `ExternalSyncState` | Single entry point for aircraft data: **local copy first**; HTTP to Aircraft Management only for an entity not received yet (it is then remembered), the first fleet listing (seeded once) and the flight hours while no flight event was received |
+| **Anti-Corruption Layer** | [`AircraftClient`](../code/maintenance/src/main/java/isep/psoft/aisafe/maintenance/clients/AircraftClient.java) → `AircraftSnapshot`; event payload records in `events.external` | Translate the API and the published language of Aircraft Management and Flight Routes into local views. The event names are repeated on purpose (no shared code between services) |
+| **Messaging infrastructure** | `MaintenanceMessagingConfiguration`, `RabbitIntegrationEventTransport`, `JpaProcessedEventStore` + `common` (`EventPublisher`, `EventSubscription`, retry/DLQ) | Exchange, three queues per replica with their DLQs, publisher confirms, processed ids in the replica's database |
+| **Domain model** | `domain` + `factories` | Aggregates `MaintenanceTemplate` and `MaintenanceRecord`, Value Objects, due-maintenance policy (`MaintenanceDuePolicy` + `DueCriterion` strategies) — see [L4](#src-4-code-maintenance-maintenance-code) |
+| **Repositories** | write model: `MaintenanceTemplateRepository`, `MaintenanceRecordRepository`; read models: `Replicated*Repository`, `Known*Repository` | Spring Data JPA on this replica's database |
+| **Assemblers / DTOs** | `MaintenanceRecordAssembler`, `MaintenanceTemplateAssembler`, `dto` | API contract separate from the domain and from the read model; HATEOAS links; `ownerInstance` tells which replica owns a record |
+| *Reference / demo data* | `ReferenceTemplatesBootstrap`, `DemoDataBootstrap` (profile `demo`) | WP#0A templates in every replica with **deterministic ids**; different demo records per replica, inserted once and announced as events |
 
 The `common` components are described in [common — Components](#src-3-components-common-common-components).
 
@@ -3395,56 +3411,49 @@ The `common` components are described in [common — Components](#src-3-componen
 
 #### 3. Provided interfaces (REST API)
 
-Every endpoint is served by every replica; **every GET returns the data of all replicas** (flagged with `X-Partial-Response: true` when a replica did not answer).
+Every endpoint is served by every replica. **Every GET is answered from the local read models**, which hold the data of every replica (eventually consistent).
 
 **Maintenance templates — `/api/maintenance-templates`**
 
-| Method | Endpoint | US | Input | Output | Roles |
-|---|---|---|---|---|---|
-| POST | `/api/maintenance-templates` | US115 (templates) | `CreateMaintenanceTemplateDTO` (name, type, applicableModels, checklist, flightHoursInterval?, calendarDaysInterval?) | `201` `MaintenanceTemplateDTO` + `Location` + links | MAINTENANCE_TECHNICIAN |
-| GET | `/api/maintenance-templates/{id}` | — | template id | `200` `MaintenanceTemplateDTO` | MAINTENANCE_TECHNICIAN, MAINTENANCE_SUPERVISOR, ATCC |
-| GET | `/api/maintenance-templates?model=&type=&name=` | — (also peer queries of US115/US222) | optional filters | `200` `List<MaintenanceTemplateDTO>` | MAINTENANCE_TECHNICIAN, MAINTENANCE_SUPERVISOR, ATCC |
+| Method | Endpoint | US | Side | Input | Output | Roles |
+|---|---|---|---|---|---|---|
+| POST | `/api/maintenance-templates` | US115 (templates) | command | `CreateMaintenanceTemplateDTO` (name, type, applicableModels, checklist, flightHoursInterval?, calendarDaysInterval?) | `201` `MaintenanceTemplateDTO` + `Location` | MAINTENANCE_TECHNICIAN |
+| GET | `/api/maintenance-templates/{id}` | — | query | template id | `200` `MaintenanceTemplateDTO` | MAINTENANCE_TECHNICIAN, MAINTENANCE_SUPERVISOR, ATCC |
+| GET | `/api/maintenance-templates?model=&type=&name=` | — | query | optional filters | `200` `List<MaintenanceTemplateDTO>` | MAINTENANCE_TECHNICIAN, MAINTENANCE_SUPERVISOR, ATCC |
 
 **Maintenance records — `/api/maintenance-records`**
 
-| Method | Endpoint | US | Input | Output | Roles |
+| Method | Endpoint | US | Side | Input | Output | Roles |
+|---|---|---|---|---|---|---|
+| POST | `/api/maintenance-records` | US115 (records) | command | `CreateMaintenanceRecordDTO` (aircraftRegistration, templateId, description, startDate, expectedDurationMinutes, component?) | `201` `MaintenanceRecordDTO` (checklist of the template, `ownerInstance`) + `Location` | MAINTENANCE_TECHNICIAN |
+| GET | `/api/maintenance-records/{id}` | — | query | record id | `200` `MaintenanceRecordDTO` | MAINTENANCE_TECHNICIAN, MAINTENANCE_SUPERVISOR, ATCC |
+| GET | `/api/maintenance-records/aircraft/{registration}?page=&size=` | US116 | query | registration + pagination | `200` `PageDTO<MaintenanceRecordDTO>` | MAINTENANCE_TECHNICIAN, MAINTENANCE_SUPERVISOR |
+| GET | `/api/maintenance-records?aircraft=&component=&status=&from=&to=&page=&size=` | US218 | query | optional filters (AND) | `200` `PageDTO<MaintenanceRecordDTO>` | MAINTENANCE_TECHNICIAN, MAINTENANCE_SUPERVISOR |
+| GET | `/api/maintenance-records/ongoing?page=&size=` | US219 | query | pagination | `200` `PageDTO<MaintenanceRecordDTO>` | MAINTENANCE_SUPERVISOR |
+| PATCH | `/api/maintenance-records/{id}/complete` | US119 | command (owner) | `CompleteMaintenanceRecordDTO` (notes, cost, actualDurationMinutes, completionDate?, aircraftFlightHours?) | `200` `MaintenanceRecordDTO` + `X-Aircraft-Released: true\|false` | MAINTENANCE_TECHNICIAN |
+| PATCH | `/api/maintenance-records/{id}/component` | US217 | command (owner) | `CategorizeRecordDTO` (ENGINE, AIRFRAME, AVIONICS, INTERIOR, EXTERIOR) | `200` `MaintenanceRecordDTO` | MAINTENANCE_TECHNICIAN |
+
+**Statistics, reports and alerts**
+
+| Method | Endpoint | US | Side | Output | Roles |
 |---|---|---|---|---|---|
-| POST | `/api/maintenance-records` | US115 (records) | `CreateMaintenanceRecordDTO` (aircraftRegistration, templateId, description, startDate, expectedDurationMinutes, component?) | `201` `MaintenanceRecordDTO` (with the template's checklist) + `Location` + links | MAINTENANCE_TECHNICIAN |
-| GET | `/api/maintenance-records/{id}` | — | record id | `200` `MaintenanceRecordDTO` | MAINTENANCE_TECHNICIAN, MAINTENANCE_SUPERVISOR, ATCC |
-| GET | `/api/maintenance-records/aircraft/{registration}?page=&size=` | US116 | registration + pagination | `200` `PageDTO<MaintenanceRecordDTO>` | MAINTENANCE_TECHNICIAN, MAINTENANCE_SUPERVISOR |
-| GET | `/api/maintenance-records?aircraft=&component=&status=&from=&to=&page=&size=` | US218 | optional filters (AND); `from`/`to` = range of the start date | `200` `PageDTO<MaintenanceRecordDTO>` | MAINTENANCE_TECHNICIAN, MAINTENANCE_SUPERVISOR |
-| GET | `/api/maintenance-records/ongoing?page=&size=` | US219 | pagination | `200` `PageDTO<MaintenanceRecordDTO>` | MAINTENANCE_SUPERVISOR |
-| GET | `/api/maintenance-records/search?aircraft=&component=&status=&from=&to=` | — (replica query) | same filters, **not paginated** | `200` `List<MaintenanceRecordDTO>` | MAINTENANCE_TECHNICIAN, MAINTENANCE_SUPERVISOR, ATCC |
-| PATCH | `/api/maintenance-records/{id}/complete` | US119 | `CompleteMaintenanceRecordDTO` (notes, cost, actualDurationMinutes, completionDate?, aircraftFlightHours?) | `200` `MaintenanceRecordDTO` + header `X-Aircraft-Released: true\|false` | MAINTENANCE_TECHNICIAN |
-| PATCH | `/api/maintenance-records/{id}/component` | US217 | `CategorizeRecordDTO` (component: ENGINE, AIRFRAME, AVIONICS, INTERIOR, EXTERIOR) | `200` `MaintenanceRecordDTO` | MAINTENANCE_TECHNICIAN |
+| GET | `/api/maintenance-records/statistics/hours` | US117 | query | `200` `FleetMaintenanceHoursDTO` (total + per aircraft) | ATCC |
+| GET | `/api/maintenance-records/reports/costs?groupBy=AIRCRAFT\|MODEL` | US220 | query | `200` `CostReportDTO` | ATCC |
+| GET | `/api/maintenance-records/reports/turnaround` | US221 | query | `200` `TurnaroundReportDTO` (per aircraft model) | MAINTENANCE_SUPERVISOR |
+| GET | `/api/maintenance-alerts` | US222 | query | `200` `List<MaintenanceAlertDTO>` (+ `X-Partial-Response` only if an external copy was unavailable) | ATCC |
 
-**Statistics and reports — `/api/maintenance-records/statistics`, `/api/maintenance-records/reports`**
+Infrastructure endpoints (from `common`): `GET /actuator/health` (+ `/liveness`, `/readiness` with RabbitMQ), `POST /auth/dev-token` (development only), `/swagger-ui.html`.
 
-| Method | Endpoint | US | Input | Output | Roles |
-|---|---|---|---|---|---|
-| GET | `/api/maintenance-records/statistics/hours` | US117 | — | `200` `FleetMaintenanceHoursDTO` (total + per aircraft) | ATCC |
-| GET | `/api/maintenance-records/reports/costs?groupBy=AIRCRAFT\|MODEL` | US220 | grouping (default `AIRCRAFT`) | `200` `CostReportDTO` | ATCC |
-| GET | `/api/maintenance-records/reports/turnaround` | US221 | — | `200` `TurnaroundReportDTO` (per aircraft model) | MAINTENANCE_SUPERVISOR |
-| GET | `/api/maintenance-records/statistics/last-completions` | — (replica query of US222) | — | `200` `List<LastCompletionDTO>` | ATCC |
-
-**Alerts — `/api/maintenance-alerts`**
-
-| Method | Endpoint | US | Input | Output | Roles |
-|---|---|---|---|---|---|
-| GET | `/api/maintenance-alerts` | US222 | — | `200` `List<MaintenanceAlertDTO>` (+ `X-Partial-Response`) | ATCC |
-
-Infrastructure endpoints (from `common`): `GET /actuator/health`, `POST /auth/dev-token` (development only), `/swagger-ui.html`.
-
-**Why the replica queries are separate endpoints.** The client-facing lists are paginated, but a page can only be cut after the data of every replica has been merged. Peers are therefore asked through `/search` (complete local list, no pagination) and `/statistics/last-completions` (local partial result), exactly as Flight Routes does with `/api/scheduled-flights/search`. These endpoints are also usable by clients, with the same JWT rules.
+**Removed in Assignment 2:** `GET /api/maintenance-records/search` and `GET /api/maintenance-records/statistics/last-completions`. They existed only so that a replica could ask its peers for their data (aggregation). With read models every replica already has that data.
 
 **Errors** — body `{ "error": "<message>" }` (Bean Validation: `{ "<field>": "<message>" }`):
 
 | Exception | HTTP | Examples |
 |---|---|---|
-| `IllegalArgumentException`, `MethodArgumentNotValidException`, type mismatch | 400 | invalid component/type/status, template not applicable to the aircraft model, start date in the future, unknown aircraft model in a template, duplicate template name |
-| `EntityNotFoundException` | 404 | record/template not found in any replica, aircraft not found (B3a) |
+| `IllegalArgumentException`, `MethodArgumentNotValidException`, type mismatch | 400 | invalid component/type/status, template not applicable to the model, start date in the future, unknown aircraft model, duplicate template name |
+| `EntityNotFoundException` | 404 | record/template not in the read model, aircraft not found (local copy and Aircraft Management) |
 | `IllegalStateException`, `ObjectOptimisticLockingFailureException` | 409 | record already completed, categorising a completed record, concurrent update (`@Version`), aircraft in flight (B3b answered 409) |
-| `RemoteServiceUnavailableException` | 503 | no replica of Aircraft Management answered; no peer answered a forwarded command |
+| `RemoteServiceUnavailableException` | 503 | no replica of Aircraft Management answered a needed call; the **owner** of a record is down (forwarded command) |
 | `ResponseStatusException` | same status | remote 401/403/409; business error of the owner replica |
 
 
@@ -3452,33 +3461,84 @@ Infrastructure endpoints (from `common`): `GET /actuator/health`, `POST /auth/de
 
 #### 4. Required interfaces
 
-| Component | Calls | Endpoint | Bridge |
-|---|---|---|---|
-| `AircraftClient` | Aircraft Management (all replicas) | `GET /api/aircrafts/{registrationNumber}` | B3a |
-| `AircraftClient` | Aircraft Management | `PATCH /api/aircrafts/{registrationNumber}/status` | B3b |
-| `AircraftClient` | Aircraft Management | `GET /api/aircraft-models/{modelName}` | B3c |
-| `AircraftClient` | Aircraft Management | `GET /api/aircrafts?page=&size=`, `GET /api/aircrafts/operational-hours?page=&size=` | B3d |
-| `PeerClient` | Maintenance peer replicas | the replica queries above, `X-Peer-Hops: 1` | — |
+| Component | Provider | Interface | Bridge | Kind |
+|---|---|---|---|---|
+| `AircraftClient` (via `AircraftAvailabilityService`) | Aircraft Management (round-robin + failover) | `PATCH /api/aircrafts/{registrationNumber}/status` | B3b | HTTP command (kept) |
+| `ExternalEventsProjection` | Aircraft Management | `aircraft.registered`, `aircraft.status-changed` → `KNOWN_AIRCRAFT` | replaces B3a and the fleet of B3d | AMQP |
+| `ExternalEventsProjection` | Aircraft Management | `aircraft-model.created`, `aircraft-model.updated` → `KNOWN_AIRCRAFT_MODEL` | replaces B3c | AMQP |
+| `ExternalEventsProjection` | Flight Routes | `scheduled-flight.created` (`.status-changed` reserved) → `KNOWN_SCHEDULED_FLIGHT` | replaces the hours of B3d | AMQP |
+| `FleetDirectory` → `AircraftClient` | Aircraft Management | `GET /api/aircrafts/{reg}`, `GET /api/aircraft-models/{model}`, `GET /api/aircrafts?page=&size=`, `GET /api/aircrafts/operational-hours` | B3a, B3c, B3d | HTTP **fallback only** |
+| `PeerClient` | Maintenance peer replicas | the PATCH commands above, `X-Peer-Hops: 1` + `X-Service-Key` | — | HTTP (forward to owner) |
 
-Exact schemas, status codes and roles: [Integration-Contracts §4 — B3](#sec-b3-maintenance-aircraft-management-implemented).
+Event and bridge contracts: [Integration-Contracts §4 (B3) and §9](#sec-9-assignment-2-event-contracts).
 
 
-<a id="sec-5-how-the-components-realise-the-distribution-requirements-3"></a>
+<a id="sec-5-how-the-components-realise-the-requirements-of-assignment-2"></a>
 
-#### 5. How the components realise the distribution requirements
+#### 5. How the components realise the requirements of Assignment 2
 
 | Requirement | Components involved |
 |---|---|
-| Peer forwarding of GET by id (record, template) | `ViewMaintenanceRecordsService` / `ViewMaintenanceTemplatesService` → `MaintenanceReplicaQueries` → `PeerClient.findFirst` |
-| Aggregation of collections (US116, US218, US219, template list) | services → `MaintenanceReplicaQueries.searchRecords` / `PeerClient.collectList` (merged **by id**) → `Pages` (page cut after merging) |
-| Aggregated statistics (US117, US220, US221) | `MaintenanceStatisticsService` → `PeerClient.collect`: every replica returns **sums and counts** of its own records, the entry replica adds them (averages are computed only after adding, never averaged twice) |
-| Fleet-wide check (US222) | `MaintenanceAlertService` → templates and last completions of every replica + fleet and flight hours from Aircraft Management → `MaintenanceDuePolicy` |
-| Single owner per record (US119, US217) | `CompleteMaintenanceRecordService`, `CategorizeMaintenanceRecordService` → `PeerClient.forwardToOwner` |
-| Cross-service consistency of the aircraft status (US115, US119) | `AircraftAvailabilityService` → `AircraftClient` (B3b): US115 inside the local transaction with compensation on rollback; US119 by the replica that received the client request, after the owner completed the record |
-| Calls to Aircraft Management with failover | `AircraftClient` → `ReplicatedServiceClient` → `ResilientExecutor` |
-| Security and audit | filter chain of `common` + `MaintenanceAuthorizationRules` |
+| **CQRS** (independent write and read models) | Write model `MAINTENANCE_TEMPLATE` / `MAINTENANCE_RECORD` (only the owner's rows) changed by `command/*Service`; read models `REPLICATED_*` (every replica's rows) and `KNOWN_*` (other services) built by projections and read by `query/*Service` |
+| **AMQP + message broker between services** | `EventPublisher` (common) → `aisafe.maintenance.events`; listeners on the Aircraft Management and Flight Routes exchanges; `IntegrationEventRelay` publishes after the commit |
+| **External endpoints stay HTTP REST** | Controllers unchanged; the forwarded commands and B3b are the only HTTP between processes |
+| **Database per service instance** | One H2 file per replica (`code/data/maintenancedb-N`); no table is shared; another service's data is a local copy fed by its events |
+| **At least two instances** | Three replicas (`instance1..3` profiles); every one answers every query alone |
+| Single owner per record (US119, US217) | `Complete…`/`CategorizeMaintenanceRecordService` → `PeerClient.forwardToOwner`; only the owner publishes the record's events, so they arrive in order |
+| Cross-service consistency of the aircraft status | `AircraftAvailabilityService` (B3b inside the transaction + compensation). Aircraft Management then publishes `AircraftStatusChanged`, which updates `KNOWN_AIRCRAFT` here and `AIRCRAFT_MOOD` (`/api/v2/unicorns`) there |
+| Fault tolerance of messaging | `common`: durable queues, persistent messages, publisher confirms, bounded retries, DLQ, idempotent projections; startup synchronisation |
 
-The system-wide decisions (consistency model, fault tolerance, security) are in [L2 §3](#sec-3-distribution-design-decisions).
+
+<a id="sec-6-cqrs-flow-write-event-projection-on-every-replica-3"></a>
+
+#### 6. CQRS flow: write → event → projection on every replica
+
+```text
+POST/PATCH ─▶ command/*Service ──(1) save + flush──▶ write model (MAINTENANCE_TEMPLATE / MAINTENANCE_RECORD, owned rows only)
+                 │                (US115: B3b PATCH UNDER_MAINTENANCE to Aircraft Management, compensated on rollback)
+                 └─(2) MaintenanceEventEmitter: build ONE IntegrationEvent (full state + version)
+                        ├─(3) MaintenanceEventRouter → projection → read model of THIS replica   } same transaction
+                        └─(4) OutgoingIntegrationEvent (Spring)                                   }
+                                       │ AFTER COMMIT
+                                       ▼
+                        IntegrationEventRelay ─▶ RabbitIntegrationEventTransport ─▶ [aisafe.maintenance.events] (topic)
+                                                                    │ maintenance-template.*, maintenance-record.*
+                        ┌───────────────────────────────────────────┼───────────────────────────────────────┐
+                        ▼                                           ▼                                       ▼
+            maintenance-1.maintenance                   maintenance-2.maintenance                maintenance-3.maintenance
+            (owner: eventId already processed → skip)   → REPLICATED_MAINTENANCE_RECORD/TEMPLATE  → same
+
+[aisafe.aircraftmanagement.events] ─ aircraft.*, aircraft-model.* ─▶ maintenance-N.aircraftmanagement ─▶ KNOWN_AIRCRAFT, KNOWN_AIRCRAFT_MODEL
+[aisafe.flightroutes.events]       ─ scheduled-flight.*          ─▶ maintenance-N.flightroutes       ─▶ KNOWN_SCHEDULED_FLIGHT
+
+GET ─▶ query/*Service ─▶ local tables only (no peer call, no X-Partial-Response)
+```
+
+| Read model (table) | Built from | Answers |
+|---|---|---|
+| `REPLICATED_MAINTENANCE_TEMPLATE` | `MaintenanceTemplateCreated` | template GETs, template lookup of US115 (records), unique name of US115 (templates), periodic templates of US222 |
+| `REPLICATED_MAINTENANCE_RECORD` | `MaintenanceRecordCreated`, `…Categorized`, `…Completed` | GET by id, US116, US117, US218, US219, US220, US221, last completions of US222, "other ongoing record?" of US119 |
+| `KNOWN_AIRCRAFT` | Aircraft Management `AircraftRegistered`, `AircraftStatusChanged` (+ HTTP fallback, remembered) | aircraft of US115 and US116, fleet of US222 |
+| `KNOWN_AIRCRAFT_MODEL` | `AircraftModelCreated`, `AircraftModelUpdated` (+ HTTP fallback) | applicable models of US115 (templates) |
+| `KNOWN_SCHEDULED_FLIGHT` | Flight Routes `ScheduledFlightCreated` (`…StatusChanged` reserved) | flight hours per aircraft of US222 |
+| `EXTERNAL_SYNC_STATE` | first HTTP listing of the fleet | "fleet copy seeded once" marker |
+| `PROCESSED_EVENT` | every applied event | idempotency |
+
+**Startup synchronisation (same design as Airports and Aircraft Management).** A queue only receives events published after it exists. On the first start the replicas start in parallel; a new replica, or one whose database was erased, starts empty. On `ApplicationReadyEvent` (after the reference and demo data), `ReadModelSynchronizer` republishes, through `MaintenanceStateRepublisher`, the current state of the templates and records this replica owns, and publishes `MaintenanceSyncRequested` (routing key `maintenance-sync.requested`, which does not match `maintenance-record.*`); every other replica answers by republishing what it owns. Upserts with the same version are harmless; older versions are ignored. The three `@RabbitListener`s start only on `ApplicationReadyEvent`, after the reference and demo data were written (`MaintenanceListenersStarter`): events that arrive earlier wait in the durable queues, so the startup writes and the projection of other replicas' events never insert the same read-model row at the same time.
+
+**Data of other services that arrived before Maintenance's queues existed.** Aircraft Management republishes its aircraft and models on every start, so `KNOWN_AIRCRAFT` fills itself; until then `FleetDirectory` reads an unknown aircraft once over HTTP and keeps it, and seeds the fleet once for US222. Flight Routes has no replay, so `KNOWN_SCHEDULED_FLIGHT` only has the flights scheduled after the queue `maintenance-N.flightroutes` exists (durable, so a replica that is down still gets them); while no flight event was received at all, US222 asks Aircraft Management for the hours (B3d), which has them all.
+
+Sequence diagrams: [+1 Scenarios](#src-5-scenarios-maintenance-maintenance-scenarios).
+
+
+<a id="sec-7-observations-4"></a>
+
+#### 7. Observations
+
+- **Assignment 1 → 2.** Before, a replica that did not have a record asked its peers (`findFirst`, `collect`) and merged the answers; a stopped replica made its records invisible (`404`) and answers partial. Now a GET never leaves the replica, and the records of a stopped replica stay readable everywhere. The price is eventual consistency: a record created on replica 2 appears on replica 1 a few milliseconds later.
+- **Statistics are simpler.** Every replica has every record, so the sums and counts of Assignment 1 are no longer exchanged between replicas; the average of US221 is still computed as total minutes / completed records.
+- **US119 release decision.** It is taken on the read model of the replica that received the request. Inside the consistency window a record of the same aircraft created on another replica a few milliseconds earlier may not be visible yet, and the aircraft could be released. Accepted risk (documented in [L2 §3.6](#sec-3-6-known-limitations-of-messaging)); the fix would be to let Aircraft Management count open maintenance records per aircraft (one owner of the decision).
+- **No outbox.** If the broker is down at commit time, the change is saved on the owner but its event is lost for the others until the next change of that entity or the next startup synchronisation (common limitation of the group, [L2 §3.6](#sec-3-6-known-limitations-of-messaging)).
 
 <a id="src-4-code-maintenance-maintenance-code"></a>
 
@@ -3510,16 +3570,17 @@ The system-wide decisions (consistency model, fault tolerance, security) are in 
 | Maintenance Record | [`MaintenanceRecord`](../code/maintenance/src/main/java/isep/psoft/aisafe/maintenance/domain/MaintenanceRecord.java) | [`TemplateReference`](../code/maintenance/src/main/java/isep/psoft/aisafe/maintenance/domain/TemplateReference.java), `RecordDetails`, `MaintenanceComponent`, `MaintenanceStatus`, `CompletionDetails` | Required aircraft, template and details; start date not in the future; expected duration positive; created `IN_PROGRESS`; `IN_PROGRESS → COMPLETED` only once; completion date not before the start date nor in the future; cost ≥ 0; actual duration > 0; a completed record cannot be re-categorised |
 
 - **Glossary alignment with PSOFT.** "Maintenance type (according to a maintenance template)" of US115 is the `TemplateReference`; "aircraft type" of US221 is the aircraft model (PSOFT forum, conversation 009); the "fleet" is every aircraft managed in AISafe (conversation 010).
-- **`MaintenanceRecord` → `MaintenanceTemplate` by identity.** The template may be stored in another replica, so a JPA association is impossible. `TemplateReference` keeps the `templateId` and a snapshot of the name and type; the **checklist is copied** into the record when it is created (US115: "its checklist, defined by the maintenance template"), so the record keeps the checklist it was performed with even if templates evolve.
-- **`MaintenanceRecord` → Aircraft by identity + model snapshot.** The record stores `aircraftRegistration` and the `aircraftModel` returned by B3a at creation time. US220 (cost per model) and US221 (turnaround per model) are then computed **locally in each replica**, without calling Aircraft Management once per record and without a cross-service JOIN (the PSOFT monolith joined `MaintenanceRecord` with `Aircraft` in JPQL, which is impossible after the decomposition).
-- **`MaintenanceTemplate` → AircraftModel by model name** (`applicableModels`), validated in Aircraft Management at creation (B3c).
+- **`MaintenanceRecord` → `MaintenanceTemplate` by identity.** The template may be owned by another replica, so a JPA association is impossible. `TemplateReference` keeps the `templateId` and a snapshot of the name and type; the **checklist is copied** into the record when it is created (US115: "its checklist, defined by the maintenance template"), so the record keeps the checklist it was performed with even if templates evolve.
+- **`MaintenanceRecord` → Aircraft by identity + model snapshot.** The record stores `aircraftRegistration` and the `aircraftModel` known at creation time. US220 (cost per model) and US221 (turnaround per model) are then computed from the read model alone, without a cross-service JOIN (the PSOFT monolith joined `MaintenanceRecord` with `Aircraft` in JPQL, which is impossible after the decomposition).
+- **`MaintenanceTemplate` → AircraftModel by model name** (`applicableModels`), validated at creation against `KNOWN_AIRCRAFT_MODEL` (Aircraft Management events), with B3c as fallback.
 - **`MaintenanceInterval` lives in the template** (conversation 016): `flightHours` and/or `calendarDays`. A template without interval (e.g. a one-off `MODIFICATION`) is not periodic and never raises alerts.
 - **Status is explicit** (`IN_PROGRESS`, `COMPLETED`) instead of PSOFT's "completion notes are null", which makes US218 (`status` filter) and US219 (ongoing) simple queries.
-- **Turnaround time (US221)** is the `actualDurationMinutes` recorded at completion (the time the aircraft was out of service for that maintenance). US117 uses the actual duration of completed records and the expected duration of ongoing ones (`maintenanceMinutes()`).
-- Both roots have `@Version` (optimistic locking). A record is only written by its owner replica (section 5), so `@Version` is enough to detect concurrent updates of the same record (`409`).
-- **Read models** (not persisted): `LastCompletion` (latest completion of a template on an aircraft, plus whether one is ongoing) and `MaintenanceAlert` (US222). Statistics DTOs carry **sums and counts**, never averages, so they can be added across replicas.
+- **Turnaround time (US221)** is the `actualDurationMinutes` recorded at completion. US117 uses the actual duration of completed records and the expected duration of ongoing ones (`maintenanceMinutes()`).
+- Both roots have `@Version` (optimistic locking). A record is only written by its owner replica, so `@Version` detects concurrent updates of the same record (`409`); the version also travels in every event, so consumers can ignore stale events.
+- **Write model vs read models (CQRS).** The aggregates above are the **write model**: each replica stores only the templates and records it owns. Every replica also keeps **read models** built from events: `ReplicatedMaintenanceTemplate` and `ReplicatedMaintenanceRecord` (data of all replicas, flat, with `sourceVersion` and `ownerInstance`), `KnownAircraft`, `KnownAircraftModel` and `KnownScheduledFlight` (copies of the data of other services). Read models have no behaviour other than "apply an event" and simple predicates (`isOngoing`, `appliesTo`); the business rules stay in the aggregates.
+- **Computed views** (not persisted): `LastCompletion` (latest completion of a template on an aircraft, plus whether one is ongoing) and `MaintenanceAlert` (US222).
 - **Due-maintenance policy (US222)** — [`MaintenanceDuePolicy`](../code/maintenance/src/main/java/isep/psoft/aisafe/maintenance/domain/MaintenanceDuePolicy.java) is a domain service that applies a list of `DueCriterion` strategies:
-  - `FlightHoursCriterion`: flight hours since the last completion = current hours (B3d) − `aircraftFlightHours` recorded at that completion; if the technician did not record them, or the template was never performed on the aircraft, all current hours count (safety-first: alert earlier rather than later). Due when ≥ `interval.flightHours`.
+  - `FlightHoursCriterion`: flight hours since the last completion = current hours − `aircraftFlightHours` recorded at that completion; if the technician did not record them, or the template was never performed on the aircraft, all current hours count (safety-first). Due when ≥ `interval.flightHours`. Current hours = minutes of the aircraft's scheduled flights in `KNOWN_SCHEDULED_FLIGHT` / 60.
   - `CalendarDaysCriterion`: days since the last completion, or since the aircraft's manufacturing date if never performed. Due when ≥ `interval.calendarDays`.
   - An aircraft is checked against every periodic template that applies to its model; `INACTIVE` aircraft and template/aircraft pairs with an ongoing record are skipped.
 
@@ -3536,97 +3597,102 @@ The system-wide decisions (consistency model, fault tolerance, security) are in 
 
 ![Maintenance-CD-TemplatesReports](4-code/maintenance/svg/Maintenance-CD-TemplatesReports.svg)
 
+**Events, projections and read models (CQRS + AMQP)**
+
+![Maintenance-CD-Messaging](4-code/maintenance/svg/Maintenance-CD-Messaging.svg)
+
 
 <a id="sec-3-design-rationale-responsibility-assignment-4"></a>
 
 #### 3. Design rationale (responsibility assignment)
 
-**Create maintenance template (US115 — templates)**
+**Create maintenance template (US115 — templates, command)**
 
 | Question: which class is responsible for... | Answer | Justification (patterns) |
 |---|---|---|
 | ...receiving the HTTP request? | `MaintenanceTemplateController` | **Controller (REST)** |
-| ...coordinating the use case and the transaction? | `CreateMaintenanceTemplateService` | **Application Service** |
-| ...checking that the applicable models exist? | `AircraftClient.modelExists` (B3c) | **Anti-Corruption Layer / Indirection** |
-| ...checking that the name is unique? | `MaintenanceTemplateRepository` + `MaintenanceReplicaQueries` | **Repository** (local) + peer query (other replicas, best-effort) |
+| ...coordinating the use case and the transaction? | `CreateMaintenanceTemplateService` (`command`) | **Application Service** (command side of CQRS) |
+| ...checking that the applicable models exist? | `FleetDirectory.modelExists` (`KNOWN_AIRCRAFT_MODEL`, B3c fallback) | **Indirection / ACL** |
+| ...checking that the name is unique? | write model + `ReplicatedMaintenanceTemplateRepository` | **Repository** — the read model has the templates of every replica (best-effort inside the consistency window) |
 | ...parsing the type and building a valid aggregate? | `MaintenanceTemplateFactory` | **Factory / Creator** |
-| ...persisting it? | `MaintenanceTemplateRepository` | **Repository** — stored in the replica that received the request |
+| ...announcing the change? | `MaintenanceEventEmitter.templateCreated` | **Pure Fabrication** — one event, applied locally and published after the commit |
 
-**Create maintenance record (US115 — records)**
+**Create maintenance record (US115 — records, command)**
 
 | Question | Answer | Justification |
 |---|---|---|
-| ...knowing that the aircraft exists and its model? | `AircraftClient.getAircraft` → `AircraftSnapshot` (B3a) | **ACL** |
-| ...finding the template in any replica? | `MaintenanceReplicaQueries.findTemplate` → `PeerClient.findFirst` | **Pure Fabrication** |
-| ...knowing whether the template applies to the model? | `MaintenanceTemplateDTO.appliesTo` / `MaintenanceTemplate.appliesTo` | **Information Expert** |
+| ...knowing that the aircraft exists and its model? | `FleetDirectory.aircraft` → `AircraftSnapshot` (`KNOWN_AIRCRAFT`, B3a fallback) | **ACL + local copy** (no HTTP when the aircraft is already known) |
+| ...finding the template of any replica? | `ReplicatedMaintenanceTemplateRepository.findById` | **Read model** — no peer call |
+| ...knowing whether the template applies to the model? | `ReplicatedMaintenanceTemplate.appliesTo` | **Information Expert** |
 | ...copying the checklist and the template snapshot into a new record? | `MaintenanceRecordFactory` | **Factory / Creator** |
-| ...validating the details (start date, duration, component)? | `RecordDetails`, `MaintenanceComponent.parse` | **Value Objects** (self-validating) |
-| ...putting the aircraft `UNDER_MAINTENANCE`? | `AircraftAvailabilityService` → `AircraftClient.updateStatus` (B3b) | **Pure Fabrication** — keeps the cross-service protocol (ordering + compensation) out of the use-case services |
-| ...building the response with links? | `MaintenanceRecordAssembler` | **DTO / Assembler** (HATEOAS) |
+| ...putting the aircraft `UNDER_MAINTENANCE`? | `AircraftAvailabilityService` → `AircraftClient.updateStatus` (B3b) | **Pure Fabrication** — keeps the cross-service protocol (ordering + compensation) out of the use case |
+| ...announcing the record? | `MaintenanceEventEmitter.recordCreated` | after B3b succeeded, inside the transaction; published after the commit |
 
-**Complete a record (US119) / categorise a record (US217)**
+**Complete a record (US119) / categorise a record (US217) (commands)**
 
 | Question | Answer | Justification |
 |---|---|---|
-| ...sending the command to the replica that stores the record? | `PeerClient.forwardToOwner` | **Indirection** — a record has a single owner |
+| ...sending the command to the replica that owns the record? | `PeerClient.forwardToOwner` | **Indirection** — single writer per record |
 | ...validating the transition and the completion data? | `MaintenanceRecord.complete` / `categorize`, `CompletionDetails` | **Information Expert / Aggregate Root** |
 | ...detecting concurrent updates? | `@Version` | **Optimistic Locking** |
-| ...releasing the aircraft to `AVAILABLE`? | `AircraftAvailabilityService.releaseIfNoOtherOngoing` | **Pure Fabrication** — releases only if no other record of the aircraft is ongoing in **any** replica |
+| ...releasing the aircraft to `AVAILABLE`? | `AircraftAvailabilityService.releaseIfNoOtherOngoing` | **Pure Fabrication** — no other ongoing record of the aircraft in the **read model** (records of every replica) |
 
-**Queries and statistics (US116–US117, US218–US221)**
-
-| Question | Answer | Justification |
-|---|---|---|
-| ...combining the records of every replica? | `MaintenanceReplicaQueries.searchRecords` | **Pure Fabrication** — local + peers, merged by id |
-| ...filtering by aircraft, component, status, date range? | `RecordFilter` | **Value Object** — the same filter is applied locally and sent to the peers as query parameters |
-| ...cutting the page? | `Pages` → `PageDTO` | after merging all replicas (a page of one replica is meaningless) |
-| ...grouping costs by aircraft or by model? | `CostGrouping` | **Strategy** (enum) / **Protected Variation** — a new grouping is a new constant |
-| ...adding partial results? | `MaintenanceStatisticsService` | every replica returns sums/counts of its own records (`PeerClient.collect`); averages computed after the sum |
-
-**Maintenance alerts (US222)**
+**Queries, statistics and alerts (query side)**
 
 | Question | Answer | Justification |
 |---|---|---|
-| ...triggering the check? | `MaintenanceAlertController` (`GET /api/maintenance-alerts`) | **Controller** — manual trigger (conversation 016); a safe, idempotent GET |
-| ...obtaining the fleet and the flight hours? | `AircraftClient.fleet` / `flightHours` (B3d) | **ACL** — pages of Aircraft Management read until the end |
-| ...obtaining templates and last completions of every replica? | `ViewMaintenanceTemplatesService.list`, `MaintenanceStatisticsService.lastCompletions` | Replica queries; merge by template id / keep the latest completion |
-| ...deciding whether maintenance is due? | `MaintenanceDuePolicy` with `DueCriterion` strategies | **Domain Service + Strategy (OCP)** — a new criterion (e.g. cycles) is a new class |
+| ...answering any GET? | `query/*Service` on `Replicated*Repository` / `Known*Repository` | **CQRS query side** — local tables only |
+| ...filtering by aircraft, component, status, date range? | `RecordFilter` | **Value Object** |
+| ...cutting the page? | `PageDTO.of` | sorted (most recent first), `size` 1–100 |
+| ...grouping costs by aircraft or by model? | `CostGrouping` | **Strategy** (enum) / **Protected Variation** |
+| ...the fleet and the flight hours of US222? | `FleetDirectory.fleet` / `flightHours` | **Indirection** — local copies, HTTP only to seed the fleet once or while no flight event was received |
+| ...deciding whether maintenance is due? | `MaintenanceDuePolicy` with `DueCriterion` strategies | **Domain Service + Strategy (OCP)** |
+
+**Events and read models**
+
+| Question | Answer | Justification |
+|---|---|---|
+| ...building one event and applying it locally before publishing? | `MaintenanceEventEmitter` | **Pure Fabrication**; read-your-writes on the owner; the same `eventId` is skipped when the broker delivers it back |
+| ...publishing only committed changes? | `IntegrationEventRelay` (`@TransactionalEventListener(AFTER_COMMIT)`) | a rolled-back change is never announced |
+| ...routing an incoming event to the right projection? | `MaintenanceEventRouter` | **Indirection** — one queue carries several payload types (JSON tree converted by `eventType`) |
+| ...updating a read model exactly once? | `MaintenanceRecordProjection` / `MaintenanceTemplateProjection` / `ExternalEventsProjection` + `IdempotentEventHandler` + `JpaProcessedEventStore` | **Idempotent consumer**; the change and the processed id commit together; older `version` ignored |
+| ...translating the events of other services? | records in `events.external` (`AircraftPayload`, `ScheduledFlightPayload`, ...) | **Anti-Corruption Layer / tolerant reader** — only the fields Maintenance needs |
+| ...filling a late or new replica? | `ReadModelSynchronizer` + `MaintenanceStateRepublisher` | republish owned state on start + `MaintenanceSyncRequested` |
 
 
 <a id="sec-4-package-organization-4"></a>
 
 #### 4. Package organization
 
-| Package | Layer / L3 component | DDD role |
+| Package | Layer / L3 component | DDD / CQRS role |
 |---|---|---|
 | `maintenance.controllers`, `dto`, `assemblers` | Controllers | Published Language (API contract separate from the domain) |
-| `maintenance.services` | Application services, Replica queries, Aircraft availability coordinator | Application Services |
-| `maintenance.domain`, `domain.alerts`, `factories` | Domain model | Entities, Value Objects, Aggregates, Read Models, Domain Service, Factories |
-| `maintenance.repositories` | Repositories | One repository per Aggregate Root (local data) |
-| `maintenance.clients` | Anti-Corruption Layer | ACL (`AircraftClient`, `AircraftSnapshot`) |
+| `maintenance.command` | Command services, event emitter/relay, availability coordinator, startup sync | Application Services (write side) |
+| `maintenance.query` | Query services, projections, read models | Read side |
+| `maintenance.query.external` | External read models, fleet directory | Local copies of other bounded contexts |
+| `maintenance.events`, `events.external` | Event contracts | Published Language (own events) / ACL (others' events) |
+| `maintenance.domain`, `domain.alerts`, `factories` | Domain model | Entities, Value Objects, Aggregates, Domain Service, Factories |
+| `maintenance.repositories` | Write model repositories | One repository per Aggregate Root (rows owned by this replica) |
+| `maintenance.clients` | Anti-Corruption Layer | `AircraftClient`, `AircraftSnapshot` |
 | `maintenance.bootstrap` | Reference / demo data | WP#0A templates; profile `demo` |
-| `infrastructure`, `exceptions` | Security & config | Security rules, OpenAPI, error mapping |
+| `infrastructure.messaging`, `infrastructure.security`, `infrastructure.config`, `exceptions` | Infrastructure | Broker topology, transport, processed events, security rules, OpenAPI, error mapping |
 
 
 <a id="sec-5-implementation-notes-4"></a>
 
 #### 5. Implementation notes
 
-- **Ownership.** A replica owns a record/template iff it is in its local database. `GET` by id: local, else `PeerClient.findFirst`. `PATCH`: local, else `PeerClient.forwardToOwner` (a `404` from a peer means "not mine"; a business `4xx` from the owner is propagated with its status).
-- **Taking the aircraft out of service (US115, B3b).** Inside the local transaction the record is first written and **flushed** (all local validation, constraints and the `@Version` check have passed), then B3b is called, then the transaction commits:
-  - B3b fails (`404`/`409`/`503`) → the exception rolls the transaction back → no record and no status change; the client gets the remote status.
-  - B3b succeeds but the commit fails afterwards → a `TransactionSynchronization` (`afterCompletion`, rolled back) sends a **compensating PATCH** with the status the aircraft had before.
-  - Setting a status to a fixed value is idempotent, so retries of B3b by `ReplicatedServiceClient` are safe.
-- **Returning the aircraft to service (US119).** The completion is the fact that matters, so it is committed first by the owner replica; releasing the aircraft is a separate, safe step:
-  - An aircraft may have several records in progress at the same time (e.g. engine and avionics). `AircraftAvailabilityService` asks every replica for other `IN_PROGRESS` records of the aircraft and sets `AVAILABLE` only if there are none **and every replica answered**.
-  - The release is done by the replica that **received the client request**: when the command was forwarded, the owner answers a peer request (`X-Peer-Hops: 1`) and cannot query the other replicas, so it only completes the record.
-  - If another record is ongoing, a replica did not answer or Aircraft Management fails, the aircraft stays `UNDER_MAINTENANCE` (the safe side: no flight can be scheduled), the completion still succeeds and the response says so with `X-Aircraft-Released: false`. The ATCC can change the status with US105.
-- **Graceful degradation of US222.** Flight hours come from Flight Routes through Aircraft Management (US206). If they are unavailable, the calendar-day alerts are still computed and the response is flagged `X-Partial-Response: true` instead of failing.
-- **Reference templates (WP#0A).** `ReferenceTemplatesBootstrap` creates the standard templates in **every** replica with ids derived from the name (`UUID.nameUUIDFromBytes`), so the three copies are the same template: merging by id removes the duplicates and any replica can serve it locally. Templates have no update use case, so the copies never diverge.
-- **Peer statistics without double counting.** `/statistics/hours`, `/reports/costs` and `/reports/turnaround` return, for a peer request, the local partial result; the entry replica adds the partial results of all replicas (`totalMinutes`, `totalCost`, `completedRecords`) and only then computes hours and averages.
-- **Tolerant reader.** DTOs exchanged between replicas use `@JsonIgnoreProperties(ignoreUnknown = true)`; HATEOAS links of records received from peers are rebuilt to point to the entry replica (`MaintenanceRecordAssembler.withLinks`).
-- **Pagination after merging.** `Pages.of` sorts (most recent start date first) and cuts the page after merging; `size` 1–100, default 20 (same `PageDTO` format as Aircraft Management).
-- **Validation.** Bean Validation on every input DTO; enums parsed case-insensitively with a `400` that lists the allowed values; registration numbers are trimmed and upper-cased before calling B3a.
+- **Ownership.** A replica owns a record/template iff it is in its write model. `GET` never needs the owner (read model). `PATCH` on a record of another replica is forwarded with `PeerClient.forwardToOwner` (a `404` from a peer means "not mine"; a business `4xx` from the owner is propagated); if the owner is down, `503`.
+- **Taking the aircraft out of service (US115, B3b).** Inside the local transaction the record is written and **flushed**, then B3b is called, then the event is emitted (local read model updated), then the transaction commits and the relay publishes the event:
+  - B3b fails (`404`/`409`/`503`) → rollback → no record, no read-model row, no event.
+  - B3b succeeds but the commit fails afterwards → a `TransactionSynchronization` sends a **compensating PATCH** with the previous status; the event is not published (AFTER_COMMIT).
+  - Aircraft Management publishes `AircraftStatusChanged`, which comes back to Maintenance (`KNOWN_AIRCRAFT`) and updates its own `AIRCRAFT_MOOD` (`/api/v2/unicorns`).
+- **Returning the aircraft to service (US119).** The owner commits the completion and publishes `MaintenanceRecordCompleted`. The replica that received the client request (the owner itself, or the replica that forwarded the command) then checks its read model for other `IN_PROGRESS` records of the aircraft and, if there are none, calls B3b `AVAILABLE`. If another record is ongoing or Aircraft Management fails, the aircraft stays `UNDER_MAINTENANCE` (safe side) and `X-Aircraft-Released: false`.
+- **Read-your-writes.** The response of a command is built from the owner's write model; a GET on the owner right after a command already sees the change (same transaction). On other replicas the change appears when the event arrives (milliseconds).
+- **Reference templates (WP#0A).** Created in **every** replica with ids derived from the name (`UUID.nameUUIDFromBytes`) and announced as events; the identical copies converge to one read-model row.
+- **Demo data.** Inserted once per replica (file database) and announced as events; the startup synchronisation re-announces it on later starts.
+- **Tolerant reader.** Payload records ignore unknown fields (`@JsonIgnoreProperties(ignoreUnknown = true)` on the external payloads; Jackson configuration of `common`). Unknown event types are logged and ignored.
+- **Validation.** Bean Validation on every input DTO; enums parsed case-insensitively with a `400` that lists the allowed values; registration numbers are trimmed and upper-cased.
 
 
 <a id="sec-6-configuration-files-3"></a>
@@ -3635,17 +3701,19 @@ The system-wide decisions (consistency model, fault tolerance, security) are in 
 
 | File | Content |
 |---|---|
-| [`application.properties`](../code/maintenance/src/main/resources/application.properties) | Defaults (= replica 1), Aircraft Management URLs, resilience, security, logging, actuator |
-| `application-instance1/2/3.properties` | Port, instance id, database and peers of each replica |
-| `application-demo.properties` / `application-tls.properties` | Demo records per replica / HTTPS |
+| [`application.properties`](../code/maintenance/src/main/resources/application.properties) | Defaults (= replica 1): file database, peers (forwarded commands), Aircraft Management URLs (B3b + fallback), resilience, security, **RabbitMQ and messaging retry**, liveness/readiness groups, logging |
+| `application-instance1/2/3.properties` | Port, instance id, database file `./data/maintenancedb-N` and peers of each replica; demo records |
+| `application-demo.properties` / `application-tls.properties` | Demo records on / HTTPS |
+| `src/test/resources/config/application.properties` | Tests: messaging off, in-memory database |
 
 
 <a id="sec-7-code-level-observations-3"></a>
 
 #### 7. Code-level observations
 
-- Alerts are computed on demand and not stored (conversation 016: manual trigger). Storing them would require deciding which replica owns an alert and de-duplicating alerts raised by several replicas.
-- Cross-replica uniqueness of template names is best-effort (AP, [L2 §3.3](#sec-3-3-consistency-model-cap)).
+- Alerts are computed on demand and not stored (conversation 016: manual trigger), now on local copies only.
+- Cross-replica uniqueness of template names is checked on the read model and is best-effort inside the consistency window (AP, [L2 §3.3](#sec-3-3-consistency-model-cap)).
+- The Assignment 1 classes `MaintenanceReplicaQueries` (peer aggregation) and the peer-only endpoints `/search` and `/statistics/last-completions` were removed: with read models no replica needs the data of another over HTTP.
 - US226 (parts inventory) is a bonus use case of the whole team and is not implemented.
 
 <a id="src-5-scenarios-maintenance-maintenance-scenarios"></a>
@@ -3664,7 +3732,7 @@ The system-wide decisions (consistency model, fault tolerance, security) are in 
 
 #### 1. User stories
 
-The use cases are the WP#4 user stories of the PSOFT assignment (the monolith that this service replaces), now served by three replicas.
+The use cases are the WP#4 user stories of the PSOFT assignment (the monolith that this service replaces), served by three replicas. Assignment 2 does not change them: it changes **how** they are served (CQRS, events through RabbitMQ, a database file per replica).
 
 | WP | US | Description | Actor |
 |---|---|---|---|
@@ -3690,7 +3758,7 @@ The use cases are the WP#4 user stories of the PSOFT assignment (the monolith th
 - **Conv. 010:** the *fleet* is the set of all aircraft managed in AISafe.
 - **Conv. 016:** the maintenance interval (flight hours and/or calendar days) is an attribute of the template; the due-maintenance check is **triggered manually** by the user.
 - **Operational constraint:** "aircraft under maintenance cannot be assigned to flights" — realised through the aircraft status in Aircraft Management (B3b), which Flight Routes already checks (B1a).
-- **Group decisions** (Integration-Contracts §7): after maintenance the aircraft returns to `AVAILABLE` (Q1); B3b is called after the local write was flushed and compensated if the local transaction rolls back (Q7).
+- **Group decisions** (Integration-Contracts §7): after maintenance the aircraft returns to `AVAILABLE` (Q1); B3b is called after the local write was flushed and compensated if the local transaction rolls back (Q7). B3b stays a synchronous HTTP command in Assignment 2 (Integration-Contracts §9.6).
 
 
 <a id="sec-2-acceptance-criteria-4"></a>
@@ -3705,7 +3773,7 @@ The use cases are the WP#4 user stories of the PSOFT assignment (the monolith th
 
 **Queries and reports:** AC15 US116 for an unknown aircraft → `404` (not an empty history); AC16 lists sorted by start date (most recent first) and paginated (`size` 1–100) after merging; AC17 US218 filters combine with AND, `from` ≤ `to`; AC18 US117 counts actual hours of completed records and expected hours of ongoing ones; AC19 US220 only completed records, `groupBy` `AIRCRAFT` or `MODEL` (else `400`); AC20 US221 average = total actual minutes / number of completed records per model, computed after adding the replicas; AC21 US222 lists every aircraft (not `INACTIVE`) × applicable periodic template whose flight-hours or calendar-days limit is reached, without an ongoing record of that template; without flight hours (Flight Routes down) the calendar-day alerts are still returned, flagged partial.
 
-**Distribution:** AC22 any replica answers with the data of all replicas, `404` only if no replica has it; AC23 a failed peer gives a `200` with `X-Partial-Response: true`; AC24 a record is only modified by its owner replica; AC25 peer requests without a valid `X-Service-Key` → `401`, `X-Peer-Hops > 1` → `400`; AC26 JWT + roles on every endpoint (`401` / `403`), every request audited; AC27 `503` when no replica of Aircraft Management answers.
+**Distribution (Assignment 2):** AC22 any replica answers every GET from its own read models, with the data of every replica, `404` only if the read model does not have it; no GET calls another replica; AC23 a write on one replica is visible on the others after its event is applied (eventual consistency, normally milliseconds) and immediately on the owner (read-your-writes); AC24 a record is only modified by its owner replica; a command for a record whose owner is down → `503`; AC25 the records of a stopped replica stay readable on the others; AC26 every event is applied once per replica (duplicates ignored by `eventId`, older `version` ignored); AC27 a replica that was down catches up from its durable queue; a new/erased replica catches up through the startup synchronisation; AC28 peer requests without a valid `X-Service-Key` → `401`, `X-Peer-Hops > 1` → `400`; JWT + roles on every endpoint (`401` / `403`), every request audited; AC29 B3b: `503` when no replica of Aircraft Management answers (nothing is saved).
 
 
 <a id="sec-3-system-sequence-diagram-4"></a>
@@ -3722,106 +3790,109 @@ The use cases are the WP#4 user stories of the PSOFT assignment (the monolith th
 #### 4. Scenarios (sequence diagrams)
 
 
-<a id="sec-4-1-distributed-scenarios-2"></a>
+<a id="sec-4-1-cqrs-and-messaging-scenarios"></a>
 
-##### 4.1 Distributed scenarios
+##### 4.1 CQRS and messaging scenarios
 
-**S1 — Peer-to-peer query resolution: GET a record stored in another replica (same for templates and the template lookup of US115)**
+**S1 — Write → event → projection on every replica (and the Aircraft Management event caused by B3b)**
 
-![Maintenance-SD-PeerForwarding](5-scenarios/maintenance/svg/Maintenance-SD-PeerForwarding.svg)
+![Maintenance-SD-WriteEventProjection](5-scenarios/maintenance/svg/Maintenance-SD-WriteEventProjection.svg)
 
-**S2 — Response aggregation with a failed replica (US219; same for US116, US218 and the template list)**
+**S2 — Query side: any replica answers alone, even with the owner of the data down (US116, US218, US219, GET by id)**
 
-![Maintenance-SD-PeerAggregation](5-scenarios/maintenance/svg/Maintenance-SD-PeerAggregation.svg)
+![Maintenance-SD-ReadModelQuery](5-scenarios/maintenance/svg/Maintenance-SD-ReadModelQuery.svg)
 
-**S3 — Complete a record: command forwarded to the owner replica, aircraft released (US119; same forwarding for US217)**
+**S3 — Complete a record owned by another replica: command forwarded to the owner, event, aircraft released (US119; same forwarding for US217)**
 
 ![Maintenance-SD-CompleteRecord](5-scenarios/maintenance/svg/Maintenance-SD-CompleteRecord.svg)
 
-**S4 — Statistics aggregated with sums and counts (US221; same pattern for US117 and US220)**
+**S4 — Startup synchronisation of the read models**
 
-![Maintenance-SD-Turnaround](5-scenarios/maintenance/svg/Maintenance-SD-Turnaround.svg)
+![Maintenance-SD-StartupSync](5-scenarios/maintenance/svg/Maintenance-SD-StartupSync.svg)
 
 
 <a id="sec-4-2-use-case-scenarios-3"></a>
 
 ##### 4.2 Use-case scenarios
 
-**S5 — Create a maintenance record (US115) — cross-service consistency with Aircraft Management**
+**S5 — Create a maintenance record (US115): command side, B3b with compensation, event after the commit**
 
 ![Maintenance-SD-CreateRecord](5-scenarios/maintenance/svg/Maintenance-SD-CreateRecord.svg)
 
-**S6 — Maintenance alerts (US222)**
+**S6 — Maintenance alerts (US222) from local copies of the fleet and of the scheduled flights**
 
 ![Maintenance-SD-Alerts](5-scenarios/maintenance/svg/Maintenance-SD-Alerts.svg)
+
+
+<a id="sec-4-3-the-api-v2-unicorns-mock-and-maintenance"></a>
+
+##### 4.3 The `/api/v2/unicorns` mock and Maintenance
+
+The assignment asks for a mock `/api/v2/unicorns` (aircraft moods) and for its relation with CQRS ([Unicorns-Mock.md](#src-2-containers-unicorns-mock)). It is a pure **query**: a read-model contract, served by a Postman mock server and, for real, by Aircraft Management's `AIRCRAFT_MOOD` projection. Maintenance is what makes the moods change: starting a record sends the **command** B3b (`UNDER_MAINTENANCE`), Aircraft Management publishes `AircraftStatusChanged`, and its projection turns the mood into `GROUNDED_AND_GRUMPY`; completing the last record makes it `HAPPY` again. The command side (Maintenance + B3b) and the query side (`/api/v2/unicorns`) never talk directly: only the event connects them. Folders 2, 4 and 7 of the Postman collection check this.
 
 
 <a id="sec-5-tests-4"></a>
 
 #### 5. Tests
 
-From `code/`: `./mvnw -pl maintenance -am test` — 45 tests in the maintenance module (plus the 20 of `common`), all passing.
+From `code/`: `./mvnw -pl maintenance -am test` (58 tests, no broker needed).
 
 | Test class | Type | What is verified |
 |---|---|---|
-| `MaintenanceTemplateTest` | Unit (domain) | required data and normalisation, interval rules, `appliesTo`, `isPeriodic`, same id for reference templates, enum parsing with `400` |
-| `MaintenanceRecordTest` | Unit (domain) | created `IN_PROGRESS` with checklist and template snapshot, start date rules, completion rules (once, dates, cost, duration), categorisation only while in progress, `maintenanceMinutes` |
-| `MaintenanceDuePolicyTest` | Unit (domain) | flight-hours and calendar-days criteria, never performed, hours not recorded at completion, non-periodic templates |
-| `CreateMaintenanceRecordServiceTest` | Unit (mocks) | order B3a → template → save/flush → B3b; nothing saved for unknown aircraft/template, template not applicable, invalid component; B3b failure propagates (rollback) |
-| `CompleteMaintenanceRecordServiceTest` | Unit (mocks) | local completion + release, forwarding to the owner, owner does not touch the aircraft on a peer request, `404` / `409` |
-| `AircraftAvailabilityServiceTest` | Unit (mocks) | release only without other ongoing records and with every replica answering; failed release does not fail the completion |
-| `MaintenanceStatisticsServiceTest` | Unit (mocks) | partial results added correctly: turnaround average after the sum (400, not 375), costs per model, hours, latest completion + ongoing flag |
-| `MaintenanceAlertServiceTest` | Unit (mocks) | applicable templates only, `INACTIVE` and ongoing skipped, calendar-only alerts flagged partial without flight hours |
-| `MaintenanceApplicationTests` | Context | the service starts with the real security configuration of `common` |
-| **`MaintenanceReplicaCollaborationTest`** | **Distributed** — two real replicas + a stateful stub of Aircraft Management | scenarios below |
+| `MaintenanceTemplateTest`, `MaintenanceRecordTest`, `MaintenanceDuePolicyTest` | Unit (domain) | invariants of the aggregates and of the due-maintenance policy |
+| `CreateMaintenanceRecordServiceTest`, `CompleteMaintenanceRecordServiceTest`, `AircraftAvailabilityServiceTest` | Unit (command side, mocks) | order lookup → save/flush → B3b → event; no event when B3b fails; forwarding to the owner (no event on the forwarding replica); release only without other ongoing records in the read model |
+| `MaintenanceProjectionsTest` | Unit (projections) | event from the broker (JSON) projected with its owner; the same event twice applied once; older version ignored; unknown types ignored |
+| `MaintenanceStatisticsServiceTest`, `MaintenanceAlertServiceTest` | Unit (query side) | statistics from the read model (average = total / count), alerts from the local copies, partial only when an external copy is missing |
+| `RecordOwnershipTest` | Unit | a forwarded command that no peer executed: `503` if the read model knows the record (its owner is down), `404` otherwise |
+| `FleetDirectoryTest` | Unit | local copy first; HTTP fallback remembered; fleet seeded once; hours from flight events, else from Aircraft Management |
+| **`MaintenanceReplicaCollaborationTest`** | **Distributed** — two (then three) real replicas, an in-process event bus that serialises every event to JSON as the broker does, and a stub of Aircraft Management | scenarios below |
 
 `MaintenanceReplicaCollaborationTest`:
 
-1. Templates: reference templates listed once; template created on B found from A (S1); duplicate name and unknown model → `400`.
-2. Records stored where created, the aircraft goes `UNDER_MAINTENANCE` in the stub; aircraft in flight → `409` (nothing stored); unknown aircraft → `404`; template not applicable / future start date → `400`.
-3. GET on A of a record of B → forwarded, links rebuilt for A; US219 from A and B → same list; US116 paginated after merging, unknown aircraft → `404`; US218 filters (S2).
-4. US217 and US119 on A for a record of B → executed by B; completing again → owner's `409` propagated (S3).
-5. The aircraft is released only when its last ongoing record is completed (`X-Aircraft-Released`).
-6. US117/US220/US221 add the records of both replicas (S4).
-7. US222 with the stub's fleet and flight hours → expected alerts; `INACTIVE` aircraft ignored (S6).
-8. Peer headers without/wrong service key → `401`; hops 2 → `400`; valid peer request → local data only; no token → `401`; wrong role → `403`.
-9. Replica B stopped: A answers `200` with `X-Partial-Response: true`; record only in B → `404`; a completion on A keeps the aircraft `UNDER_MAINTENANCE` (B could not confirm).
+1. A template created on B reaches A's read model (`MaintenanceTemplateCreated` from `it-maintenance-B`); duplicate name and unknown model → `400`.
+2. Records are written by the replica that receives them (`ownerInstance`); the aircraft goes `UNDER_MAINTENANCE`; `409` (in flight), `404`, `400`.
+3. An `AircraftStatusChanged` event updates `KNOWN_AIRCRAFT`: later lookups do not call Aircraft Management.
+4. Every replica answers GET by id, US116, US218, US219 from its read model (same lists, no `X-Partial-Response`).
+5. Commands on A for a record of B are executed by B and their events reach A; `409` from the owner propagated; `400`.
+6. The aircraft is released only when its last ongoing record is completed.
+7. US117, US220, US221 on any replica.
+8. US222 with the fleet seeded once and flight minutes from a `ScheduledFlightCreated` event (flight-hours alert).
+9. Peer headers without/wrong service key → `401`; hops 2 → `400`; no token → `401`; wrong role → `403`.
+10. A new replica C starts empty and catches up when A and B republish their state (startup synchronisation).
+11. Replica B stopped: its records are still readable on A (`200`); a command on one of them → `503`; new records on A still work.
 
-**Postman:** [postman/Maintenance.postman_collection.json](5-scenarios/maintenance/postman/Maintenance.postman_collection.json) + [environment](5-scenarios/maintenance/postman/Maintenance.postman_environment.json), against the three Maintenance replicas with the `demo` profile and the real Aircraft Management (and Flight Routes for flight hours). Folders: 0 setup (tokens), 1 templates, 2 records, 3 local access, 4 forwarding, 5 aggregation, 6 command forwarding, 7 statistics/reports/alerts, 8 security, 9 replica failure (stop replica 2 before folder 9). Verified with Newman: folders 0–8 — 48 requests, 74 assertions, 0 failures; folder 9 — 4 requests, 6 assertions, 0 failures. The collection can be run again without restarting (template names are unique per run and every record created is completed).
+**Postman:** [postman/Maintenance.postman_collection.json](5-scenarios/maintenance/postman/Maintenance.postman_collection.json) + environment (58 requests), against the running system (RabbitMQ, Aircraft Management, Flight Routes, three Maintenance replicas): 0 setup; 1 CQRS templates; 2 records and the asynchronous integration with Aircraft Management (`/api/v2/unicorns` mood); 3 queries from read models; 4 commands executed by the owner; 5 statistics, reports and alerts; 6 security; 7 `/api/v2/unicorns` mock; 8 replica failure (stop `maintenance-2` first); 9 catch-up after restart (start it again). Requests that read another replica right after a write wait 1.5 s (eventual consistency). The databases are files, so the collection can be run again: template names carry a run id.
 
 
 <a id="sec-6-demo-4"></a>
 
 #### 6. Demo
 
-From `code/`:
+From `code/` (Windows: the `.ps1` scripts):
 
-1. `./mvnw clean install`
-2. Start Aircraft Management (its demo data is loaded by the instance profiles): `./scripts/start-replicas.sh aircraftmanagement` — aircraft CS-TUA (A320), CS-TUB (B737, `UNDER_MAINTENANCE`), CS-TUC/CS-TUD (A330), CS-TUE/CS-TUF (E190). Optionally `./scripts/start-replicas.sh flightroutes demo` (flight hours used by US222).
-3. `./scripts/start-replicas.sh maintenance demo` (Windows: `.\scripts\start-replicas.ps1 -Service maintenance -Profiles demo`). Every replica has the reference templates; each replica loads **different** records.
-4. Tokens: `POST http://localhost:8082/auth/dev-token` with `{"username":"tech1","roles":["MAINTENANCE_TECHNICIAN"]}`, `{"username":"sup1","roles":["MAINTENANCE_SUPERVISOR"]}`, `{"username":"atcc1","roles":["ATCC"]}`.
+1. Docker Desktop running; `infra/.env` with the RabbitMQ user and password (template `infra/.env.example`).
+2. `./scripts/start-all.sh 3 demo` (`.\scripts\start-all.ps1 -Profiles demo`) — starts RabbitMQ if needed and the 12 replicas.
+3. RabbitMQ UI `http://localhost:15672`: exchange `aisafe.maintenance.events`; queues `maintenance-N.maintenance`, `maintenance-N.aircraftmanagement`, `maintenance-N.flightroutes` and their `.dlq`.
+4. Tokens: `POST http://localhost:8082/auth/dev-token` with `{"username":"tech1","roles":["MAINTENANCE_TECHNICIAN"]}` (also `MAINTENANCE_SUPERVISOR`, `ATCC`).
 5. Run the Postman collection, or by hand:
-   - `GET :8082/api/maintenance-records/ongoing` and `:8182/...` → the same list (supervisor).
-   - `GET :8082/api/maintenance-records/{id of a record of replica 3}` → `200`; log of replica 1: `Not found locally: forwarding GET ...`; replica 3: `AUDIT ... source=peer:maintenance-1` with the same correlation id.
-   - `POST :8182/api/maintenance-records` for CS-TUA → `GET :8081/api/aircrafts/CS-TUA` shows `UNDER_MAINTENANCE`; `PATCH :8082/api/maintenance-records/{id}/complete` → executed by replica 2 (log of replica 1: `forwarding PATCH ... to the owner replica`), response `X-Aircraft-Released: true`, CS-TUA back to `AVAILABLE`.
-   - `GET :8282/api/maintenance-records/reports/turnaround` (supervisor) and `/reports/costs?groupBy=MODEL` (ATCC) → figures of the three replicas.
-   - `GET :8082/api/maintenance-alerts` (ATCC) → aircraft due for maintenance.
-   - Stop replica 2 → `ongoing` returns the records of replicas 1 and 3 with `X-Partial-Response: true`; `/actuator/health` shows `8182` `OPEN`.
+   - `POST :8182/api/maintenance-records` (CS-TUA) → log of replica 2: `Applied MaintenanceRecordCreated ... owner maintenance-2`; logs of replicas 1 and 3: the same line, a few ms later. `GET :8082/api/maintenance-records/{id}` → `200` with `ownerInstance: maintenance-2`, no peer call.
+   - `GET :8081/api/v2/unicorns` → CS-TUA `GROUNDED_AND_GRUMPY`.
+   - `PATCH :8282/api/maintenance-records/{id}/complete` → executed by replica 2 (`forwarding PATCH ... to the owner replica`), CS-TUA back to `AVAILABLE`, mood `HAPPY`.
+   - Stop replica 2 → `GET :8082/api/maintenance-records/{id}` still `200`; `PATCH .../component` → `503`. Create a record on replica 1, start replica 2 again → it applies the waiting events from `maintenance-2.maintenance` and shows that record.
    - HTTPS: add the `tls` profile (`demo,tls`) and use `https://`.
 
-H2 console: `http://localhost:8082/h2-console` (JDBC URL `jdbc:h2:mem:maintenancedb-1`).
+H2 console: `http://localhost:8082/h2-console` (JDBC URL `jdbc:h2:file:./data/maintenancedb-1`, the replica must be running): tables `MAINTENANCE_RECORD` (write model, owned rows), `REPLICATED_MAINTENANCE_RECORD` (read model, all rows), `KNOWN_AIRCRAFT`, `PROCESSED_EVENT`. To start from scratch, stop everything and delete `code/data/maintenancedb-*`.
 
 
-<a id="sec-7-observations-4"></a>
+<a id="sec-7-observations-5"></a>
 
 #### 7. Observations
 
-- Cross-replica uniqueness of template names is best-effort (AP, see [L2 §3.3](#sec-3-3-consistency-model-cap)).
-- Two records of the same aircraft completed at the same instant on two replicas may each see the other as ongoing, so neither releases the aircraft: it stays `UNDER_MAINTENANCE` (the safe side) until the ATCC changes it (US105).
-- US222 alerts are computed on demand (manual trigger) and not stored; a scheduled check and notification channel are future work.
-- Without Flight Routes, Aircraft Management cannot give flight hours (US206): US222 then returns only calendar-day alerts, flagged partial.
-- Demo records are inserted directly in each replica (without calling Aircraft Management); their aircraft statuses match the Aircraft Management demo data (CS-TUB `UNDER_MAINTENANCE` with an ongoing C-Check).
-- Flight hours come from scheduled flights (Flight Routes, through Aircraft Management US206), not from actual flown hours; "flight hours at completion" are entered by the technician.
+- Cross-replica uniqueness of template names is checked on the read model: two replicas can accept the same name inside the consistency window (AP, [L2 §3.3](#sec-3-3-consistency-model-cap)).
+- US119 decides the release on the read model of the replica that received the request; a record of the same aircraft started on another replica a few milliseconds earlier may not be visible yet. Accepted risk; the alternative is to let Aircraft Management keep the count of open maintenance records per aircraft.
+- No transactional outbox (group-wide limitation, [L2 §3.6](#sec-3-6-known-limitations-of-messaging)): with the broker down at commit time the change is saved on the owner and its event is lost for the others until the next change of that record or the next startup synchronisation.
+- Flight Routes has no replay: flights scheduled before the queue `maintenance-N.flightroutes` existed are not in `KNOWN_SCHEDULED_FLIGHT`. While no flight event was received, US222 asks Aircraft Management for the hours (it has them all).
+- US222 alerts are computed on demand (manual trigger) and not stored; "flight hours at completion" are entered by the technician.
 
 <div style="page-break-before: always;"></div>
 
@@ -4074,66 +4145,72 @@ H2 console: `http://localhost:8082/h2-console` (JDBC URL `jdbc:h2:mem:maintenanc
 | 10. Assignment 2 — reads with the other replicas stopped (MANUAL: stop fr2 and fr3 first) | Write of CDG-LHR (owned by replica 3) → 503 | PATCH | `{{fr1}}/api/routes/{{cdgLhrId}}` |
 | 10. Assignment 2 — reads with the other replicas stopped (MANUAL: stop fr2 and fr3 first) | Write of the folder 9 route (owned by replica 1) still works → 200 | PATCH | `{{fr1}}/api/routes/{{a2RouteId}}` |
 
-<a id="sec-aisafe-maintenance-service-wp-4"></a>
+<a id="sec-aisafe-maintenance-service-wp-4-assignment-2-cqrs-amqp"></a>
 
-## AISafe - Maintenance Service (WP#4)
+## AISafe - Maintenance Service (WP#4, Assignment 2: CQRS + AMQP)
 
 *Source: [docs/5-scenarios/maintenance/postman/Maintenance.postman_collection.json](5-scenarios/maintenance/postman/Maintenance.postman_collection.json)*
 
 | Folder | Request | Method | URL |
 |---|---|---|---|
-| 0 - Setup (tokens) | Today's date | GET | `{{m1}}/actuator/health` |
-| 0 - Setup (tokens) | Token MAINTENANCE_TECHNICIAN | POST | `{{m1}}/auth/dev-token` |
-| 0 - Setup (tokens) | Token MAINTENANCE_SUPERVISOR | POST | `{{m1}}/auth/dev-token` |
-| 0 - Setup (tokens) | Token ATCC | POST | `{{m1}}/auth/dev-token` |
-| 0 - Setup (tokens) | Token BACKOFFICE_OPERATOR | POST | `{{m1}}/auth/dev-token` |
-| 1 - Templates (US115) | List templates (reference templates in every replica, no duplicates) | GET | `{{m1}}/api/maintenance-templates` |
-| 1 - Templates (US115) | Create template on replica 2 | POST | `{{m2}}/api/maintenance-templates` |
-| 1 - Templates (US115) | Duplicate name on replica 1 -> 400 | POST | `{{m1}}/api/maintenance-templates` |
-| 1 - Templates (US115) | Unknown aircraft model -> 400 (B3c) | POST | `{{m1}}/api/maintenance-templates` |
-| 1 - Templates (US115) | Invalid type -> 400 | POST | `{{m1}}/api/maintenance-templates` |
-| 2 - Records (US115) | Create record on replica 2 (CS-TUA, A-Check) | POST | `{{m2}}/api/maintenance-records` |
-| 2 - Records (US115) | Aircraft is now UNDER_MAINTENANCE (Aircraft Management) | GET | `{{am1}}/api/aircrafts/CS-TUA` |
-| 2 - Records (US115) | Create record on replica 1 with the template stored in replica 2 | POST | `{{m1}}/api/maintenance-records` |
-| 2 - Records (US115) | Template not applicable to the model (E190) -> 400 | POST | `{{m1}}/api/maintenance-records` |
-| 2 - Records (US115) | Unknown aircraft -> 404 | POST | `{{m1}}/api/maintenance-records` |
-| 2 - Records (US115) | Unknown template -> 404 | POST | `{{m1}}/api/maintenance-records` |
-| 2 - Records (US115) | Start date in the future -> 400 | POST | `{{m1}}/api/maintenance-records` |
-| 3 - Local access | GET record on its owner replica (2) | GET | `{{m2}}/api/maintenance-records/{{recordOnM2}}` |
-| 4 - Peer forwarding (GET by id) | GET record of replica 2 through replica 3 | GET | `{{m3}}/api/maintenance-records/{{recordOnM2}}` |
-| 4 - Peer forwarding (GET by id) | GET template of replica 2 through replica 1 | GET | `{{m1}}/api/maintenance-templates/{{templateId}}` |
-| 4 - Peer forwarding (GET by id) | Unknown record -> 404 | GET | `{{m1}}/api/maintenance-records/does-not-exist` |
-| 5 - Aggregation (US116, US218, US219) | US219 ongoing from replica 1 | GET | `{{m1}}/api/maintenance-records/ongoing` |
-| 5 - Aggregation (US116, US218, US219) | US219 ongoing from replica 3 (same result) | GET | `{{m3}}/api/maintenance-records/ongoing` |
-| 5 - Aggregation (US116, US218, US219) | US116 records of CS-TUA (paginated after merging) | GET | `{{m3}}/api/maintenance-records/aircraft/CS-TUA?page=0&size=2` |
-| 5 - Aggregation (US116, US218, US219) | US116 unknown aircraft -> 404 | GET | `{{m1}}/api/maintenance-records/aircraft/CS-XXX` |
-| 5 - Aggregation (US116, US218, US219) | US218 search by component | GET | `{{m1}}/api/maintenance-records?component=AIRFRAME&status=IN_PROGRESS` |
-| 5 - Aggregation (US116, US218, US219) | US218 search by date range | GET | `{{m2}}/api/maintenance-records?aircraft=CS-TUA&from=2026-01-01&to={{today}}` |
-| 5 - Aggregation (US116, US218, US219) | US218 invalid range -> 400 | GET | `{{m2}}/api/maintenance-records?from=2026-12-01&to=2026-01-01` |
-| 6 - Command forwarding (US217, US119) | US217 categorise record of replica 1 through replica 3 | PATCH | `{{m3}}/api/maintenance-records/{{recordOnM1}}/component` |
-| 6 - Command forwarding (US217, US119) | US119 complete record of replica 2 through replica 3 (another record still ongoing) | PATCH | `{{m3}}/api/maintenance-records/{{recordOnM2}}/complete` |
-| 6 - Command forwarding (US217, US119) | Complete again -> 409 (propagated from the owner) | PATCH | `{{m1}}/api/maintenance-records/{{recordOnM2}}/complete` |
-| 6 - Command forwarding (US217, US119) | Invalid completion data -> 400 | PATCH | `{{m1}}/api/maintenance-records/{{recordOnM1}}/complete` |
-| 6 - Command forwarding (US217, US119) | US119 complete the last ongoing record of CS-TUA through replica 2 | PATCH | `{{m2}}/api/maintenance-records/{{recordOnM1}}/complete` |
-| 6 - Command forwarding (US217, US119) | Aircraft is AVAILABLE again (Aircraft Management) | GET | `{{am2}}/api/aircrafts/CS-TUA` |
-| 7 - Statistics, reports and alerts (US117, US220, US221, US222) | US117 maintenance hours of the fleet | GET | `{{m2}}/api/maintenance-records/statistics/hours` |
-| 7 - Statistics, reports and alerts (US117, US220, US221, US222) | US220 costs per aircraft model | GET | `{{m3}}/api/maintenance-records/reports/costs?groupBy=MODEL` |
-| 7 - Statistics, reports and alerts (US117, US220, US221, US222) | US220 costs per aircraft | GET | `{{m1}}/api/maintenance-records/reports/costs?groupBy=AIRCRAFT` |
-| 7 - Statistics, reports and alerts (US117, US220, US221, US222) | US220 invalid grouping -> 400 | GET | `{{m1}}/api/maintenance-records/reports/costs?groupBy=COLOR` |
-| 7 - Statistics, reports and alerts (US117, US220, US221, US222) | US221 average turnaround per model | GET | `{{m1}}/api/maintenance-records/reports/turnaround` |
-| 7 - Statistics, reports and alerts (US117, US220, US221, US222) | US222 maintenance alerts | GET | `{{m2}}/api/maintenance-alerts` |
-| 8 - Security (JWT, roles, inter-service key) | No token -> 401 | GET | `{{m1}}/api/maintenance-records/ongoing` |
-| 8 - Security (JWT, roles, inter-service key) | ATCC cannot create records -> 403 | POST | `{{m1}}/api/maintenance-records` |
-| 8 - Security (JWT, roles, inter-service key) | Technician cannot see US219 -> 403 | GET | `{{m1}}/api/maintenance-records/ongoing` |
-| 8 - Security (JWT, roles, inter-service key) | Backoffice cannot see alerts -> 403 | GET | `{{m1}}/api/maintenance-alerts` |
-| 8 - Security (JWT, roles, inter-service key) | Peer request without X-Service-Key -> 401 | GET | `{{m1}}/api/maintenance-records/search` |
-| 8 - Security (JWT, roles, inter-service key) | Peer request with X-Peer-Hops 2 -> 400 | GET | `{{m1}}/api/maintenance-records/search` |
-| 8 - Security (JWT, roles, inter-service key) | Valid peer request is answered with local data only | GET | `{{m1}}/api/maintenance-records/search?aircraft=CS-TUA` |
-| 8 - Security (JWT, roles, inter-service key) | Health with peers | GET | `{{m1}}/actuator/health` |
-| 9 - Replica failure (stop replica 2 first) | US116 records of CS-TUA from replica 1 -> 200 partial | GET | `{{m1}}/api/maintenance-records/aircraft/CS-TUA` |
-| 9 - Replica failure (stop replica 2 first) | Record stored only in replica 2 -> 404 | GET | `{{m1}}/api/maintenance-records/{{recordOnM2}}` |
-| 9 - Replica failure (stop replica 2 first) | Record stored in replica 1 -> 200 | GET | `{{m1}}/api/maintenance-records/{{recordOnM1}}` |
-| 9 - Replica failure (stop replica 2 first) | Statistics still answer (partial) | GET | `{{m3}}/api/maintenance-records/reports/turnaround` |
+| 0 - Setup (tokens, run id) | Today's date and run id | GET | `{{m1}}/actuator/health/liveness` |
+| 0 - Setup (tokens, run id) | Token MAINTENANCE_TECHNICIAN | POST | `{{m1}}/auth/dev-token` |
+| 0 - Setup (tokens, run id) | Token MAINTENANCE_SUPERVISOR | POST | `{{m1}}/auth/dev-token` |
+| 0 - Setup (tokens, run id) | Token ATCC | POST | `{{m1}}/auth/dev-token` |
+| 0 - Setup (tokens, run id) | Token BACKOFFICE_OPERATOR | POST | `{{m1}}/auth/dev-token` |
+| 1 - CQRS: template written on one replica, read on all | List templates on replica 1 (reference templates, no duplicates) | GET | `{{m1}}/api/maintenance-templates` |
+| 1 - CQRS: template written on one replica, read on all | COMMAND: create template on replica 2 | POST | `{{m2}}/api/maintenance-templates` |
+| 1 - CQRS: template written on one replica, read on all | QUERY: the template on replica 1 (read model, after the event) | GET | `{{m1}}/api/maintenance-templates/{{templateId}}` |
+| 1 - CQRS: template written on one replica, read on all | QUERY: the template on replica 3 | GET | `{{m3}}/api/maintenance-templates?name={{templateName}}` |
+| 1 - CQRS: template written on one replica, read on all | Duplicate name on replica 1 -> 400 (checked on the read model) | POST | `{{m1}}/api/maintenance-templates` |
+| 1 - CQRS: template written on one replica, read on all | Unknown aircraft model -> 400 | POST | `{{m1}}/api/maintenance-templates` |
+| 1 - CQRS: template written on one replica, read on all | Invalid type -> 400 | POST | `{{m1}}/api/maintenance-templates` |
+| 2 - Records and the asynchronous integration with Aircraft Management | COMMAND: create record on replica 2 (CS-TUA, A-Check) | POST | `{{m2}}/api/maintenance-records` |
+| 2 - Records and the asynchronous integration with Aircraft Management | Aircraft Management: CS-TUA is UNDER_MAINTENANCE | GET | `{{am1}}/api/aircrafts/CS-TUA` |
+| 2 - Records and the asynchronous integration with Aircraft Management | Aircraft Management read model /api/v2/unicorns: CS-TUA is GROUNDED_AND_GRUMPY | GET | `{{am2}}/api/v2/unicorns` |
+| 2 - Records and the asynchronous integration with Aircraft Management | COMMAND: create record on replica 1 with the template created on replica 2 | POST | `{{m1}}/api/maintenance-records` |
+| 2 - Records and the asynchronous integration with Aircraft Management | Template not applicable to the model (E190) -> 400 | POST | `{{m1}}/api/maintenance-records` |
+| 2 - Records and the asynchronous integration with Aircraft Management | Unknown aircraft -> 404 | POST | `{{m1}}/api/maintenance-records` |
+| 2 - Records and the asynchronous integration with Aircraft Management | Unknown template -> 404 | POST | `{{m1}}/api/maintenance-records` |
+| 2 - Records and the asynchronous integration with Aircraft Management | Start date in the future -> 400 | POST | `{{m1}}/api/maintenance-records` |
+| 3 - Queries answered by any replica from its read model | Record of replica 2 read on replica 3 | GET | `{{m3}}/api/maintenance-records/{{recordOnM2}}` |
+| 3 - Queries answered by any replica from its read model | Unknown record -> 404 | GET | `{{m1}}/api/maintenance-records/does-not-exist` |
+| 3 - Queries answered by any replica from its read model | US219 ongoing on replica 1 | GET | `{{m1}}/api/maintenance-records/ongoing?size=100` |
+| 3 - Queries answered by any replica from its read model | US219 ongoing on replica 3 (same list) | GET | `{{m3}}/api/maintenance-records/ongoing?size=100` |
+| 3 - Queries answered by any replica from its read model | US116 records of CS-TUA (paginated) | GET | `{{m3}}/api/maintenance-records/aircraft/CS-TUA?page=0&size=2` |
+| 3 - Queries answered by any replica from its read model | US116 unknown aircraft -> 404 | GET | `{{m1}}/api/maintenance-records/aircraft/CS-XXX` |
+| 3 - Queries answered by any replica from its read model | US218 search by component and status | GET | `{{m1}}/api/maintenance-records?component=AIRFRAME&status=IN_PROGRESS` |
+| 3 - Queries answered by any replica from its read model | US218 search by date range | GET | `{{m2}}/api/maintenance-records?aircraft=CS-TUA&from=2026-01-01&to={{today}}` |
+| 3 - Queries answered by any replica from its read model | US218 invalid range -> 400 | GET | `{{m2}}/api/maintenance-records?from=2026-12-01&to=2026-01-01` |
+| 4 - Commands executed by the owner replica | US217 categorise record of replica 1 through replica 3 | PATCH | `{{m3}}/api/maintenance-records/{{recordOnM1}}/component` |
+| 4 - Commands executed by the owner replica | The categorisation reached replica 2 (MaintenanceRecordCategorized event) | GET | `{{m2}}/api/maintenance-records/{{recordOnM1}}` |
+| 4 - Commands executed by the owner replica | US119 complete record of replica 2 through replica 3 (another record still ongoing) | PATCH | `{{m3}}/api/maintenance-records/{{recordOnM2}}/complete` |
+| 4 - Commands executed by the owner replica | Complete again -> 409 (from the owner) | PATCH | `{{m1}}/api/maintenance-records/{{recordOnM2}}/complete` |
+| 4 - Commands executed by the owner replica | Invalid completion data -> 400 | PATCH | `{{m1}}/api/maintenance-records/{{recordOnM1}}/complete` |
+| 4 - Commands executed by the owner replica | US119 complete the last ongoing record of CS-TUA through replica 2 | PATCH | `{{m2}}/api/maintenance-records/{{recordOnM1}}/complete` |
+| 4 - Commands executed by the owner replica | Aircraft Management: CS-TUA is AVAILABLE again | GET | `{{am2}}/api/aircrafts/CS-TUA` |
+| 4 - Commands executed by the owner replica | /api/v2/unicorns: CS-TUA is HAPPY again | GET | `{{am1}}/api/v2/unicorns` |
+| 5 - Statistics, reports and alerts (read models) | US117 maintenance hours of the fleet | GET | `{{m2}}/api/maintenance-records/statistics/hours` |
+| 5 - Statistics, reports and alerts (read models) | US220 costs per aircraft model | GET | `{{m3}}/api/maintenance-records/reports/costs?groupBy=MODEL` |
+| 5 - Statistics, reports and alerts (read models) | US220 costs per aircraft | GET | `{{m1}}/api/maintenance-records/reports/costs?groupBy=AIRCRAFT` |
+| 5 - Statistics, reports and alerts (read models) | US220 invalid grouping -> 400 | GET | `{{m1}}/api/maintenance-records/reports/costs?groupBy=COLOR` |
+| 5 - Statistics, reports and alerts (read models) | US221 average turnaround per model (same on every replica) | GET | `{{m1}}/api/maintenance-records/reports/turnaround` |
+| 5 - Statistics, reports and alerts (read models) | US221 on replica 3 (same numbers) | GET | `{{m3}}/api/maintenance-records/reports/turnaround` |
+| 5 - Statistics, reports and alerts (read models) | US222 maintenance alerts | GET | `{{m2}}/api/maintenance-alerts` |
+| 6 - Security (JWT, roles, inter-service key) | No token -> 401 | GET | `{{m1}}/api/maintenance-records/ongoing` |
+| 6 - Security (JWT, roles, inter-service key) | ATCC cannot create records -> 403 | POST | `{{m1}}/api/maintenance-records` |
+| 6 - Security (JWT, roles, inter-service key) | Technician cannot see US219 -> 403 | GET | `{{m1}}/api/maintenance-records/ongoing` |
+| 6 - Security (JWT, roles, inter-service key) | Backoffice cannot see alerts -> 403 | GET | `{{m1}}/api/maintenance-alerts` |
+| 6 - Security (JWT, roles, inter-service key) | Peer request without X-Service-Key -> 401 | PATCH | `{{m1}}/api/maintenance-records/{{recordOnM1}}/component` |
+| 6 - Security (JWT, roles, inter-service key) | Peer request with X-Peer-Hops 2 -> 400 | GET | `{{m1}}/api/maintenance-records/ongoing` |
+| 6 - Security (JWT, roles, inter-service key) | Health: liveness, readiness (RabbitMQ) and peers | GET | `{{m1}}/actuator/health` |
+| 7 - /api/v2/unicorns mock (CQRS read-model contract) | GET /api/v2/unicorns (mock server) - aircraft moods | GET | `{{unicornsMockUrl}}/api/v2/unicorns` |
+| 8 - Replica failure (STOP maintenance-2 first) | Record owned by replica 2 is still readable on replica 1 (200, read model) | GET | `{{m1}}/api/maintenance-records/{{recordOnM2}}` |
+| 8 - Replica failure (STOP maintenance-2 first) | Statistics still complete on replica 3 | GET | `{{m3}}/api/maintenance-records/reports/turnaround` |
+| 8 - Replica failure (STOP maintenance-2 first) | Command on a record of replica 2 -> 503 (owner down) | PATCH | `{{m1}}/api/maintenance-records/{{recordOnM2}}/component` |
+| 8 - Replica failure (STOP maintenance-2 first) | New record on replica 1 while replica 2 is down | POST | `{{m1}}/api/maintenance-records` |
+| 8 - Replica failure (STOP maintenance-2 first) | Complete it (aircraft CS-TUC released) | PATCH | `{{m1}}/api/maintenance-records/{{recordWhileDown}}/complete` |
+| 9 - Replica 2 is back (START maintenance-2 again first) | Replica 2 caught up: it has the record created while it was down | GET | `{{m2}}/api/maintenance-records/{{recordWhileDown}}` |
 
 <a id="sec-aisafe-unicorns-mock"></a>
 

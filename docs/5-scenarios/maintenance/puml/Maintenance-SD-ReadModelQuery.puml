@@ -1,0 +1,43 @@
+@startuml Maintenance-SD-ReadModelQuery
+autonumber
+title Query side — any replica answers alone, even with the owner down (US116, US218, US219, GET by id)
+actor "Maintenance\nSupervisor" as User
+participant "maintenance-1\n: MaintenanceRecordController" as Ctrl
+participant ": ViewMaintenanceRecordsService" as Svc
+participant "REPLICATED_MAINTENANCE_RECORD\n(H2 file of replica 1)" as RM
+participant "maintenance-2\n(owner of some records, DOWN)" as M2 #LightGray
+
+activate User
+User -> Ctrl : GET /api/maintenance-records/ongoing?page=0&size=20
+activate Ctrl
+Ctrl -> Svc : ongoing(0, 20)
+activate Svc
+Svc -> RM : findAll() + RecordFilter(status = IN_PROGRESS)
+RM --> Svc : rows of replicas 1, 2 and 3
+Svc -> Svc : sort (most recent first), cut the page
+Svc --> Ctrl : PageDTO<MaintenanceRecordDTO> (ownerInstance per record)
+deactivate Svc
+Ctrl --> User : 200 OK (no X-Partial-Response)
+deactivate Ctrl
+
+User -> Ctrl : GET /api/maintenance-records/{id of a record owned by replica 2}
+activate Ctrl
+Ctrl -> Svc : getById(id)
+Svc -> RM : findById(id)
+RM --> Svc : row (ownerInstance = maintenance-2)
+Ctrl --> User : 200 OK
+deactivate Ctrl
+
+User -> Ctrl : PATCH /api/maintenance-records/{same id}/component
+activate Ctrl
+Ctrl -> M2 : forwardToOwner (X-Peer-Hops: 1, X-Service-Key)
+M2 --> Ctrl : connection refused (retry, circuit breaker)
+Ctrl --> User : 503 Service Unavailable (only the owner may change the record)
+deactivate Ctrl
+deactivate User
+
+note over User, M2
+  Assignment 1: the same GET asked the peers over HTTP; a stopped replica made its records invisible (404)
+  and lists partial (X-Partial-Response: true). Assignment 2: no peer call on reads.
+end note
+@enduml

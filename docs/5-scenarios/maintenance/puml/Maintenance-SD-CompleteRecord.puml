@@ -1,65 +1,61 @@
 @startuml Maintenance-SD-CompleteRecord
 autonumber
-title US119 — Complete a record stored in another replica (command executed by the owner)
+title US119 — Complete a record owned by another replica (command forwarded to the owner)
 actor "Maintenance\nTechnician" as User
-participant "maintenance-1\n: MaintenanceRecordController" as Ctrl
 participant "maintenance-1\n: CompleteMaintenanceRecordService" as S1
 participant ": PeerClient" as Peers
 participant "maintenance-2 (owner)\n: CompleteMaintenanceRecordService" as S2
-participant "record : MaintenanceRecord\n(H2 #2)" as Rec <<Entity>>
+participant "record : MaintenanceRecord\n(write model #2)" as Rec <<Entity>>
+participant "maintenance-2\n: MaintenanceEventEmitter" as Em
+queue "RabbitMQ" as MQ
 participant "maintenance-1\n: AircraftAvailabilityService" as Avail
-participant "maintenance-2 / -3" as Others
+participant "REPLICATED_MAINTENANCE_RECORD\n(replica 1)" as RM
 participant "Aircraft Management" as AM
 
 activate User
-User -> Ctrl : PATCH /api/maintenance-records/{id}/complete\n(notes, cost, actualDurationMinutes, aircraftFlightHours?)
-activate Ctrl
-Ctrl -> S1 : complete(id, dto)
+User -> S1 : PATCH /api/maintenance-records/{id}/complete\n(notes, cost, actualDurationMinutes, aircraftFlightHours?)
 activate S1
-S1 -> S1 : recordRepo.findById(id) → empty
-S1 -> Peers : forwardToOwner(PATCH, "/api/maintenance-records/{id}/complete", dto)
+S1 -> S1 : write model of replica 1: findById(id) → empty
+S1 -> Peers : forwardToOwner(PATCH, ".../{id}/complete", dto)
 activate Peers
 Peers -> S2 : PATCH (X-Peer-Hops: 1, X-Service-Key, JWT)
 activate S2
 S2 -> Rec : complete(CompletionDetails)
-activate Rec
 note right of Rec
   IN_PROGRESS → COMPLETED (else 409)
-  completionDate (default today) >= startDate,
-  not in the future; cost >= 0; duration > 0 (else 400)
+  completionDate >= startDate, not in the future;
+  cost >= 0; duration > 0 (else 400)
 end note
-Rec --> S2
-deactivate Rec
-S2 -> S2 : saveAndFlush(record)\n(@Version → 409 on a concurrent update)
-note right of S2 : peer request: the owner only completes the record\n(it cannot query the other replicas)
-S2 --> Peers : 200 MaintenanceRecordDTO (COMPLETED)
+S2 -> S2 : saveAndFlush (@Version → 409 on a concurrent update)
+S2 -> Em : recordCompleted(record)
+Em -> Em : apply to read model #2 (same transaction)
+note right of S2 : COMMIT
+Em -> MQ : AFTER COMMIT: MaintenanceRecordCompleted
+S2 --> Peers : 200 MaintenanceRecordDTO (COMPLETED)\n(peer request: the owner does not touch the aircraft)
 deactivate S2
-note right of Peers : 404 from a peer = "not mine" → next peer;\n4xx from the owner → same status to the client
+note right of Peers : 404 from a peer = "not mine" → next peer;\n4xx from the owner → same status to the client;\nowner down → 503
 Peers --> S1 : MaintenanceRecordDTO
 deactivate Peers
 
 S1 -> Avail : releaseIfNoOtherOngoing(reg, id)
 activate Avail
-Avail -> Avail : local IN_PROGRESS records of reg
-Avail -> Others : GET /api/maintenance-records/search?aircraft=reg&status=IN_PROGRESS\n(X-Peer-Hops: 1)
-Others --> Avail : []
-alt no other ongoing record and every replica answered
+Avail -> RM : IN_PROGRESS records of reg (records of EVERY replica)
+RM --> Avail : [] (the completed one is excluded by id)
+alt no other ongoing record
     Avail -> AM : PATCH /api/aircrafts/{reg}/status {AVAILABLE} (B3b)
     AM --> Avail : 200
-    Avail --> S1 : released = true
-else another record ongoing, a replica did not answer, or Aircraft Management failed
-    Avail -> Avail : keep UNDER_MAINTENANCE (safe side), log warning
-    Avail --> S1 : released = false
+else another record ongoing, or Aircraft Management fails
+    Avail -> Avail : keep UNDER_MAINTENANCE (safe side)
 end
+Avail --> S1 : released?
 deactivate Avail
-S1 --> Ctrl : Result(record, released)
+S1 --> User : 200 OK + X-Aircraft-Released: true|false
 deactivate S1
-Ctrl --> User : 200 OK (MaintenanceRecordDTO)\nX-Aircraft-Released: true | false
-deactivate Ctrl
 deactivate User
 
+MQ -> RM : MaintenanceRecordCompleted reaches replicas 1 and 3 (projection)
 note over User, AM
-  A record is only written by its owner replica, so there is a single version of each record.
-  The same forwarding is used by US217 (PATCH /component). No owner found → 404.
+  Only the owner writes a record, so there is a single version of it and its events come in order.
+  The same forwarding is used by US217 (PATCH /component → MaintenanceRecordCategorized).
 end note
 @enduml

@@ -5,22 +5,24 @@ actor "Maintenance\nSupervisor" as SUP
 actor "ATCC" as ATCC
 participant "Maintenance\n(System)" as SYS
 participant "Aircraft Management\n(microservice)" as AM
+queue "RabbitMQ" as MQ
 
 == WP#4A — Templates and records ==
 
 TECH -> SYS : POST /api/maintenance-templates (name, type, applicableModels, checklist, flightHoursInterval?, calendarDaysInterval?)
 activate SYS
-SYS -> AM : GET /api/aircraft-models/{model} (B3c, per model)
-AM --> SYS : 200 / 404
+SYS -> SYS : models in KNOWN_AIRCRAFT_MODEL\n(B3c only for a model not received yet)
+SYS -> MQ : MaintenanceTemplateCreated (after commit)
 SYS --> TECH : 201 Created (MaintenanceTemplateDTO + links)
 deactivate SYS
 
 TECH -> SYS : POST /api/maintenance-records (aircraftRegistration, templateId, description, startDate, expectedDurationMinutes, component?)
 activate SYS
-SYS -> AM : GET /api/aircrafts/{reg} (B3a)
-AM --> SYS : 200 (modelName, status)
-SYS -> AM : PATCH /api/aircrafts/{reg}/status {UNDER_MAINTENANCE} (B3b)
+SYS -> SYS : aircraft in KNOWN_AIRCRAFT\n(B3a only for an aircraft not received yet)
+SYS -> AM : PATCH /api/aircrafts/{reg}/status {UNDER_MAINTENANCE} (B3b, HTTP command)
 AM --> SYS : 200
+SYS -> MQ : MaintenanceRecordCreated (after commit)
+MQ --> SYS : AircraftStatusChanged (from Aircraft Management)
 SYS --> TECH : 201 Created (MaintenanceRecordDTO with checklist + links)
 deactivate SYS
 
@@ -36,15 +38,17 @@ deactivate SYS
 
 TECH -> SYS : PATCH /api/maintenance-records/{id}/complete (notes, cost, actualDurationMinutes, completionDate?, aircraftFlightHours?) (US119)
 activate SYS
+SYS -> MQ : MaintenanceRecordCompleted (after commit)
 SYS -> AM : PATCH /api/aircrafts/{reg}/status {AVAILABLE} (B3b, if nothing else ongoing)
 AM --> SYS : 200
-SYS --> TECH : 200 OK (MaintenanceRecordDTO, COMPLETED)
+SYS --> TECH : 200 OK (MaintenanceRecordDTO, COMPLETED) + X-Aircraft-Released
 deactivate SYS
 
 == WP#4B — Enhanced maintenance management ==
 
 TECH -> SYS : PATCH /api/maintenance-records/{id}/component (component) (US217)
 activate SYS
+SYS -> MQ : MaintenanceRecordCategorized (after commit)
 SYS --> TECH : 200 OK (MaintenanceRecordDTO)
 deactivate SYS
 
@@ -70,14 +74,13 @@ deactivate SYS
 
 ATCC -> SYS : GET /api/maintenance-alerts (US222, manual trigger)
 activate SYS
-SYS -> AM : GET /api/aircrafts?page=&size=, GET /api/aircrafts/operational-hours?page=&size= (B3d)
-AM --> SYS : 200 (fleet, flight hours)
+SYS -> SYS : fleet (KNOWN_AIRCRAFT), flight hours (KNOWN_SCHEDULED_FLIGHT),\ntemplates and records (read models)
 SYS --> ATCC : 200 OK (List<MaintenanceAlertDTO>)
 deactivate SYS
 
 note over TECH, AM
   Every request carries "Authorization: Bearer <JWT>"; the JWT is forwarded to Aircraft Management
-  and to the peer replicas (+ X-Service-Key). "System" = any of the 3 replicas: every GET answers
-  with the data of all replicas (X-Partial-Response: true when a replica did not answer).
+  and, for a command on a record of another replica, to its owner (+ X-Service-Key). "System" = any of
+  the 3 replicas: every GET is answered from that replica's read models (data of all replicas, CQRS).
 end note
 @enduml

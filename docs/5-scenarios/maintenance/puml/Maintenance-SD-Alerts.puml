@@ -1,14 +1,13 @@
 @startuml Maintenance-SD-Alerts
 autonumber
-title US222 — Alerts for aircraft due for scheduled maintenance (manual trigger)
+title US222 — Alerts for aircraft due for scheduled maintenance (query side, local copies)
 actor "ATCC" as User
-participant "maintenance-1\n: MaintenanceAlertController" as Ctrl
+participant "maintenance-3\n: MaintenanceAlertController" as Ctrl
 participant ": MaintenanceAlertService" as Service
-participant ": AircraftClient" as ACL <<ACL>>
+participant ": FleetDirectory" as Fleet
+participant "KNOWN_AIRCRAFT /\nKNOWN_SCHEDULED_FLIGHT" as Known
 participant "Aircraft Management" as AM
-participant ": ViewMaintenanceTemplatesService" as Tpl
-participant ": MaintenanceStatisticsService" as Stats
-participant ": PeerClient" as Peers
+participant "read models\n(templates, records)" as RM
 participant ": MaintenanceDuePolicy" as Policy <<Domain Service>>
 
 activate User
@@ -17,54 +16,47 @@ activate Ctrl
 Ctrl -> Service : checkFleet()
 activate Service
 
-Service -> ACL : fleet()
-activate ACL
-loop until the last page
-    ACL -> AM : GET /api/aircrafts?page=n&size=100 (B3d)
-    AM --> ACL : PageDTO<AircraftDTO>
+Service -> Fleet : fleet()
+activate Fleet
+opt first time on this replica (fleet copy not seeded yet)
+    Fleet -> AM : GET /api/aircrafts?page=n&size=100 (B3d, once)
+    AM --> Fleet : aircraft
+    Fleet -> Known : insert the ones not received by event
 end
-ACL --> Service : List<AircraftSnapshot> (reg, model, manufacturingDate, status)
-Service -> ACL : flightHours()
-loop until the last page
-    ACL -> AM : GET /api/aircrafts/operational-hours?page=n&size=100 (B3d)
-    AM --> ACL : PageDTO<{registrationNumber, totalHours}>\n(+ X-Partial-Response)
+Fleet -> Known : all KNOWN_AIRCRAFT (kept up to date by\nAircraftRegistered / AircraftStatusChanged)
+Fleet --> Service : Fleet (partial only if not seeded and AM down)
+deactivate Fleet
+
+Service -> Fleet : flightHours()
+activate Fleet
+alt flight events received (ScheduledFlightCreated from Flight Routes)
+    Fleet -> Known : sum(estimatedFlightTime) per aircraft / 60
+else none received yet
+    Fleet -> AM : GET /api/aircrafts/operational-hours (B3d fallback)
 end
-ACL --> Service : FlightHours (reg → hours, partial?)
-deactivate ACL
+Fleet --> Service : FlightHours (reg → hours)
+deactivate Fleet
 
-Service -> Tpl : list() — periodic templates
-activate Tpl
-Tpl -> Peers : collectList("/api/maintenance-templates")
-Peers --> Tpl : templates of the other replicas
-Tpl --> Service : templates merged by id
-deactivate Tpl
-
-Service -> Stats : lastCompletions()
-activate Stats
-Stats -> Peers : collect("/api/maintenance-records/statistics/last-completions")
-Peers --> Stats : partial lists
-Stats --> Service : per (reg, templateId): latest completion,\nflight hours at completion, ongoing?
-deactivate Stats
+Service -> RM : periodic templates; latest completion per (aircraft, template), ongoing?
+RM --> Service : data of every replica
 
 loop each aircraft not INACTIVE × periodic template applicable to its model (no ongoing record)
-    Service -> Policy : evaluate(aircraft, template, lastCompletion, flightHours)
-    activate Policy
+    Service -> Policy : evaluate(context)
     note right of Policy
       FlightHoursCriterion: hours since last completion >= interval.flightHours
       CalendarDaysCriterion: days since last completion
         (or manufacturing date) >= interval.calendarDays
     end note
     Policy --> Service : Optional<MaintenanceAlert>
-    deactivate Policy
 end
-Service --> Ctrl : alerts (+ partial flag)
+Service --> Ctrl : alerts
 deactivate Service
-Ctrl --> User : 200 OK [MaintenanceAlertDTO]\n(+ X-Partial-Response: true if any source was incomplete)
+Ctrl --> User : 200 OK [MaintenanceAlertDTO]
 deactivate Ctrl
 deactivate User
 
 note over User, Policy
-  Computed on demand from every replica and not stored (conversation 016: the check is triggered
-  manually), so all replicas give the same answer and no duplicate alerts are created.
+  Computed on demand (conversation 016) and not stored. Any replica gives the same answer from its own
+  copies; Aircraft Management and Flight Routes may be down.
 end note
 @enduml
