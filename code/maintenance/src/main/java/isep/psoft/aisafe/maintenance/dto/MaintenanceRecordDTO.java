@@ -33,4 +33,5 @@ public class MaintenanceRecordDTO extends RepresentationModel<MaintenanceRecordD
     private BigDecimal cost;
     private Integer actualDurationMinutes;
     private Double aircraftFlightHours;
+    private String ownerInstance;
 }

@@ -19,13 +19,14 @@ public class OpenApiConfig {
                 .info(new Info()
                         .title("AISafe - Maintenance Service API")
                         .description("Maintenance microservice of the distributed AISafe "
-                                + "system (SIDIS 2026/27): templates and records (WP#4). Every GET returns the "
-                                + "data of all replicas (peer-to-peer forwarding/aggregation); "
-                                + "X-Partial-Response: true means a replica did not answer. Authorize with a JWT — "
+                                + "system (SIDIS 2026/27): templates and records (WP#4). CQRS: commands (POST/PATCH) "
+                                + "run on the replica that owns the record and publish events to RabbitMQ; every GET is "
+                                + "answered from this replica's read models, which hold the data of every replica "
+                                + "(eventually consistent). Authorize with a JWT — "
                                 + "in development obtain one with POST /auth/dev-token, e.g. "
                                 + "{\"username\":\"tech1\",\"roles\":[\"MAINTENANCE_TECHNICIAN\"]}, "
                                 + "MAINTENANCE_SUPERVISOR or ATCC.")
-                        .version("v3"))
+                        .version("v4"))
                 .addSecurityItem(new SecurityRequirement().addList(SECURITY_SCHEME_NAME))
                 .components(new Components().addSecuritySchemes(SECURITY_SCHEME_NAME,
                         new SecurityScheme()

@@ -3,6 +3,7 @@ package isep.psoft.aisafe.maintenance.assemblers;
 import isep.psoft.aisafe.maintenance.controllers.MaintenanceTemplateController;
 import isep.psoft.aisafe.maintenance.domain.MaintenanceTemplate;
 import isep.psoft.aisafe.maintenance.dto.MaintenanceTemplateDTO;
+import isep.psoft.aisafe.maintenance.query.ReplicatedMaintenanceTemplate;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
@@ -24,6 +25,18 @@ public class MaintenanceTemplateAssembler {
             dto.setFlightHoursInterval(t.getInterval().getFlightHours());
             dto.setCalendarDaysInterval(t.getInterval().getCalendarDays());
         }
+        return withLinks(dto);
+    }
+
+    public MaintenanceTemplateDTO toDTO(ReplicatedMaintenanceTemplate t) {
+        MaintenanceTemplateDTO dto = new MaintenanceTemplateDTO();
+        dto.setId(t.getTemplateId());
+        dto.setName(t.getName());
+        dto.setType(t.getType());
+        dto.setApplicableModels(t.getApplicableModels().stream().sorted().toList());
+        dto.setChecklist(t.getChecklist());
+        dto.setFlightHoursInterval(t.getFlightHoursInterval());
+        dto.setCalendarDaysInterval(t.getCalendarDaysInterval());
         return withLinks(dto);
     }
 

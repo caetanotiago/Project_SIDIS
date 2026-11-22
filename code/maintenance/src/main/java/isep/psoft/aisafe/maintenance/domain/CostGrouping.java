@@ -1,19 +1,23 @@
 package isep.psoft.aisafe.maintenance.domain;
 
-import java.util.function.Function;
+import java.util.function.BinaryOperator;
 
 public enum CostGrouping {
-    AIRCRAFT(MaintenanceRecord::getAircraftRegistration),
-    MODEL(MaintenanceRecord::getAircraftModel);
+    AIRCRAFT((registration, model) -> registration),
+    MODEL((registration, model) -> model);
 
-    private final Function<MaintenanceRecord, String> key;
+    private final BinaryOperator<String> key;
 
-    CostGrouping(Function<MaintenanceRecord, String> key) {
+    CostGrouping(BinaryOperator<String> key) {
         this.key = key;
     }
 
+    public String keyOf(String aircraftRegistration, String aircraftModel) {
+        return key.apply(aircraftRegistration, aircraftModel);
+    }
+
     public String keyOf(MaintenanceRecord maintenanceRecord) {
-        return key.apply(maintenanceRecord);
+        return keyOf(maintenanceRecord.getAircraftRegistration(), maintenanceRecord.getAircraftModel());
     }
 
     public static CostGrouping parse(String value) {

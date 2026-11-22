@@ -7,6 +7,8 @@ import isep.psoft.aisafe.maintenance.domain.MaintenanceRecord;
 import isep.psoft.aisafe.maintenance.domain.MaintenanceStatus;
 import isep.psoft.aisafe.maintenance.dto.MaintenanceRecordDTO;
 import isep.psoft.aisafe.maintenance.dto.PageDTO;
+import isep.psoft.aisafe.maintenance.query.ReplicatedMaintenanceRecord;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import static org.springframework.hateoas.server.mvc.WebMvcLinkBuilder.linkTo;
@@ -14,6 +16,12 @@ import static org.springframework.hateoas.server.mvc.WebMvcLinkBuilder.methodOn;
 
 @Component
 public class MaintenanceRecordAssembler {
+
+    private final String instanceId;
+
+    public MaintenanceRecordAssembler(@Value("${aisafe.instance-id}") String instanceId) {
+        this.instanceId = instanceId;
+    }
 
     public MaintenanceRecordDTO toDTO(MaintenanceRecord r) {
         MaintenanceRecordDTO dto = new MaintenanceRecordDTO();
@@ -38,6 +46,31 @@ public class MaintenanceRecordAssembler {
             dto.setActualDurationMinutes(c.getActualDurationMinutes());
             dto.setAircraftFlightHours(c.getAircraftFlightHours());
         }
+        dto.setOwnerInstance(instanceId);
+        return withLinks(dto);
+    }
+
+    public MaintenanceRecordDTO toDTO(ReplicatedMaintenanceRecord r) {
+        MaintenanceRecordDTO dto = new MaintenanceRecordDTO();
+        dto.setId(r.getRecordId());
+        dto.setVersion(r.getSourceVersion());
+        dto.setAircraftRegistration(r.getAircraftRegistration());
+        dto.setAircraftModel(r.getAircraftModel());
+        dto.setTemplateId(r.getTemplateId());
+        dto.setTemplateName(r.getTemplateName());
+        dto.setTemplateType(r.getTemplateType());
+        dto.setDescription(r.getDescription());
+        dto.setStartDate(r.getStartDate());
+        dto.setExpectedDurationMinutes(r.getExpectedDurationMinutes());
+        dto.setChecklist(r.getChecklist());
+        dto.setComponent(r.getComponent());
+        dto.setStatus(r.getStatus());
+        dto.setCompletionDate(r.getCompletionDate());
+        dto.setCompletionNotes(r.getCompletionNotes());
+        dto.setCost(r.getCost());
+        dto.setActualDurationMinutes(r.getActualDurationMinutes());
+        dto.setAircraftFlightHours(r.getAircraftFlightHours());
+        dto.setOwnerInstance(r.getOwnerInstance());
         return withLinks(dto);
     }
 

@@ -7,11 +7,11 @@ import isep.psoft.aisafe.maintenance.dto.CompleteMaintenanceRecordDTO;
 import isep.psoft.aisafe.maintenance.dto.CreateMaintenanceRecordDTO;
 import isep.psoft.aisafe.maintenance.dto.MaintenanceRecordDTO;
 import isep.psoft.aisafe.maintenance.dto.PageDTO;
-import isep.psoft.aisafe.maintenance.services.CategorizeMaintenanceRecordService;
-import isep.psoft.aisafe.maintenance.services.CompleteMaintenanceRecordService;
-import isep.psoft.aisafe.maintenance.services.CreateMaintenanceRecordService;
-import isep.psoft.aisafe.maintenance.services.RecordFilter;
-import isep.psoft.aisafe.maintenance.services.ViewMaintenanceRecordsService;
+import isep.psoft.aisafe.maintenance.command.CategorizeMaintenanceRecordService;
+import isep.psoft.aisafe.maintenance.command.CompleteMaintenanceRecordService;
+import isep.psoft.aisafe.maintenance.command.CreateMaintenanceRecordService;
+import isep.psoft.aisafe.maintenance.query.RecordFilter;
+import isep.psoft.aisafe.maintenance.query.ViewMaintenanceRecordsService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
@@ -27,7 +27,6 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.net.URI;
 import java.time.LocalDate;
-import java.util.List;
 
 @RestController
 @RequestMapping("/api/maintenance-records")
@@ -50,7 +49,7 @@ public class MaintenanceRecordController {
     }
 
     @GetMapping("/{id}")
-    @Operation(summary = "Get a maintenance record by id (any replica)")
+    @Operation(summary = "Get a maintenance record by id (answered by any replica from its read model)")
     public ResponseEntity<MaintenanceRecordDTO> getById(@PathVariable String id) {
         return ResponseEntity.ok(viewService.getById(id));
     }
@@ -85,16 +84,6 @@ public class MaintenanceRecordController {
         return ResponseEntity.ok(viewService.ongoing(page, size));
     }
 
-    @GetMapping("/search")
-    @Operation(summary = "Records matching the filters, not paginated (all replicas; used for peer aggregation)")
-    public ResponseEntity<List<MaintenanceRecordDTO>> searchAll(
-            @RequestParam(required = false) String aircraft,
-            @RequestParam(required = false) String component,
-            @RequestParam(required = false) String status,
-            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
-            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to) {
-        return ResponseEntity.ok(viewService.searchAll(RecordFilter.of(aircraft, component, status, from, to)));
-    }
 
     @PatchMapping("/{id}/complete")
     @Operation(summary = "US119 — Complete a maintenance record (executed by the owner replica)")

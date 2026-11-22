@@ -33,7 +33,7 @@ public class MaintenanceAuthorizationRules implements AuthorizationRules {
                 .requestMatchers(HttpMethod.GET, "/api/maintenance-records/aircraft/**").hasAnyRole(TECH, SUP)
                 .requestMatchers(HttpMethod.GET, "/api/maintenance-records").hasAnyRole(TECH, SUP)
 
-                .requestMatchers(HttpMethod.GET, "/api/maintenance-records/search", "/api/maintenance-records/*")
+                .requestMatchers(HttpMethod.GET, "/api/maintenance-records/*")
                         .hasAnyRole(TECH, SUP, ATCC)
 
                 .requestMatchers(HttpMethod.GET, "/api/maintenance-alerts").hasRole(ATCC);

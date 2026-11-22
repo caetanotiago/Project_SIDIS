@@ -2,7 +2,7 @@ package isep.psoft.aisafe.maintenance.controllers;
 
 import io.swagger.v3.oas.annotations.Operation;
 import isep.psoft.aisafe.maintenance.dto.MaintenanceAlertDTO;
-import isep.psoft.aisafe.maintenance.services.MaintenanceAlertService;
+import isep.psoft.aisafe.maintenance.query.MaintenanceAlertService;
 import isep.sidis.common.http.AisafeHeaders;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
