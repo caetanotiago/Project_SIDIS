@@ -75,4 +75,6 @@ public class Aircraft {
     public int getSeatingCapacity() { return seatingCapacity; }
     public LocalDate getManufacturingDate() { return manufacturingDate; }
     public AircraftStatus getStatus() { return status; }
+    /** Optimistic-lock version; also the {@code version} of the events about this entity. */
+    public Long getVersion() { return version; }
 }

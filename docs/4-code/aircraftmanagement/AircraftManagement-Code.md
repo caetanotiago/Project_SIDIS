@@ -15,11 +15,12 @@
 | Aircraft | [`Aircraft`](../../../code/aircraftmanagement/src/main/java/isep/psoft/aisafe/aircraftmanagement/domain/Aircraft.java) | [`AircraftStatus`](../../../code/aircraftmanagement/src/main/java/isep/psoft/aisafe/aircraftmanagement/domain/AircraftStatus.java) | Registration number and model name required; seating capacity positive; status defaults to `AVAILABLE`; an `IN_FLIGHT` aircraft cannot change to `UNDER_MAINTENANCE` or `INACTIVE` (`changeStatus`) |
 
 - **Identity.** The identity of an aircraft is its **registration number** and the identity of a model is its **model name** (`@Id`), not technical ids. Other services reference aircraft and models this way (Flight Routes stores the registration number, Maintenance too), so a lookup on any replica is a primary-key read.
-- **`Aircraft` → `AircraftModel` by identity.** `Aircraft` stores only `modelName`. The model may live in **another replica**, so a JPA association (foreign key/JOIN) is impossible. Existence of the model is verified at creation time through `AircraftReplicaQueries.findModel`.
+- **`Aircraft` → `AircraftModel` by identity.** `Aircraft` stores only `modelName`. The model may live in **another replica**, so a JPA association (foreign key/JOIN) is impossible. Existence of the model is verified at creation time on the local read model `REPLICATED_AIRCRAFT_MODEL`, which holds the models of every replica.
 - **The seating capacity is an attribute of the aircraft**, not only of the model: the same model can have different seat configurations and therefore different capacities (US203). `AircraftModel.seatingCapacity` is the model's reference value.
 - **Optimistic locking.** Both roots have `@Version`. Two concurrent updates of the same aircraft in the owner replica → the second fails with `ObjectOptimisticLockingFailureException` → `409`. `saveAndFlush` forces the check inside the request, so the conflict is reported to the caller.
 - **State only through behaviour.** `Aircraft` and `AircraftModel` have no setters; `Aircraft.status` changes only through `changeStatus`, which holds the transition rule. Constructors validate, so an invalid aggregate cannot be created.
-- **Read models** (not persisted, no identity): [`AircraftSummary`](../../../code/aircraftmanagement/src/main/java/isep/psoft/aisafe/aircraftmanagement/domain/AircraftSummary.java) and [`AircraftModelSummary`](../../../code/aircraftmanagement/src/main/java/isep/psoft/aisafe/aircraftmanagement/domain/AircraftModelSummary.java) — immutable records, independent of the replica where the record is stored. They are created from local entities (`toSummary()`) and from DTOs received from peers (`AircraftAssembler.toSummary`), so the services treat local and remote records in the same way.
+- **Views** (not persisted, no identity): [`AircraftSummary`](../../../code/aircraftmanagement/src/main/java/isep/psoft/aisafe/aircraftmanagement/domain/AircraftSummary.java) and [`AircraftModelSummary`](../../../code/aircraftmanagement/src/main/java/isep/psoft/aisafe/aircraftmanagement/domain/AircraftModelSummary.java) — immutable records, independent of the replica that owns the record. Assignment 2: the query side builds them from the CQRS read models (`ReplicatedAircraft.toSummary()`, `ReplicatedAircraftModel.toSummary()`), never from peer DTOs.
+- **Write model vs read model (Assignment 2).** `Aircraft`/`AircraftModel` are the **write model**: only the owner replica stores and changes a given row. `ReplicatedAircraft`, `ReplicatedAircraftModel` and `AircraftMood` (package `query`) are **read models**: plain JPA entities without behaviour, written only by projections from events, with the owner's `sourceVersion` (not a local `@Version`).
 - **Status transitions.** Only the rule "`IN_FLIGHT` → `UNDER_MAINTENANCE`/`INACTIVE` is forbidden" exists (proposal for contract question Q7). Other transitions are accepted; setting the current status again is a no-op.
 - **Statuses** are the strings fixed in [Integration-Contracts §2.2](../../2-containers/Integration-Contracts.md): `AVAILABLE`, `IN_FLIGHT`, `UNDER_MAINTENANCE`, `INACTIVE` (the value Flight Routes requires to schedule is exactly `AVAILABLE`). `AircraftStatus.parse` accepts any case and rejects unknown values with `400`.
 
@@ -29,76 +30,71 @@
 
 ## 3. Design rationale (responsibility assignment)
 
-**Register aircraft model / aircraft (US101, US102)**
+**Register aircraft model / aircraft (US101, US102) — command side**
 
 | Question: which class is responsible for... | Answer | Justification (patterns) |
 |---|---|---|
-| ...receiving the HTTP request and validating the input format? | `AircraftController` / `AircraftModelController` + `CreateAircraftDTO` / `CreateAircraftModelDTO` (Bean Validation: required fields, positive numbers, registration pattern `^[A-Z0-9]{1,2}-[A-Z0-9]{2,5}$`, date not in the future) | **Controller (REST)**, **DTO** |
-| ...coordinating the use case and the transaction? | `CreateAircraftService`, `CreateAircraftModelService` | **Application Service** |
-| ...checking that the registration/model name is not used in any replica? | `AircraftReplicaQueries.findAircraft` / `findModel` → repository + `PeerClient.findFirst` | **Repository** (local) + peer query. Best-effort (AP): a peer that is down is skipped |
-| ...checking that the aircraft's model exists (in any replica)? | `AircraftReplicaQueries.findModel` | **Indirection** — the model may be remote, so there is no association |
+| ...receiving the HTTP request and validating the input format? | `AircraftController` / `AircraftModelController` + `CreateAircraftDTO` / `CreateAircraftModelDTO` (Bean Validation) | **Controller (REST)**, **DTO** |
+| ...coordinating the use case and the transaction? | `CreateAircraftService`, `CreateAircraftModelService` (package `command`) | **Application Service** (CQRS command handler) |
+| ...checking that the registration/model name is not used in any replica, and that the model exists? | `ReplicatedAircraftRepository.existsById`, `ReplicatedAircraftModelRepository.existsById` | **CQRS read model**: no peer call; eventual consistency window accepted (AP) |
 | ...enforcing the domain rules? | `Aircraft`, `AircraftModel` constructors | **Information Expert / Aggregate Root** |
-| ...persisting it? | `AircraftRepository`, `AircraftModelRepository` | **Repository** — stored in the replica that received the request (it becomes the owner) |
-| ...building the response? | `AircraftAssembler` | **DTO / Assembler** |
+| ...persisting it? | `AircraftRepository`, `AircraftModelRepository` (`saveAndFlush`, so the version is final) | **Repository** — the replica that received the request becomes the owner |
+| ...announcing the change? | `AircraftManagementEventEmitter` → one `IntegrationEvent` (`AircraftRegistered` / `AircraftModelCreated`) applied to the local read model in the same transaction, published after commit by `IntegrationEventRelay` | **Domain/integration events**, **Observer** (Spring `@TransactionalEventListener`), **Strategy** for the transport (`IntegrationEventTransport`: RabbitMQ or in-process in tests) |
 
-**Change aircraft status (US105, contract B3b)**
+**Change aircraft status (US105, B3b) and model specifications (US201) — command side, owner only**
 
 | Question | Answer | Justification |
 |---|---|---|
 | ...parsing and rejecting an unknown status? | `AircraftStatus.parse` | **Information Expert** (`400` before any forwarding) |
-| ...finding the replica that stores the aircraft? | `AircraftRepository` (local), otherwise `PeerClient.forwardToOwner` | **Indirection** — a record has a single owner (unicast to the peers, `404` = "not mine") |
-| ...validating the status transition? | `Aircraft.changeStatus` | **Information Expert** — the rule lives with the data it protects |
-| ...detecting concurrent updates? | `@Version` + `saveAndFlush` | **Optimistic Locking** |
-| ...translating a business conflict into HTTP? | `GlobalExceptionHandler` | `IllegalStateException` → `409`, optimistic-lock failure → `409` |
+| ...executing the write on the right replica? | local `AircraftRepository`/`AircraftModelRepository`, otherwise `PeerClient.forwardToOwner` | **Single owner per entity** — one writer, so one event producer and ordered events |
+| ...validating the status transition? | `Aircraft.changeStatus` | **Information Expert** |
+| ...avoiding meaningless events? | `UpdateAircraftStatusService` compares the status before/after: same status → no write, no event | Events describe facts that happened |
+| ...detecting concurrent updates? | `@Version` + `saveAndFlush` | **Optimistic Locking** → `409` |
+| ...keeping other services' copies of the model current? | `AircraftModelUpdated` (new event of Assignment 2) | Flight Routes `KNOWN_AIRCRAFT_MODEL` also applies it |
 
-**Search and view aircraft (US103, US104, contract B1a/B1b)**
-
-| Question | Answer | Justification |
-|---|---|---|
-| ...finding one aircraft/model in any replica? | `AircraftReplicaQueries.findAircraft` / `findModel` | **Pure Fabrication** — local first, then `PeerClient.findFirst` |
-| ...filtering by model, status and year? | `SearchAircraftsService.search` | **Application Service** — filters combined with AND, status parsed once |
-| ...obtaining the data of the other replicas? | `AircraftReplicaQueries.withPeers` → `PeerClient.collectList`, merged by registration (local copy wins) | **Pure Fabrication** |
-| ...avoiding forwarding loops? | `PeerClient.isPeerRequest` (`X-Peer-Hops`) — a peer request is answered with local data only | `common` library; services do not decide whether to forward |
-| ...paginating? | `AircraftController` → `PageDTO.of` **after** merging; a peer request gets the complete, unpaginated local list | **Pure Fabrication**; stable JSON instead of Spring's `Page` (contract Q8) |
-
-**Statistics that combine two services (US203, US204, US206)**
+**Queries (US103, US104, US203–US206, B1, B3, unicorns) — query side**
 
 | Question | Answer | Justification |
 |---|---|---|
-| ...obtaining the fleet of all replicas? | `SearchAircraftsService.search(null, null, null)` | Reuse of the US104 aggregation |
-| ...obtaining flight minutes per aircraft? | `FlightRoutesClient.minutesByAircraft` (B4b) | **Anti-Corruption Layer** — Flight Routes only knows registrations, never models |
-| ...joining fleet and minutes? | `CalculateOperationalHoursService` (per aircraft, 0 when it has no flights), `TopUtilizedModelsService` (sum per model, descending, ties by model name, models without minutes excluded, top *N*) | **Application Service** — the join happens here because the model of an aircraft is Aircraft Management data |
-| ...finding compatible routes? | `FindCompatibleRoutesService`: range = `maximumRange` of the **model**, capacity = `seatingCapacity` of the **aircraft**, then B6 | **Information Expert** — the two values live in two different aggregates |
-| ...knowing the answer is incomplete? | `FlightRoutesClient.isPartial` → `X-Partial-Response` on the response | Graceful degradation (AP) |
-| ...failing when Flight Routes is down? | `ReplicatedServiceClient` → `RemoteServiceUnavailableException` → `503` | Retry + failover + circuit breaker in `common` |
+| ...answering a GET? | `query/*Service` on the local tables only | **CQRS**: no peer aggregation, never partial |
+| ...keeping the read models current? | `AircraftManagementEventsListener` → `AircraftManagementEventRouter` → `AircraftProjection` / `AircraftModelProjection` | **Event-driven projection**; router = **Pure Fabrication** that dispatches by `eventType` |
+| ...applying an event exactly once? | `IdempotentEventHandler` + `JpaProcessedEventStore` (same transaction) and `isNewerThan(version)` | At-least-once delivery made idempotent |
+| ...knowing the flight minutes and the routes (data of Flight Routes)? | `FlightRoutesEventsProjection` → `KnownScheduledFlight`, `KnownRoute`; `FlightMinutesService` sums minutes per registration | **Anti-Corruption Layer** by events (`events.external` payloads with only the fields used) — replaces the HTTP bridges B4b/B6 |
+| ...joining fleet and minutes? | `CalculateOperationalHoursService`, `TopUtilizedModelsService` | **Application Service** — the model of an aircraft is Aircraft Management data |
+| ...finding compatible routes? | `FindCompatibleRoutesService`: range of the **model**, capacity of the **aircraft**, `KnownRouteRepository.findCompatibleRoutes` (same rule as Flight Routes) | **Information Expert** |
+| ...computing the mood of an aircraft? | `AircraftMood.moodOf(status)` in `AircraftProjection` (same transaction as `ReplicatedAircraft`) | Projection computed at write time, the GET only reads |
 
 ## 4. Package organization
 
-| Package | Layer / L3 component | DDD role |
+| Package | Layer / L3 component | DDD / CQRS role |
 |---|---|---|
 | `aircraftmanagement.controllers`, `dto`, `assemblers` | Controllers, Assembler / DTOs | Published Language (API contract separate from the domain) |
-| `aircraftmanagement.services` | Application services, Replica queries | Application Services (`AircraftReplicaQueries`: pure fabrication) |
-| `aircraftmanagement.domain` | Domain model | Entities (aggregate roots), Value Object (`AircraftStatus`), Read Models |
-| `aircraftmanagement.repositories` | Repositories | One repository per aggregate root (local data) |
-| `aircraftmanagement.clients` | Anti-Corruption Layer | ACL towards Flight Routes |
-| `aircraftmanagement.bootstrap` | Demo data | properties `aisafe.bootstrap.*` |
+| `aircraftmanagement.command` | Command side, event emitter and relay, startup synchronisation | Command handlers (Application Services) |
+| `aircraftmanagement.events` | Event contracts | Published language of the events (owned by this service) |
+| `aircraftmanagement.events.external` | Flight Routes event contracts (tolerant reader) | Anti-Corruption Layer |
+| `aircraftmanagement.query` | Query side, projections, read models, listener | Query handlers, projections |
+| `aircraftmanagement.query.external` | Flight Routes read models | ACL + projection of another bounded context |
+| `aircraftmanagement.domain` | Domain model | Aggregate roots, Value Object (`AircraftStatus`), views |
+| `aircraftmanagement.repositories` | Write model | One repository per aggregate root (owned rows) |
+| `aircraftmanagement.bootstrap` | Demo data | profile `demo` |
+| `infrastructure.messaging` | RabbitMQ topology, transport, processed events | Infrastructure |
 | `infrastructure.security`, `infrastructure.config`, `exceptions` | Security & config | Authorization rules, OpenAPI, error mapping |
 
-The `factories` package is empty (`.gitkeep`): the aggregates are created through their validating constructors, which is enough while there is no complex construction logic.
+The `clients` and `factories` packages are empty (`.gitkeep`): Aircraft Management no longer calls another service over HTTP, and the aggregates are created through their validating constructors.
 
 ## 5. Implementation notes
 
-- **Remote access:** `RestClientConfig` creates one `ReplicatedServiceClient` bean (`flightRoutesService`) with all replicas of Flight Routes (`services.flightroutes.urls`). `FlightRoutesClient` maps `401`/`403` to `ResponseStatusException` (same status); no replica available → `RemoteServiceUnavailableException` (`503`). Any other `4xx` is not mapped (it would end as `500`, as the contract documents for the consumers).
-- **Services never decide whether to forward:** `PeerClient` does nothing when the current request already came from a peer, so the same service code answers clients (all replicas) and peers (local only).
-- **URIs sent to peers** are built with encoded path segments and query values (`AircraftReplicaQueries.uri`, `pathSegment`); null/blank filters are omitted.
-- **Tolerant reader:** DTOs exchanged between replicas use `@JsonIgnoreProperties(ignoreUnknown = true)`, so a future `_links` or new field does not break the peers or the consumers (contract §2.2).
-- **Pagination after merging:** `PageDTO.of` cuts the page after merging and sorting by registration; maximum page size 100 (`400` otherwise).
-- **Contract values are never null:** `AircraftDTO` (B1a) always carries `registrationNumber`, `modelName`, `seatingCapacity`, `status`; `AircraftModelDTO` (B1b) always carries `maximumRange` — Flight Routes unboxes them.
-- **Demo data:** `DemoDataBootstrap` parses `modelName:manufacturer:seats:fuel:range:speed` and `registration:model:seats:date[:status]` from `aisafe.bootstrap.*`; each replica loads different data.
+- **Same structure as Flight Routes.** `AircraftManagementEventEmitter`, `IntegrationEventRelay`, `IntegrationEventTransport`, `OutgoingIntegrationEvent`, `RabbitIntegrationEventTransport`, `JpaProcessedEventStore` and the router/projection split are copies of the Flight Routes classes; the `common` library does the AMQP work (exchange, queues, DLQ, retry, confirms).
+- **Queues of each replica:** `<instanceId>.aircraftmanagement` (bound to `aircraft.*`, `aircraft-model.*`) and `<instanceId>.flightroutes` (bound to `route.*`, `scheduled-flight.*`), declared by `AircraftManagementMessagingConfiguration`; both listeners exist only with `aisafe.messaging.enabled=true`.
+- **Payloads are state-carrying** and include the entity's `version`; null fields of a payload keep the stored value (tolerant to status-only events).
+- **Startup synchronisation (as in Airports):** `DemoDataBootstrap` (`@Order(1)`) inserts the demo rows, then `ReadModelSynchronizer` (`@Order(2)`) republishes the owned state through `AircraftStateRepublisher` and publishes `AircraftSyncRequested`; `AircraftManagementEventsListener` hands a request of another replica to `ReadModelSynchronizer.onSyncRequested`.
+- **No `X-Partial-Response`** any more: every GET reads local tables. The peer branch of `GET /api/aircrafts` (plain list for peers) was removed; it always returns a `PageDTO`.
+- **Contract values are never null:** `AircraftDTO` (B1a) always carries `registrationNumber`, `modelName`, `seatingCapacity`, `status`; `AircraftModelDTO` (B1b) always carries `maximumRange`.
+- **Demo data:** `DemoDataBootstrap` (profile `demo`, `ApplicationReadyEvent`) parses `modelName:manufacturer:seats:fuel:range:speed` and `registration:model:seats:date[:status]`; each replica loads different data, inserted once and published as events.
 
 | Replica | Models | Aircraft |
 |---|---|---|
-| 1 (`application.properties`) | `A320` (180 seats, 6100 km), `B737` (189 seats, 5600 km) | `CS-TUA` (A320, `AVAILABLE`), `CS-TUB` (B737, `UNDER_MAINTENANCE`) |
+| 1 (`application-instance1.properties`) | `A320` (180 seats, 6100 km), `B737` (189 seats, 5600 km) | `CS-TUA` (A320, `AVAILABLE`), `CS-TUB` (B737, `UNDER_MAINTENANCE`) |
 | 2 (`application-instance2.properties`) | `A330` (300 seats, 11750 km) | `CS-TUC` (A330, 300 seats), `CS-TUD` (A330, 290 seats) |
 | 3 (`application-instance3.properties`) | `E190` (100 seats, 4500 km) | `CS-TUE` (E190, 100 seats), `CS-TUF` (E190, 96 seats, `INACTIVE`) |
 
@@ -106,17 +102,16 @@ The `factories` package is empty (`.gitkeep`): the aggregates are created throug
 
 | File | Content |
 |---|---|
-| [`application.properties`](../../../code/aircraftmanagement/src/main/resources/application.properties) | Defaults (= replica 1), remote URLs, resilience, security (`jwt.secret`, `aisafe.security.service-key`), logging, actuator, demo data of replica 1 |
-| `application-instance1/2/3.properties` | Port (8081/8181/8281), instance id, database, peers and demo data of each replica |
+| [`application.properties`](../../../code/aircraftmanagement/src/main/resources/application.properties) | Defaults (= replica 1), file database, resilience, security, messaging (RabbitMQ, retries), health probes, logging |
+| `application-instance1/2/3.properties` | Port (8081/8181/8281), instance id, database file, peers and demo data of each replica |
+| `application-demo.properties` | `aisafe.bootstrap.enabled=true` |
 | `application-tls.properties` | HTTPS: server keystore, client truststore, `aisafe.scheme=https` |
+| `src/test/resources/config/application.properties` | Tests: messaging off, in-memory database |
 
 ## 7. Code-level observations
 
-- **Value Objects:** `registrationNumber`, `maximumRange` (km) and similar are primitives validated in the constructors/DTOs. Value Objects such as `RegistrationNumber` would centralise the format rule (today only `CreateAircraftDTO` checks it; the demo data and peer DTOs bypass it).
-- **Registration normalisation (Q10):** the registration is stored as received and the pattern forces upper case at creation time; lookups are case-sensitive.
-- **Aircraft vs model capacity:** no rule relates `Aircraft.seatingCapacity` to `AircraftModel.seatingCapacity` (e.g. an upper bound). To be agreed with the customer.
-- **Remote calls inside a transaction:** `CreateAircraftService`, `CreateAircraftModelService` and `UpdateAircraftStatusService` are `@Transactional` and call peers (HTTP) inside the transaction. Short timeouts (`read-timeout=3s`) limit the impact; moving the remote lookups before the transaction would remove it.
-- **Optimistic locking for clients:** the `version` is not exposed, so a client cannot send the version it read (contract Q7); the check protects concurrent writes inside the owner replica only.
-- **`GET /api/aircrafts` return type** is `Object` (page for clients, list for peers), so the generated OpenAPI schema is generic. Documenting both shapes with `@ApiResponse`, or a separate internal endpoint for peers, would make the specification exact.
-- **`IN_FLIGHT` has no producer:** nothing sets it automatically; it is only a value that can be set through US105. See open question Q-AM1.
-- `bootstrap-instance1.snippet.properties` is a leftover of the migration (its content is already in `application.properties`); it can be deleted.
+- **Value Objects:** `registrationNumber`, `maximumRange` (km) and similar are primitives validated in the constructors/DTOs; a `RegistrationNumber` Value Object would centralise the format rule.
+- **Optimistic locking for clients:** the `version` is not exposed by the REST API, so the check protects concurrent writes inside the owner replica only.
+- **Uniqueness in the consistency window:** two replicas can accept the same registration if the requests arrive before the first event (milliseconds). Accepted price of AP; a fix would be a deterministic owner per registration (hash partitioning) instead of "the replica that received the POST".
+- **No transactional outbox:** an event that cannot be published at commit time is lost until the owner republishes its state (its next start, or a sync request of another replica).
+- **`IN_FLIGHT` has no producer:** nothing sets it automatically; it is a value set through US105 (open question Q-AM1).

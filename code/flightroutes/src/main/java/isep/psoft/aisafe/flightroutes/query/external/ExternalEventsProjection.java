@@ -59,7 +59,7 @@ public class ExternalEventsProjection {
                 a.apply(p);
                 aircraft.save(a);
             }
-            case ExternalEvents.AIRCRAFT_MODEL_CREATED -> {
+            case ExternalEvents.AIRCRAFT_MODEL_CREATED, ExternalEvents.AIRCRAFT_MODEL_UPDATED -> {
                 AircraftModelEventPayload p = payload(event, AircraftModelEventPayload.class);
                 require(p.modelName(), "modelName", event);
                 KnownAircraftModel m = models.findById(p.modelName()).orElseGet(() -> new KnownAircraftModel(p.modelName()));

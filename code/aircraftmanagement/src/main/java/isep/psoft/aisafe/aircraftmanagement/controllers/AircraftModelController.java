@@ -4,9 +4,9 @@ import isep.psoft.aisafe.aircraftmanagement.assemblers.AircraftAssembler;
 import isep.psoft.aisafe.aircraftmanagement.dto.AircraftModelDTO;
 import isep.psoft.aisafe.aircraftmanagement.dto.CreateAircraftModelDTO;
 import isep.psoft.aisafe.aircraftmanagement.dto.UpdateAircraftModelDTO;
-import isep.psoft.aisafe.aircraftmanagement.services.CreateAircraftModelService;
-import isep.psoft.aisafe.aircraftmanagement.services.SearchAircraftModelsService;
-import isep.psoft.aisafe.aircraftmanagement.services.UpdateAircraftModelService;
+import isep.psoft.aisafe.aircraftmanagement.command.CreateAircraftModelService;
+import isep.psoft.aisafe.aircraftmanagement.command.UpdateAircraftModelService;
+import isep.psoft.aisafe.aircraftmanagement.query.SearchAircraftModelsService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -23,19 +23,19 @@ public class AircraftModelController {
     private final UpdateAircraftModelService updateService;
     private final AircraftAssembler assembler;
 
-    /** US101 */
+    /** US101 (command) */
     @PostMapping
     public ResponseEntity<AircraftModelDTO> create(@Valid @RequestBody CreateAircraftModelDTO dto) {
         return ResponseEntity.status(HttpStatus.CREATED).body(assembler.toDTO(createService.create(dto)));
     }
 
-    /** Ponte B1b */
+    /** Bridges B1b, B3c (query) */
     @GetMapping("/{modelName}")
     public AircraftModelDTO getByName(@PathVariable String modelName) {
         return assembler.toDTO(searchService.getByName(modelName));
     }
 
-    /** US201 */
+    /** US201 (command, owner replica) */
     @PatchMapping("/{modelName}")
     public AircraftModelDTO update(@PathVariable String modelName,
                                    @Valid @RequestBody UpdateAircraftModelDTO dto) {

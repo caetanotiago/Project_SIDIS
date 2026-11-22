@@ -1,0 +1,59 @@
+@startuml AircraftManagement-SD-WriteEventProjection
+autonumber
+title Command on a non-owner replica → owner writes → event → projection on every replica (US105 / B3b; the same for US101, US102, US201)
+actor "ATCC / Maintenance" as User
+
+box "aircraftmanagement-1 (receives the request)" #F8F9FA
+participant ": UpdateAircraftStatusService" as Cmd1 <<command>>
+participant ": PeerClient" as Peers
+end box
+box "aircraftmanagement-2 (owner of CS-TUC)" #F1F3F5
+participant ": UpdateAircraftStatusService" as Cmd2 <<command>>
+participant "CS-TUC : Aircraft\n(write model)" as AC
+participant ": AircraftManagementEventEmitter" as Emitter
+participant ": AircraftManagementEventRouter\n→ AircraftProjection" as Proj2 <<projection>>
+participant ": IntegrationEventRelay\n→ RabbitIntegrationEventTransport" as Relay
+end box
+queue "RabbitMQ\naisafe.aircraftmanagement.events" as MQ
+box "aircraftmanagement-1 and -3" #F8F9FA
+participant ": AircraftManagementEventsListener\n→ AircraftProjection" as Proj13 <<projection>>
+end box
+participant "Flight Routes replicas\n(KNOWN_AIRCRAFT, when enabled)" as FR
+
+User -> Cmd1 : PATCH /api/aircrafts/CS-TUC/status\n{"status":"UNDER_MAINTENANCE"}
+activate Cmd1
+Cmd1 -> Cmd1 : AircraftStatus.parse (400 if invalid)\nfindById("CS-TUC") → not in my write model
+Cmd1 -> Peers : forwardToOwner(PATCH, ...)
+Peers -> Cmd2 : PATCH (X-Peer-Hops: 1, X-Service-Key, JWT)
+activate Cmd2
+== write transaction (aircraftmanagement-2) ==
+Cmd2 -> AC : changeStatus(UNDER_MAINTENANCE)\n(IN_FLIGHT → 409)
+Cmd2 -> AC : saveAndFlush → version 1
+Cmd2 -> Emitter : aircraftStatusChanged(aircraft)
+activate Emitter
+Emitter -> Emitter : IntegrationEvent.create("AircraftStatusChanged",\nsourceInstance = aircraftmanagement-2, payload = full state + version)
+Emitter -> Proj2 : apply(event)
+Proj2 -> Proj2 : upsert REPLICATED_AIRCRAFT + AIRCRAFT_MOOD\n(GROUNDED_AND_GRUMPY) + PROCESSED_EVENT
+Emitter -> Emitter : publishEvent(OutgoingIntegrationEvent("aircraft.status-changed", event))
+deactivate Emitter
+== commit ==
+Cmd2 --> Peers : 200 AircraftDTO
+deactivate Cmd2
+Peers --> Cmd1 : AircraftDTO
+Cmd1 --> User : 200 OK
+deactivate Cmd1
+
+Relay -> MQ : publish(event, "aircraft.status-changed")\npersistent, publisher confirm (AFTER_COMMIT)
+MQ -> Proj13 : queues aircraftmanagement-1/-3.aircraftmanagement
+activate Proj13
+Proj13 -> Proj13 : eventId new? version newer?\n→ upsert REPLICATED_AIRCRAFT + AIRCRAFT_MOOD
+Proj13 --> MQ : ack (after commit)
+deactivate Proj13
+MQ -> FR : queue flightroutes-N.aircraftmanagement
+MQ -> Proj2 : own queue aircraftmanagement-2.aircraftmanagement
+Proj2 -> Proj2 : eventId already processed → skipped
+note over Proj13, FR
+  Handler exception → 3 attempts with back-off → <queue>.dlq.
+  Replica down → the event waits in its durable queue.
+end note
+@enduml

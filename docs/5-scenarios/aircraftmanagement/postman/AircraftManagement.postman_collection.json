@@ -1,12 +1,12 @@
 {
   "info": {
     "name": "AISafe - Aircraft Management (SIDIS)",
-    "description": "Testes automáticos do Aircraft Management (WP#1). Usar com o environment AISafe-Aircraft-Local. Correr as pastas 0 a 5 com as 3 réplicas ligadas (8081, 8181, 8281) e depois reiniciar/pará a réplica 3 para a pasta 6. A pasta 5 precisa do Flight Routes (ou do stub flightroutes_stub.py na 8084).",
+    "description": "Tests of Aircraft Management (WP#1) with 3 replicas (SIDIS Assignments 1 and 2).\n\nAssignment 2 (CQRS + RabbitMQ): every GET is answered from the LOCAL read model of the replica, which holds the aircraft and models of all replicas (built from events), so no GET depends on the peers and X-Partial-Response is no longer used. Commands (POST, PATCH) run on the replica that owns the entity; a PATCH sent to another replica is forwarded to the owner. US203/US204/US206 read Flight Routes data from local read models fed by its events. /api/v2/unicorns is a real projection.\n\nPrerequisite: RabbitMQ (infra/.env + Docker, see docs/README.md), then from code/: `./scripts/start-all.sh 3 demo` (or `.\\scripts\\start-all.ps1 -Profiles demo`). Folders 0-6 only need the 3 Aircraft Management replicas (`./scripts/start-replicas.sh aircraftmanagement demo`) plus the broker; folder 7 also needs Flight Routes (fr1, fr2) and Airports (ap1). The databases are files (code/data/): data survives restarts and every run uses random identifiers.\n\nUse the environment AircraftManagement.postman_environment.json and run the folders IN ORDER with the Collection Runner or newman (the polling requests repeat themselves with setNextRequest, which a single \"Send\" does not do). MANUAL step: before folder 8 STOP replica 3 (port 8281).",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "item": [
     {
-      "name": "0 - Setup (obter tokens e gerar dados únicos)",
+      "name": "0 - Setup (tokens, unique data, health)",
       "item": [
         {
           "name": "0.1 Token ATCC",
@@ -134,6 +134,31 @@
                   "const j = pm.response.json();",
                   "pm.test('Devolve token', () => pm.expect(j.token).to.be.a('string').and.not.empty);",
                   "pm.environment.set('tokenMaintenance', j.token);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "0.4 Liveness and readiness of the 3 replicas (readiness includes RabbitMQ)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base1}}/actuator/health/readiness",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Replica 1 ready (RabbitMQ UP)', () => pm.expect(pm.response.json().status).to.eql('UP'));",
+                  "['base2', 'base3'].forEach(b => pm.sendRequest(pm.environment.get(b) + '/actuator/health/readiness', (err, res) =>",
+                  "    pm.test(b + ' ready', () => pm.expect(res.json().status).to.eql('UP'))));"
                 ]
               }
             }
@@ -1535,10 +1560,11 @@
       ]
     },
     {
-      "name": "3 - Peer-to-peer (precisa das 3 réplicas ligadas)",
+      "name": "3 - Assignment 2: CQRS read models and owner replicas (3 replicas + RabbitMQ)",
+      "description": "Every GET is answered from the LOCAL read model of the replica (REPLICATED_AIRCRAFT / REPLICATED_AIRCRAFT_MODEL), which holds the data of all replicas, built from events. Commands run on the owner replica; a PATCH sent to another replica is forwarded to the owner, which publishes the event. The polls retry until the read models converge.",
       "item": [
         {
-          "name": "3.1 Criar aeronave diretamente na RÉPLICA 2 (8181) -> 201",
+          "name": "3.1 Create an aircraft on REPLICA 2 -> 201 (replica 2 owns it; publishes AircraftRegistered)",
           "request": {
             "method": "POST",
             "header": [
@@ -1548,6 +1574,15 @@
               }
             ],
             "url": "{{base2}}/api/aircrafts",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"registrationNumber\": \"{{p2pReg}}\",\n  \"modelName\": \"A330\",\n  \"seatingCapacity\": 290,\n  \"manufacturingDate\": \"2021-03-15\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
             "auth": {
               "type": "bearer",
               "bearer": [
@@ -1557,15 +1592,6 @@
                   "type": "string"
                 }
               ]
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"registrationNumber\": \"{{p2pReg}}\",\n  \"modelName\": \"A330\",\n  \"seatingCapacity\": 300,\n  \"manufacturingDate\": \"2022-02-02\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
             }
           },
           "event": [
@@ -1581,140 +1607,7 @@
           ]
         },
         {
-          "name": "3.2 GET na réplica 1 (aeronave só existe na 2) -> 200 (peer forwarding)",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": "{{base1}}/api/aircrafts/{{p2pReg}}",
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{tokenAtcc}}",
-                  "type": "string"
-                }
-              ]
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
-                  "pm.test('Aeronave certa', () => pm.expect(pm.response.json().registrationNumber).to.eql(pm.environment.get('p2pReg')));"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "3.3 GET na réplica 3 -> 200 (também encontra no peer)",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": "{{base3}}/api/aircrafts/{{p2pReg}}",
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{tokenAtcc}}",
-                  "type": "string"
-                }
-              ]
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "3.4 GET modelo A330 na réplica 1 (modelo só existe na 2) -> 200",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": "{{base1}}/api/aircraft-models/A330",
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{tokenAtcc}}",
-                  "type": "string"
-                }
-              ]
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
-                  "pm.test('Modelo A330', () => pm.expect(pm.response.json().modelName).to.eql('A330'));"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "3.5 PATCH na réplica 1 encaminhado para o dono (réplica 2) -> 200",
-          "request": {
-            "method": "PATCH",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": "{{base1}}/api/aircrafts/{{p2pReg}}/status",
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{tokenAtcc}}",
-                  "type": "string"
-                }
-              ]
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"status\": \"UNDER_MAINTENANCE\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
-                  "pm.test('Estado atualizado', () => pm.expect(pm.response.json().status).to.eql('UNDER_MAINTENANCE'));"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "3.6 GET direto na réplica 2: a escrita ficou no dono",
+          "name": "3.2 Replica 2 reads its own write immediately (read-your-writes on the owner)",
           "request": {
             "method": "GET",
             "header": [],
@@ -1737,67 +1630,18 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test('Status 200', () => pm.response.to.have.status(200));",
-                  "pm.test('UNDER_MAINTENANCE no dono', () => pm.expect(pm.response.json().status).to.eql('UNDER_MAINTENANCE'));"
+                  "pm.test('Same aircraft', () => pm.expect(pm.response.json().registrationNumber).to.eql(pm.environment.get('p2pReg')));"
                 ]
               }
             }
           ]
         },
         {
-          "name": "3.7 PATCH de modelo na réplica 1 encaminhado para a réplica 2 -> 200",
+          "name": "3.3 Poll replica 1 until the aircraft appears (AircraftRegistered)",
           "request": {
-            "method": "PATCH",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": "{{base1}}/api/aircraft-models/A330",
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{tokenBackoffice}}",
-                  "type": "string"
-                }
-              ]
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"cruisingSpeed\": 875\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
-                  "pm.test('cruisingSpeed atualizado', () => pm.expect(pm.response.json().cruisingSpeed).to.eql(875));"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "3.8 Criar aeronave na réplica 1 com modelo da réplica 2 -> 201",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": "{{base1}}/api/aircrafts",
+            "method": "GET",
+            "header": [],
+            "url": "{{base1}}/api/aircrafts/{{p2pReg}}",
             "auth": {
               "type": "bearer",
               "bearer": [
@@ -1807,15 +1651,138 @@
                   "type": "string"
                 }
               ]
-            },
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Eventual consistency: retry this request every 500 ms (max ~10 s) until the read model has converged.",
+                  "const pollKey = \"poll:\" + pm.info.requestName;",
+                  "const attempt = Number(pm.variables.get(pollKey) || 0);",
+                  "let converged = false;",
+                  "try { converged = (pm.response.code === 200); } catch (e) { converged = false; }",
+                  "const next = n => (pm.execution && pm.execution.setNextRequest) ? pm.execution.setNextRequest(n) : postman.setNextRequest(n);",
+                  "if (!converged && attempt < 20) {",
+                  "    pm.variables.set(pollKey, attempt + 1);",
+                  "    setTimeout(() => {}, 500);",
+                  "    next(pm.info.requestName);",
+                  "} else {",
+                  "    pm.variables.unset(pollKey);",
+                  "    pm.test(\"converged after \" + attempt + \" retr\" + (attempt === 1 ? \"y\" : \"ies\"), () => pm.expect(converged).to.be.true);",
+                  "    pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "    pm.test('No X-Partial-Response (answered from the local read model)', () => pm.expect(pm.response.headers.has('X-Partial-Response')).to.be.false);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3.4 Poll replica 3 until the aircraft appears (AircraftRegistered)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base3}}/api/aircrafts/{{p2pReg}}",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenAtcc}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Eventual consistency: retry this request every 500 ms (max ~10 s) until the read model has converged.",
+                  "const pollKey = \"poll:\" + pm.info.requestName;",
+                  "const attempt = Number(pm.variables.get(pollKey) || 0);",
+                  "let converged = false;",
+                  "try { converged = (pm.response.code === 200); } catch (e) { converged = false; }",
+                  "const next = n => (pm.execution && pm.execution.setNextRequest) ? pm.execution.setNextRequest(n) : postman.setNextRequest(n);",
+                  "if (!converged && attempt < 20) {",
+                  "    pm.variables.set(pollKey, attempt + 1);",
+                  "    setTimeout(() => {}, 500);",
+                  "    next(pm.info.requestName);",
+                  "} else {",
+                  "    pm.variables.unset(pollKey);",
+                  "    pm.test(\"converged after \" + attempt + \" retr\" + (attempt === 1 ? \"y\" : \"ies\"), () => pm.expect(converged).to.be.true);",
+                  "    pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3.5 Model A330 (owned by replica 2) read on replica 1 -> 200 (read model, no peer call)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base1}}/api/aircraft-models/A330",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenAtcc}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('No X-Partial-Response (answered from the local read model)', () => pm.expect(pm.response.headers.has('X-Partial-Response')).to.be.false);",
+                  "pm.test('maximumRange in km', () => pm.expect(pm.response.json().maximumRange).to.be.above(0));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3.6 Aircraft on replica 1 with the model of replica 2 -> 201 (model checked on the read model)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base1}}/api/aircrafts",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"registrationNumber\": \"{{crossReg}}\",\n  \"modelName\": \"A330\",\n  \"seatingCapacity\": 300,\n  \"manufacturingDate\": \"2022-02-02\"\n}",
+              "raw": "{\n  \"registrationNumber\": \"{{crossReg}}\",\n  \"modelName\": \"A330\",\n  \"seatingCapacity\": 280,\n  \"manufacturingDate\": \"2021-03-15\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
                 }
               }
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenAtcc}}",
+                  "type": "string"
+                }
+              ]
             }
           },
           "event": [
@@ -1831,7 +1798,224 @@
           ]
         },
         {
-          "name": "3.9 Listagem agregada (réplica 1) contém dados das 3 réplicas -> 200",
+          "name": "3.7 Duplicate registration on replica 3 -> 409 (uniqueness checked on the read model)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base3}}/api/aircrafts",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"registrationNumber\": \"{{p2pReg}}\",\n  \"modelName\": \"A330\",\n  \"seatingCapacity\": 290,\n  \"manufacturingDate\": \"2021-03-15\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenAtcc}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 409', () => pm.response.to.have.status(409));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3.8 PATCH on replica 1 forwarded to the owner (replica 2) -> 200 (AircraftStatusChanged)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base1}}/api/aircrafts/{{p2pReg}}/status",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"UNDER_MAINTENANCE\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenAtcc}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('New status', () => pm.expect(pm.response.json().status).to.eql('UNDER_MAINTENANCE'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3.9 Poll replica 3 until the status is UNDER_MAINTENANCE (AircraftStatusChanged)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base3}}/api/aircrafts/{{p2pReg}}",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenAtcc}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Eventual consistency: retry this request every 500 ms (max ~10 s) until the read model has converged.",
+                  "const pollKey = \"poll:\" + pm.info.requestName;",
+                  "const attempt = Number(pm.variables.get(pollKey) || 0);",
+                  "let converged = false;",
+                  "try { converged = (pm.response.code === 200 && pm.response.json().status === 'UNDER_MAINTENANCE'); } catch (e) { converged = false; }",
+                  "const next = n => (pm.execution && pm.execution.setNextRequest) ? pm.execution.setNextRequest(n) : postman.setNextRequest(n);",
+                  "if (!converged && attempt < 20) {",
+                  "    pm.variables.set(pollKey, attempt + 1);",
+                  "    setTimeout(() => {}, 500);",
+                  "    next(pm.info.requestName);",
+                  "} else {",
+                  "    pm.variables.unset(pollKey);",
+                  "    pm.test(\"converged after \" + attempt + \" retr\" + (attempt === 1 ? \"y\" : \"ies\"), () => pm.expect(converged).to.be.true);",
+                  "    pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3.10 Model update on replica 3 forwarded to its owner (replica 1, folder 1) -> 200 (AircraftModelUpdated)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base3}}/api/aircraft-models/{{newModel}}",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"maximumRange\": 7777\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenBackoffice}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('New range', () => pm.expect(pm.response.json().maximumRange).to.eql(7777));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3.11 Poll replica 2 until the new range is visible (AircraftModelUpdated)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base2}}/api/aircraft-models/{{newModel}}",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenAtcc}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Eventual consistency: retry this request every 500 ms (max ~10 s) until the read model has converged.",
+                  "const pollKey = \"poll:\" + pm.info.requestName;",
+                  "const attempt = Number(pm.variables.get(pollKey) || 0);",
+                  "let converged = false;",
+                  "try { converged = (pm.response.code === 200 && pm.response.json().maximumRange === 7777); } catch (e) { converged = false; }",
+                  "const next = n => (pm.execution && pm.execution.setNextRequest) ? pm.execution.setNextRequest(n) : postman.setNextRequest(n);",
+                  "if (!converged && attempt < 20) {",
+                  "    pm.variables.set(pollKey, attempt + 1);",
+                  "    setTimeout(() => {}, 500);",
+                  "    next(pm.info.requestName);",
+                  "} else {",
+                  "    pm.variables.unset(pollKey);",
+                  "    pm.test(\"converged after \" + attempt + \" retr\" + (attempt === 1 ? \"y\" : \"ies\"), () => pm.expect(converged).to.be.true);",
+                  "    pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "3.12 Fleet listed on replica 1 contains the demo aircraft of the 3 replicas -> 200",
           "request": {
             "method": "GET",
             "header": [],
@@ -1854,24 +2038,20 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test('Status 200', () => pm.response.to.have.status(200));",
-                  "const j = pm.response.json();",
-                  "const regs = j.content.map(a => a.registrationNumber);",
-                  "pm.test('Aeronave da réplica 1 presente', () => pm.expect(regs).to.include(pm.environment.get('newReg')));",
-                  "pm.test('Aeronave da réplica 2 presente', () => pm.expect(regs).to.include(pm.environment.get('p2pReg')));",
-                  "pm.test('Aeronave da réplica 3 presente (CS-TUE, bootstrap)', () => pm.expect(regs).to.include('CS-TUE'));",
-                  "pm.test('Sem duplicados', () => pm.expect(new Set(regs).size).to.eql(regs.length));",
-                  "pm.test('Resposta completa (sem X-Partial-Response)', () => pm.expect(pm.response.headers.has('X-Partial-Response')).to.be.false);"
+                  "pm.test('No X-Partial-Response (answered from the local read model)', () => pm.expect(pm.response.headers.has('X-Partial-Response')).to.be.false);",
+                  "const regs = pm.response.json().content.map(a => a.registrationNumber);",
+                  "pm.test('Aircraft of replicas 1, 2 and 3 (demo) and of this run', () => pm.expect(regs).to.include.members(['CS-TUA', 'CS-TUC', 'CS-TUE', pm.environment.get('p2pReg'), pm.environment.get('crossReg')]));"
                 ]
               }
             }
           ]
         },
         {
-          "name": "3.10 Pesquisa agregada por modelo A330 -> 200",
+          "name": "3.13 Search by model A330 on replica 3 -> 200",
           "request": {
             "method": "GET",
             "header": [],
-            "url": "{{base1}}/api/aircrafts?modelName=A330&size=100",
+            "url": "{{base3}}/api/aircrafts?modelName=A330&size=100",
             "auth": {
               "type": "bearer",
               "bearer": [
@@ -1890,7 +2070,7 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test('Status 200', () => pm.response.to.have.status(200));",
-                  "pm.test('Inclui aeronave da réplica 2', () => pm.expect(pm.response.json().content.map(a => a.registrationNumber)).to.include(pm.environment.get('p2pReg')));"
+                  "pm.test('Only A330', () => pm.response.json().content.forEach(a => pm.expect(a.modelName).to.eql('A330')));"
                 ]
               }
             }
@@ -2056,7 +2236,7 @@
       ]
     },
     {
-      "name": "5 - Integração com Flight Routes (US203, US204, US206) - precisa do Flight Routes ou do stub na 8084",
+      "name": "5 - Flight Routes data from events (US203, US204, US206): no HTTP call to Flight Routes",
       "item": [
         {
           "name": "US206 Horas operacionais da frota -> 200",
@@ -2083,7 +2263,8 @@
                 "exec": [
                   "pm.test('Status 200', () => pm.response.to.have.status(200));",
                   "const j = pm.response.json();",
-                  "pm.test('Linhas com minutos e horas', () => { pm.expect(j.content).to.be.an('array').and.not.empty; j.content.forEach(r => { pm.expect(r.totalMinutes).to.be.a('number').and.at.least(0); pm.expect(r.totalHours).to.be.closeTo(r.totalMinutes / 60, 0.01); }); });"
+                  "pm.test('Linhas com minutos e horas', () => { pm.expect(j.content).to.be.an('array').and.not.empty; j.content.forEach(r => { pm.expect(r.totalMinutes).to.be.a('number').and.at.least(0); pm.expect(r.totalHours).to.be.closeTo(r.totalMinutes / 60, 0.01); }); });",
+                  "pm.test('No X-Partial-Response (answered from the local read model)', () => pm.expect(pm.response.headers.has('X-Partial-Response')).to.be.false);"
                 ]
               }
             }
@@ -2142,7 +2323,8 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test('Status 200', () => pm.response.to.have.status(200));",
-                  "pm.test('Lista de rotas', () => pm.expect(pm.response.json()).to.be.an('array'));"
+                  "pm.test('Lista de rotas', () => pm.expect(pm.response.json()).to.be.an('array'));",
+                  "pm.test('No X-Partial-Response (answered from the local read model)', () => pm.expect(pm.response.headers.has('X-Partial-Response')).to.be.false);"
                 ]
               }
             }
@@ -2231,7 +2413,8 @@
                 "exec": [
                   "pm.test('Status 200', () => pm.response.to.have.status(200));",
                   "const j = pm.response.json();",
-                  "pm.test('No máximo 5 e por ordem decrescente', () => { pm.expect(j).to.be.an('array').and.have.length.at.most(5); for (let i = 1; i < j.length; i++) pm.expect(j[i-1].totalMinutes).to.be.at.least(j[i].totalMinutes); });"
+                  "pm.test('No máximo 5 e por ordem decrescente', () => { pm.expect(j).to.be.an('array').and.have.length.at.most(5); for (let i = 1; i < j.length; i++) pm.expect(j[i-1].totalMinutes).to.be.at.least(j[i].totalMinutes); });",
+                  "pm.test('No X-Partial-Response (answered from the local read model)', () => pm.expect(pm.response.headers.has('X-Partial-Response')).to.be.false);"
                 ]
               }
             }
@@ -2266,23 +2449,77 @@
             }
           ]
         }
-      ]
+      ],
+      "description": "US203, US204 and US206 read KNOWN_ROUTE and KNOWN_SCHEDULED_FLIGHT, fed by RouteCreated/RouteUpdated and ScheduledFlightCreated of Flight Routes (queue <instanceId>.flightroutes). They answer even with Flight Routes down. Folder 7 shows the end-to-end flow with Flight Routes running."
     },
     {
-      "name": "6 - Tolerância a falhas (MANUAL: pára a réplica 3 e corre só esta pasta)",
+      "name": "6 - /api/v2/unicorns: real projection AIRCRAFT_MOOD (same contract as the Postman mock)",
+      "description": "The real implementation of the unicorns contract (docs/2-containers/Unicorns-Mock.md): a pure query on the projection AIRCRAFT_MOOD, updated by AircraftRegistered / AircraftStatusChanged. The mock collection (5-scenarios/unicorns) stubs the same JSON. Run after folder 3.",
       "item": [
         {
-          "name": "6.1 Réplica 3 em baixo: aeronave da réplica 2 continua acessível -> 200",
+          "name": "6.1 Moods on replica 1 -> 200 (read model)",
           "request": {
             "method": "GET",
             "header": [],
-            "url": "{{base1}}/api/aircrafts/{{p2pReg}}",
+            "url": "{{base1}}/api/v2/unicorns",
             "auth": {
               "type": "bearer",
               "bearer": [
                 {
                   "key": "token",
                   "value": "{{tokenAtcc}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('JSON content type', () => pm.response.to.have.header('Content-Type'));",
+                  "const body = pm.response.json();",
+                  "pm.test('Non-empty array', () => pm.expect(body).to.be.an('array').and.not.empty);",
+                  "const rule = s => ({AVAILABLE: 'HAPPY', IN_FLIGHT: 'BUSY', UNDER_MAINTENANCE: 'GROUNDED_AND_GRUMPY'}[s] || 'NEUTRAL');",
+                  "pm.test('Every item has registration and mood', () => body.forEach(a => { pm.expect(a.registration).to.be.a('string'); pm.expect(a.mood).to.be.a('string'); }));",
+                  "pm.test('Mood follows the rule of the contract', () => body.forEach(a => pm.expect(a.mood).to.eql(rule(a.operationalStatus))));",
+                  "pm.test('Served by the read model with a valid timestamp', () => body.forEach(a => { pm.expect(a.source).to.eql('read-model'); pm.expect(new Date(a.timestamp).toString()).to.not.eql('Invalid Date'); }));",
+                  "const mine = body.find(a => a.registration === pm.environment.get('p2pReg'));",
+                  "pm.test('Aircraft of replica 2 set UNDER_MAINTENANCE in folder 3 is GROUNDED_AND_GRUMPY', () => pm.expect(mine.mood).to.eql('GROUNDED_AND_GRUMPY'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "6.2 Owner (replica 2) sets it back to AVAILABLE -> 200",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base2}}/api/aircrafts/{{p2pReg}}/status",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"AVAILABLE\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenMaintenance}}",
                   "type": "string"
                 }
               ]
@@ -2301,7 +2538,545 @@
           ]
         },
         {
-          "name": "6.2 Réplica 3 em baixo: aeronave da réplica 3 -> 404 + X-Partial-Response",
+          "name": "6.3 Poll replica 3 until the mood is HAPPY (eventual consistency of the projection)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base3}}/api/v2/unicorns",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenAtcc}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Eventual consistency: retry this request every 500 ms (max ~10 s) until the read model has converged.",
+                  "const pollKey = \"poll:\" + pm.info.requestName;",
+                  "const attempt = Number(pm.variables.get(pollKey) || 0);",
+                  "let converged = false;",
+                  "try { converged = (pm.response.code === 200 && pm.response.json().find(a => a.registration === pm.environment.get('p2pReg')).mood === 'HAPPY'); } catch (e) { converged = false; }",
+                  "const next = n => (pm.execution && pm.execution.setNextRequest) ? pm.execution.setNextRequest(n) : postman.setNextRequest(n);",
+                  "if (!converged && attempt < 20) {",
+                  "    pm.variables.set(pollKey, attempt + 1);",
+                  "    setTimeout(() => {}, 500);",
+                  "    next(pm.info.requestName);",
+                  "} else {",
+                  "    pm.variables.unset(pollKey);",
+                  "    pm.test(\"converged after \" + attempt + \" retr\" + (attempt === 1 ? \"y\" : \"ies\"), () => pm.expect(converged).to.be.true);",
+                  "    pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "    pm.test('source = read-model', () => pm.response.json().forEach(a => pm.expect(a.source).to.eql('read-model')));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "6.4 Without token -> 401",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base1}}/api/v2/unicorns",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 401', () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "7 - Assignment 2: asynchronous integration with Flight Routes (needs Flight Routes fr1/fr2 and Airports ap1)",
+      "description": "End-to-end: Flight Routes publishes RouteCreated and ScheduledFlightCreated on aisafe.flightroutes.events; every Aircraft Management replica consumes them from its own queue (<instanceId>.flightroutes) and updates KNOWN_ROUTE / KNOWN_SCHEDULED_FLIGHT. Aircraft Management never calls Flight Routes: the polls show eventual consistency.",
+      "item": [
+        {
+          "name": "7.0 Setup: random identifiers + Flight Routes health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{fr1}}/actuator/health",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// IATA codes with letters A-W only (never a demo airport); random date so the run can be repeated",
+                  "const L = 'ABCDEFGHIJKLMNOPQRSTUVW';",
+                  "const pick = n => Array.from({ length: n }, () => L[Math.floor(Math.random() * L.length)]).join('');",
+                  "const origin = pick(3); let dest = pick(3); while (dest === origin) dest = pick(3);",
+                  "pm.environment.set('xsOrigin', origin);",
+                  "pm.environment.set('xsDest', dest);",
+                  "pm.environment.set('xsReg', 'CS-' + pick(4));",
+                  "pm.environment.set('xsMinutes', 60 + Math.floor(Math.random() * 60));",
+                  "const d = new Date(Date.now() + (30 + Math.floor(Math.random() * 600)) * 86400000);",
+                  "pm.environment.set('xsDate', d.toISOString().substring(0, 10));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Flight Routes is UP', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "7.1 Setup: origin airport (Airports) -> 201",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{ap1}}/api/airports",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"iataCode\": \"{{xsOrigin}}\",\n  \"name\": \"AM xsOrigin\",\n  \"city\": \"AM xsOrigin\",\n  \"country\": \"Portugal\",\n  \"region\": \"Europe\",\n  \"timezone\": \"Europe/Lisbon\",\n  \"latitude\": 41.2481,\n  \"longitude\": -8.6814,\n  \"runways\": [ { \"name\": \"17/35\", \"lengthMeters\": 3400, \"orientation\": 170, \"surface\": \"asphalt\" } ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenBackoffice}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "7.2 Setup: destination airport (Airports) -> 201",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{ap1}}/api/airports",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"iataCode\": \"{{xsDest}}\",\n  \"name\": \"AM xsDest\",\n  \"city\": \"AM xsDest\",\n  \"country\": \"Portugal\",\n  \"region\": \"Europe\",\n  \"timezone\": \"Europe/Lisbon\",\n  \"latitude\": 38.7742,\n  \"longitude\": -9.1342,\n  \"runways\": [ { \"name\": \"17/35\", \"lengthMeters\": 3400, \"orientation\": 170, \"surface\": \"asphalt\" } ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenBackoffice}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "7.3 Register an A320 on replica 2 -> 201",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base2}}/api/aircrafts",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"registrationNumber\": \"{{xsReg}}\",\n  \"modelName\": \"A320\",\n  \"seatingCapacity\": 180,\n  \"manufacturingDate\": \"2021-03-15\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenAtcc}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "7.4 Flight Routes: create a route (minRange 400 km, minCapacity 120) -> 201 (RouteCreated)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{fr1}}/api/routes",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"originIATA\": \"{{xsOrigin}}\",\n  \"destIATA\": \"{{xsDest}}\",\n  \"estimatedFlightTime\": {{xsMinutes}},\n  \"minRange\": 400,\n  \"minCapacity\": 120\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenAtcc}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "pm.environment.set('xsRouteId', pm.response.json().id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "7.5 Poll replica 1 until the route is compatible with the aircraft (US203, RouteCreated consumed)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base1}}/api/aircrafts/{{xsReg}}/compatible-routes",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenAtcc}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Eventual consistency: retry this request every 500 ms (max ~10 s) until the read model has converged.",
+                  "const pollKey = \"poll:\" + pm.info.requestName;",
+                  "const attempt = Number(pm.variables.get(pollKey) || 0);",
+                  "let converged = false;",
+                  "try { converged = (pm.response.code === 200 && pm.response.json().some(r => r.id === pm.environment.get('xsRouteId'))); } catch (e) { converged = false; }",
+                  "const next = n => (pm.execution && pm.execution.setNextRequest) ? pm.execution.setNextRequest(n) : postman.setNextRequest(n);",
+                  "if (!converged && attempt < 20) {",
+                  "    pm.variables.set(pollKey, attempt + 1);",
+                  "    setTimeout(() => {}, 500);",
+                  "    next(pm.info.requestName);",
+                  "} else {",
+                  "    pm.variables.unset(pollKey);",
+                  "    pm.test(\"converged after \" + attempt + \" retr\" + (attempt === 1 ? \"y\" : \"ies\"), () => pm.expect(converged).to.be.true);",
+                  "    pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "    pm.test('No X-Partial-Response (answered from the local read model)', () => pm.expect(pm.response.headers.has('X-Partial-Response')).to.be.false);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "7.6 Flight Routes: schedule a flight with the aircraft -> 201 (ScheduledFlightCreated)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{fr2}}/api/scheduled-flights",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"aircraftRegistration\": \"{{xsReg}}\",\n  \"routeID\": \"{{xsRouteId}}\",\n  \"date\": \"{{xsDate}}\",\n  \"time\": \"10:15:00\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenAtcc}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "7.7 Poll replica 3 until the operational hours count the flight (US206, ScheduledFlightCreated consumed)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base3}}/api/aircrafts/operational-hours?size=100",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenAtcc}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Eventual consistency: retry this request every 500 ms (max ~10 s) until the read model has converged.",
+                  "const pollKey = \"poll:\" + pm.info.requestName;",
+                  "const attempt = Number(pm.variables.get(pollKey) || 0);",
+                  "let converged = false;",
+                  "try { converged = (pm.response.code === 200 && (pm.response.json().content.find(r => r.registrationNumber === pm.environment.get('xsReg')) || {}).totalMinutes === Number(pm.environment.get('xsMinutes'))); } catch (e) { converged = false; }",
+                  "const next = n => (pm.execution && pm.execution.setNextRequest) ? pm.execution.setNextRequest(n) : postman.setNextRequest(n);",
+                  "if (!converged && attempt < 20) {",
+                  "    pm.variables.set(pollKey, attempt + 1);",
+                  "    setTimeout(() => {}, 500);",
+                  "    next(pm.info.requestName);",
+                  "} else {",
+                  "    pm.variables.unset(pollKey);",
+                  "    pm.test(\"converged after \" + attempt + \" retr\" + (attempt === 1 ? \"y\" : \"ies\"), () => pm.expect(converged).to.be.true);",
+                  "    pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "    pm.test('No X-Partial-Response (answered from the local read model)', () => pm.expect(pm.response.headers.has('X-Partial-Response')).to.be.false);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "7.8 US204 top models on replica 1 -> 200 (A320 is ranked)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base1}}/api/aircraft-models/top-utilized?limit=20",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenBackoffice}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('A320 has flight minutes', () => pm.expect(pm.response.json().map(m => m.modelName)).to.include('A320'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "7.9 Maintenance sets the aircraft UNDER_MAINTENANCE (B3b, on replica 1 -> owner 2) -> 200",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base1}}/api/aircrafts/{{xsReg}}/status",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"UNDER_MAINTENANCE\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenMaintenance}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "7.10 Flight Routes refuses a new flight for that aircraft -> 409 (it reads the status from Aircraft Management)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{fr1}}/api/scheduled-flights",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"aircraftRegistration\": \"{{xsReg}}\",\n  \"routeID\": \"{{xsRouteId}}\",\n  \"date\": \"{{xsDate}}\",\n  \"time\": \"18:45:00\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenAtcc}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 409', () => pm.response.to.have.status(409));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "8 - Replica failure (MANUAL: stop replica 3 and run only this folder)",
+      "description": "With replica 3 (8281) stopped, replica 1 still answers every read from its read model, including the aircraft owned by replica 3 (CS-TUE, demo). Writes of an aircraft owned by replica 3 fail with 503 until it comes back (single owner per aircraft); writes of the other aircraft still work.",
+      "item": [
+        {
+          "name": "8.1 Replica 3 down: its aircraft CS-TUE is still readable on replica 1 -> 200 (read model)",
           "request": {
             "method": "GET",
             "header": [],
@@ -2323,15 +3098,15 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('Status 404', () => pm.response.to.have.status(404));",
-                  "pm.test('X-Partial-Response: true', () => pm.expect(pm.response.headers.get('X-Partial-Response')).to.eql('true'));"
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('No X-Partial-Response (answered from the local read model)', () => pm.expect(pm.response.headers.has('X-Partial-Response')).to.be.false);"
                 ]
               }
             }
           ]
         },
         {
-          "name": "6.3 Réplica 3 em baixo: listagem agregada continua a responder (200 parcial)",
+          "name": "8.2 Replica 3 down: the fleet is complete and never partial",
           "request": {
             "method": "GET",
             "header": [],
@@ -2354,8 +3129,124 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test('Status 200', () => pm.response.to.have.status(200));",
-                  "pm.test('X-Partial-Response: true', () => pm.expect(pm.response.headers.get('X-Partial-Response')).to.eql('true'));",
-                  "pm.test('Mantém dados das réplicas 1 e 2', () => pm.expect(pm.response.json().content.length).to.be.at.least(1));"
+                  "pm.test('No X-Partial-Response (answered from the local read model)', () => pm.expect(pm.response.headers.has('X-Partial-Response')).to.be.false);",
+                  "pm.test('Includes the aircraft of replica 3', () => pm.expect(pm.response.json().content.map(a => a.registrationNumber)).to.include('CS-TUE'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "8.3 Replica 3 down: moods still answered (query side independent of the owners)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base1}}/api/v2/unicorns",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenAtcc}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Includes CS-TUE', () => pm.expect(pm.response.json().map(a => a.registration)).to.include('CS-TUE'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "8.4 Replica 3 down: write of CS-TUE (owned by replica 3) -> 503",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base1}}/api/aircrafts/CS-TUE/status",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"AVAILABLE\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenAtcc}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 503', () => pm.response.to.have.status(503));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "8.5 Replica 3 down: write of an aircraft owned by replica 1 still works -> 200",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base1}}/api/aircrafts/{{newReg}}/status",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"AVAILABLE\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenAtcc}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
                 ]
               }
             }

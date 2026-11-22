@@ -60,3 +60,16 @@ The request's tests check: only `GET` is used, status `200`, JSON content type, 
 A private mock server also needs the header `x-api-key: <your Postman API key>`. Add it to the request if you chose private access.
 
 To change what the mock returns, edit the saved example (`200 - aircraft moods`) in the collection. Postman mock servers answer with the example whose method and path match the request.
+
+## 4. The real projection in Aircraft Management (Assignment 2)
+
+Aircraft Management implements the same contract for real: `GET /api/v2/unicorns` on any of its replicas (JWT of any AISafe role), served by the projection **`AIRCRAFT_MOOD`** exactly as described in section 2.
+
+| Piece | Class |
+|---|---|
+| Projection (write side of the read model) | `AircraftProjection`: on `AircraftRegistered` / `AircraftStatusChanged` it upserts `REPLICATED_AIRCRAFT` **and** `AIRCRAFT_MOOD` in one transaction, with `mood = AircraftMood.moodOf(status)` and `timestamp` = when the event was applied |
+| Query | `UnicornsController` → `AircraftMoodQueryService` → `AircraftMoodRepository.findAllOrdered()`; `source` is always `"read-model"` |
+| Tests | `AircraftMoodTest` (rule), `ReplicaCollaborationTest` (moods converge on both replicas after a status change; still answered with the owner down), Postman folder 6 of the Aircraft Management collection (same checks as the mock, plus a poll until a new mood reaches another replica) |
+
+Because every replica keeps its own `AIRCRAFT_MOOD`, the endpoint answers on any replica even when the owners of the aircraft (or the whole write side) are down, and the mock server and the real endpoint are interchangeable for a consumer: the same JSON, the same tests.
+

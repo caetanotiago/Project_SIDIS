@@ -1,0 +1,30 @@
+@startuml AircraftManagement-SD-FlightRoutesEvents
+autonumber
+title Data of Flight Routes by events: US206 / US204 (B4b) and US203 (B6) without HTTP
+participant "Flight Routes\n(owner replica)" as FR
+queue "RabbitMQ\naisafe.flightroutes.events" as MQ
+box "every Aircraft Management replica" #F8F9FA
+participant ": FlightRoutesEventsListener" as L <<listener>>
+participant ": FlightRoutesEventsProjection" as P <<projection>>
+database "KNOWN_ROUTE\nKNOWN_SCHEDULED_FLIGHT" as K <<read model>>
+participant ": CalculateOperationalHoursService\n/ TopUtilizedModelsService\n/ FindCompatibleRoutesService" as Q <<query>>
+database "REPLICATED_AIRCRAFT\nREPLICATED_AIRCRAFT_MODEL" as RM <<read model>>
+end box
+actor "ATCC / Backoffice" as U
+
+FR -> MQ : RouteCreated (route.created)\nScheduledFlightCreated (scheduled-flight.created)
+MQ -> L : queue aircraftmanagement-N.flightroutes
+activate L
+L -> P : apply(IntegrationEvent<JsonNode>)
+P -> P : duplicate eventId? stale version? unknown type?
+P -> K : upsert route / flight (only the fields used)
+L --> MQ : ack
+deactivate L
+
+U -> Q : GET /api/aircrafts/operational-hours\n(or /aircraft-models/top-utilized, /aircrafts/{reg}/compatible-routes)
+activate Q
+Q -> RM : fleet (all replicas), model range
+Q -> K : SUM(estimatedFlightTime) GROUP BY registration\n/ ACTIVE routes with minRange ≤ range, minCapacity ≤ seats
+Q --> U : 200 (never partial; Flight Routes may be down)
+deactivate Q
+@enduml

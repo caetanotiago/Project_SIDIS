@@ -36,26 +36,40 @@ deactivate SYS
 
 == WP#1B — Enhanced Aircraft Features ==
 
+BO -> SYS : PATCH /api/aircraft-models/{modelName} (any specification)
+activate SYS
+SYS --> BO : 200 OK (AircraftModelDTO)
+deactivate SYS
+
 ATCC -> SYS : GET /api/aircrafts/{registrationNumber}/compatible-routes
 activate SYS
-SYS -> FR : GET /api/routes/compatible?range=&capacity=
-FR --> SYS : 200 OK (List<FlightRouteDTO>)
 SYS --> ATCC : 200 OK (List<CompatibleRouteDTO>)
 deactivate SYS
 
 BO -> SYS : GET /api/aircraft-models/top-utilized?limit=5
 activate SYS
-SYS -> FR : GET /api/scheduled-flights/statistics/minutes-by-aircraft
-FR --> SYS : 200 OK (Map<registration, minutes>)
 SYS --> BO : 200 OK (List<ModelUtilizationDTO>)
 deactivate SYS
 
 ATCC -> SYS : GET /api/aircrafts/operational-hours?page=&size=
 activate SYS
-SYS -> FR : GET /api/scheduled-flights/statistics/minutes-by-aircraft
-FR --> SYS : 200 OK (Map<registration, minutes>)
 SYS --> ATCC : 200 OK (PageDTO<AircraftOperationalHoursDTO>)
 deactivate SYS
+
+ATCC -> SYS : GET /api/aircrafts/{registrationNumber}/availability
+activate SYS
+SYS --> ATCC : 200 OK (AircraftAvailabilityDTO)
+deactivate SYS
+
+ATCC -> SYS : GET /api/v2/unicorns
+activate SYS
+SYS --> ATCC : 200 OK (List<AircraftMoodDTO>)
+deactivate SYS
+
+== Asynchronous (RabbitMQ) ==
+
+FR ->> SYS : RouteCreated / RouteUpdated / ScheduledFlightCreated\n(aisafe.flightroutes.events)
+SYS ->> FR : AircraftRegistered / AircraftStatusChanged /\nAircraftModelCreated / AircraftModelUpdated (aisafe.aircraftmanagement.events)
 
 == Queries requested by other components ==
 
@@ -82,7 +96,7 @@ deactivate SYS
 note over BO, SYS
   Every request carries "Authorization: Bearer <JWT>".
   Requests from other components forward the end user's JWT (+ X-Service-Key).
-  "System" = any of the 3 replicas: every GET answers with the data of all replicas
-  (X-Partial-Response: true when a replica did not answer).
+  "System" = any of the 3 replicas: every GET answers from the local read models, which hold
+  the data of all replicas and the Flight Routes data received by events (never partial).
 end note
 @enduml

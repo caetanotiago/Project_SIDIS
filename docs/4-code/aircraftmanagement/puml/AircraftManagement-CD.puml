@@ -2,58 +2,91 @@
 !pragma layout smetana
 skinparam classAttributeIconSize 0
 hide empty members
+title Aircraft Management — classes (Assignment 2, CQRS)
 
 package controllers {
-    class AircraftController {
-        + create(CreateAircraftDTO)
-        + search(modelName, status, manufacturingYear, page, size)
-        + getByRegistration(String)
-        + updateStatus(String, UpdateAircraftStatusDTO)
-    }
-    class AircraftStatisticsController {
-        + operationalHours(page, size)
-        + compatibleRoutes(String)
-    }
-    class AircraftModelController {
-        + create(CreateAircraftModelDTO)
-        + getByName(String)
-    }
-    class AircraftModelStatisticsController {
-        + topUtilized(limit)
+    class AircraftController
+    class AircraftModelController
+    class AircraftStatisticsController
+    class AircraftModelStatisticsController
+    class AircraftAvailabilityController
+    class UnicornsController {
+        + moods() : List<AircraftMoodDTO>
     }
 }
 
-package services {
+package command {
     class CreateAircraftModelService {
         + create(CreateAircraftModelDTO) : AircraftModel
+    }
+    class UpdateAircraftModelService {
+        + update(String, UpdateAircraftModelDTO) : AircraftModelDTO
     }
     class CreateAircraftService {
         + create(CreateAircraftDTO) : Aircraft
     }
-    class SearchAircraftsService {
-        + getByRegistration(String) : AircraftSummary
-        + search(modelName, status, year) : List<AircraftSummary>
-    }
-    class SearchAircraftModelsService {
-        + getByName(String) : AircraftModelSummary
-    }
     class UpdateAircraftStatusService {
         + updateStatus(String, UpdateAircraftStatusDTO) : AircraftDTO
     }
-    class CalculateOperationalHoursService {
-        + calculate() : Result
+    class AircraftManagementEventEmitter {
+        + aircraftRegistered(Aircraft)
+        + aircraftStatusChanged(Aircraft)
+        + aircraftModelCreated(AircraftModel)
+        + aircraftModelUpdated(AircraftModel)
     }
-    class TopUtilizedModelsService {
-        + topUtilized(int) : Result
+    class OutgoingIntegrationEvent <<record>>
+    class IntegrationEventRelay {
+        + afterCommit(OutgoingIntegrationEvent)
     }
-    class FindCompatibleRoutesService {
-        + findFor(String) : CompatibleRoutes
+    interface IntegrationEventTransport {
+        + send(OutgoingIntegrationEvent)
     }
-    class AircraftReplicaQueries {
-        + findAircraft(String) : Optional<AircraftSummary>
-        + findModel(String) : Optional<AircraftModelSummary>
-        + withPeers(List<AircraftSummary>, String) : List<AircraftSummary>
-        + isPeerRequest() : boolean
+    class AircraftStateRepublisher {
+        + republishOwnedState(String) : int
+    }
+    class ReadModelSynchronizer {
+        + onStartup()
+        + onSyncRequested(String)
+    }
+}
+
+package events {
+    class AircraftEvents <<contract>>
+    class AircraftEventPayload <<record>>
+    class AircraftModelEvents <<contract>>
+    class AircraftModelEventPayload <<record>>
+    package external {
+        class FlightRoutesEvents <<contract>>
+        class RoutePayload <<record>>
+        class ScheduledFlightPayload <<record>>
+    }
+}
+
+package query {
+    class AircraftManagementEventRouter {
+        + apply(IntegrationEvent<?>) : boolean
+    }
+    class AircraftManagementEventsListener <<@RabbitListener>>
+    class AircraftProjection
+    class AircraftModelProjection
+    class ReplicatedAircraft <<read model>>
+    class ReplicatedAircraftModel <<read model>>
+    class AircraftMood <<read model>> {
+        + {static} moodOf(String) : String
+    }
+    class SearchAircraftsService
+    class SearchAircraftModelsService
+    class AircraftAvailabilityService
+    class CalculateOperationalHoursService
+    class TopUtilizedModelsService
+    class FindCompatibleRoutesService
+    class FlightMinutesService
+    class AircraftMoodQueryService
+    package "query.external" as qext {
+        class FlightRoutesEventsListener <<@RabbitListener>>
+        class FlightRoutesEventsProjection
+        class KnownRoute <<read model>>
+        class KnownScheduledFlight <<read model>>
     }
 }
 
@@ -61,90 +94,84 @@ package domain {
     class Aircraft <<Root>>
     class AircraftModel <<Root>>
     enum AircraftStatus
-    class AircraftSummary <<record>>
-    class AircraftModelSummary <<record>>
 }
 
-package assemblers {
-    class AircraftAssembler {
-        + toDTO(Aircraft) : AircraftDTO
-        + toSummary(AircraftDTO) : AircraftSummary
-        + toDTO(AircraftModel) : AircraftModelDTO
-    }
+package "infrastructure.messaging" as infra {
+    class RabbitIntegrationEventTransport
+    class AircraftManagementMessagingConfiguration
+    class JpaProcessedEventStore
 }
 
-package dto {
-    class PageDTO<T> <<record>> {
-        + {static} of(List<T>, page, size)
-    }
-    class AircraftDTO
-    class AircraftModelDTO
-    class ModelUtilizationDTO <<record>>
-    class AircraftOperationalHoursDTO <<record>>
-}
-
-package repositories {
-    interface AircraftRepository
-    interface AircraftModelRepository
-}
-
-package clients {
-    class FlightRoutesClient {
-        + minutesByAircraft() : MinutesByAircraft
-        + compatibleRoutes(range, capacity) : CompatibleRoutes
-    }
-}
-
-package "common (library)" {
-    class PeerClient {
-        + findFirst(uri, type)
-        + collectList(uri, type)
-        + forwardToOwner(method, uri, body, type)
-        + isPeerRequest()
-    }
-    class ReplicatedServiceClient {
-        + call(...)
-    }
+package "common (isep.sidis.common)" as common {
+    class EventPublisher
+    class IdempotentEventHandler
+    class PeerClient
+    class "IntegrationEvent<T>" as IE <<record>>
 }
 
 AircraftController --> CreateAircraftService
-AircraftController --> SearchAircraftsService
 AircraftController --> UpdateAircraftStatusService
-AircraftController --> AircraftAssembler
-AircraftController ..> PageDTO
+AircraftController --> SearchAircraftsService
+AircraftModelController --> CreateAircraftModelService
+AircraftModelController --> UpdateAircraftModelService
+AircraftModelController --> SearchAircraftModelsService
 AircraftStatisticsController --> CalculateOperationalHoursService
 AircraftStatisticsController --> FindCompatibleRoutesService
-AircraftModelController --> CreateAircraftModelService
-AircraftModelController --> SearchAircraftModelsService
 AircraftModelStatisticsController --> TopUtilizedModelsService
+AircraftAvailabilityController --> AircraftAvailabilityService
+UnicornsController --> AircraftMoodQueryService
 
-CreateAircraftService --> AircraftRepository
-CreateAircraftService --> AircraftReplicaQueries
-CreateAircraftModelService --> AircraftModelRepository
-CreateAircraftModelService --> AircraftReplicaQueries
-SearchAircraftsService --> AircraftReplicaQueries
-SearchAircraftsService --> AircraftRepository
-SearchAircraftModelsService --> AircraftReplicaQueries
-UpdateAircraftStatusService --> AircraftRepository
-UpdateAircraftStatusService --> PeerClient
+CreateAircraftService --> Aircraft
+CreateAircraftModelService --> AircraftModel
+UpdateAircraftStatusService --> PeerClient : forwardToOwner
+UpdateAircraftModelService --> PeerClient : forwardToOwner
+CreateAircraftService ..> ReplicatedAircraft : uniqueness
+CreateAircraftService ..> ReplicatedAircraftModel : model exists
+CreateAircraftModelService ..> ReplicatedAircraftModel : uniqueness
+CreateAircraftService --> AircraftManagementEventEmitter
+CreateAircraftModelService --> AircraftManagementEventEmitter
+UpdateAircraftStatusService --> AircraftManagementEventEmitter
+UpdateAircraftModelService --> AircraftManagementEventEmitter
+AircraftStateRepublisher --> AircraftManagementEventEmitter
+ReadModelSynchronizer --> AircraftStateRepublisher
+ReadModelSynchronizer --> EventPublisher : AircraftSyncRequested
+AircraftManagementEventsListener --> ReadModelSynchronizer : sync request
+
+AircraftManagementEventEmitter --> AircraftManagementEventRouter : apply (same tx)
+AircraftManagementEventEmitter ..> OutgoingIntegrationEvent : publishEvent
+IntegrationEventRelay ..> OutgoingIntegrationEvent : AFTER_COMMIT
+IntegrationEventRelay --> IntegrationEventTransport
+RabbitIntegrationEventTransport ..|> IntegrationEventTransport
+RabbitIntegrationEventTransport --> EventPublisher
+
+AircraftManagementEventsListener --> AircraftManagementEventRouter
+AircraftManagementEventRouter --> AircraftProjection
+AircraftManagementEventRouter --> AircraftModelProjection
+AircraftProjection --> ReplicatedAircraft
+AircraftProjection --> AircraftMood
+AircraftModelProjection --> ReplicatedAircraftModel
+AircraftProjection --> IdempotentEventHandler
+AircraftModelProjection --> IdempotentEventHandler
+FlightRoutesEventsProjection --> IdempotentEventHandler
+IdempotentEventHandler --> JpaProcessedEventStore : ProcessedEventStore
+FlightRoutesEventsListener --> FlightRoutesEventsProjection
+FlightRoutesEventsProjection --> KnownRoute
+FlightRoutesEventsProjection --> KnownScheduledFlight
+
+SearchAircraftsService --> ReplicatedAircraft
+SearchAircraftModelsService --> ReplicatedAircraftModel
+AircraftAvailabilityService --> SearchAircraftsService
 CalculateOperationalHoursService --> SearchAircraftsService
-CalculateOperationalHoursService --> FlightRoutesClient
+CalculateOperationalHoursService --> FlightMinutesService
 TopUtilizedModelsService --> SearchAircraftsService
-TopUtilizedModelsService --> FlightRoutesClient
-FindCompatibleRoutesService --> AircraftReplicaQueries
-FindCompatibleRoutesService --> FlightRoutesClient
+TopUtilizedModelsService --> FlightMinutesService
+FlightMinutesService --> KnownScheduledFlight
+FindCompatibleRoutesService --> SearchAircraftsService
+FindCompatibleRoutesService --> SearchAircraftModelsService
+FindCompatibleRoutesService --> KnownRoute
+AircraftMoodQueryService --> AircraftMood
 
-AircraftReplicaQueries --> AircraftRepository
-AircraftReplicaQueries --> AircraftModelRepository
-AircraftReplicaQueries --> PeerClient
-AircraftReplicaQueries --> AircraftAssembler
-FlightRoutesClient --> ReplicatedServiceClient
-
-AircraftRepository ..> Aircraft
-AircraftModelRepository ..> AircraftModel
+AircraftEventPayload ..> Aircraft : of()
+AircraftModelEventPayload ..> AircraftModel : of()
 Aircraft --> AircraftStatus
-AircraftAssembler ..> AircraftDTO
-AircraftAssembler ..> AircraftModelDTO
-AircraftAssembler ..> AircraftSummary
-AircraftAssembler ..> AircraftModelSummary
 @enduml

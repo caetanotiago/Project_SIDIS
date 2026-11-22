@@ -18,7 +18,7 @@ System_Boundary(aisafe, "AISafe Flight Management System") {
 
     ContainerQueue(mq, "Message broker", "RabbitMQ 3 (Docker) — AMQP :5672", "Topic exchange per producer (aisafe.<service>.events), one durable queue per consuming replica (<instanceId>.<source>), dead-letter queues.")
 
-    ContainerDb(amdb, "aircraftManagementdb-1..3", "H2 in-memory", "One database per replica")
+    ContainerDb(amdb, "aircraftManagementdb-1..3", "H2 file", "One database per replica: write model + read models")
     ContainerDb(mtdb, "maintenancedb-1..3", "H2 in-memory", "One database per replica")
     ContainerDb(apdb, "airportsdb-1..3", "H2 in-memory", "One database per replica")
     ContainerDb(frdb, "flightRoutesdb-1..3", "H2 file (code/data/)", "One database per replica: write model (owned rows) + read models (all replicas) + processed event ids")
@@ -37,8 +37,7 @@ Rel(maint, am, "Reads aircraft and models; status (US105)", "REST, JSON/HTTPS + 
 
 ' Remaining synchronous bridges (user's JWT + X-Service-Key; round-robin + failover)
 Rel(fr, ap, "B2: GET /api/airports/{iata} (until Airports publishes events)", "JSON/HTTPS")
-Rel(fr, am, "B1: GET aircraft / model (until Aircraft Management publishes events)", "JSON/HTTPS")
-Rel(am, fr, "B4b minutes-by-aircraft; B6 compatible routes (answered from read models)", "JSON/HTTPS, service-only")
+Rel(fr, am, "B1: GET aircraft / model (events available; consumer off by default)", "JSON/HTTPS")
 Rel(ap, fr, "B5: routes per airport (answered from read model)", "JSON/HTTPS, service-only")
 Rel(mt, am, "B3: aircraft, models, fleet + hours; PATCH status (command)", "JSON/HTTPS")
 Rel(fr, fr, "Commands forwarded to the replica that owns the entity", "JSON/HTTPS, X-Peer-Hops + X-Service-Key")
@@ -46,7 +45,7 @@ Rel(fr, fr, "Commands forwarded to the replica that owns the entity", "JSON/HTTP
 ' Events (Assignment 2)
 Rel(fr, mq, "Publishes RouteCreated, RouteUpdated, ScheduledFlightCreated (after commit)", "AMQP", $tags="amqp")
 Rel(mq, fr, "Delivers every Flight Routes event to every replica's queue → read models", "AMQP", $tags="amqp")
-Rel(am, mq, "AircraftRegistered, AircraftStatusChanged, AircraftModelCreated (to implement)", "AMQP", $tags="planned")
+Rel(am, mq, "AircraftRegistered, AircraftStatusChanged, AircraftModelCreated/Updated; consumes route.*, scheduled-flight.* (replaces B4b, B6)", "AMQP", $tags="amqp")
 Rel(ap, mq, "AirportCreated, AirportUpdated, AirportStatusChanged (to implement)", "AMQP", $tags="planned")
 
 Rel(am, amdb, "Reads/writes", "JPA/JDBC")

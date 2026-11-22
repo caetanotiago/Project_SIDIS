@@ -91,6 +91,11 @@ class ExternalEventsScaffoldingTest {
         assertEquals("UNDER_MAINTENANCE", later.status());
         assertEquals(180, later.seatingCapacity());
 
+        // US201 in Aircraft Management: AircraftModelUpdated keeps the local copy of the model's range current
+        assertTrue(projection.apply(external(ExternalEvents.AIRCRAFT_SERVICE, ExternalEvents.AIRCRAFT_MODEL_UPDATED, "A320",
+                new AircraftModelEventPayload("A320", 6300.0, 1L))));
+        assertEquals(6300.0, on.getBean(AircraftClient.class).getAircraft("CS-EXT").maximumRange());
+
         // Unknown locally -> falls back to HTTP (here: nobody listens -> 503 as in Assignment 1)
         assertThrows(RemoteServiceUnavailableException.class, () -> on.getBean(AircraftClient.class).getAircraft("CS-NONE"));
     }

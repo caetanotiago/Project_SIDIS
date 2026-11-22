@@ -15,6 +15,10 @@ public class AircraftManagementAuthorizationRules implements AuthorizationRules 
     @Override
     public void configure(AuthorizeHttpRequestsConfigurer<HttpSecurity>.AuthorizationManagerRequestMatcherRegistry auth) {
         auth
+                // SIDIS Assignment 2 - /api/v2/unicorns: aircraft moods (read model only), any AISafe role
+                .requestMatchers(HttpMethod.GET, "/api/v2/unicorns")
+                        .hasAnyRole("ADMIN", "ATCC", "BACKOFFICE_OPERATOR", "MAINTENANCE_TECHNICIAN", "MAINTENANCE_SUPERVISOR")
+
                 // US101 – registar modelo; US201 – atualizar especificações
                 .requestMatchers(HttpMethod.POST, "/api/aircraft-models").hasRole("BACKOFFICE_OPERATOR")
                 .requestMatchers(HttpMethod.PATCH, "/api/aircraft-models/*").hasRole("BACKOFFICE_OPERATOR")

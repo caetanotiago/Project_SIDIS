@@ -2,7 +2,7 @@ package isep.psoft.aisafe.aircraftmanagement.controllers;
 
 import isep.psoft.aisafe.aircraftmanagement.dto.AircraftAvailabilityDTO;
 import isep.psoft.aisafe.aircraftmanagement.dto.FleetAvailabilityDTO;
-import isep.psoft.aisafe.aircraftmanagement.services.AircraftAvailabilityService;
+import isep.psoft.aisafe.aircraftmanagement.query.AircraftAvailabilityService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;

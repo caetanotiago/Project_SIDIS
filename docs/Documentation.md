@@ -89,7 +89,7 @@ The architecture is documented with the **C4 model** (Simon Brown) plus a fifth 
 
 | Container | Owner | Status | L3 Components | L4 Code | +1 Scenarios |
 |---|---|---|---|---|---|
-| Aircraft Management (WP#1) | Tiago Moreira | — | [Components](#src-3-components-aircraftmanagement-aircraftmanagement-component) | [Code](#src-4-code-aircraftmanagement-aircraftmanagement-code) | [Scenarios](#src-5-scenarios-aircraftmanagement-aircraftmanagement-scenarios) |
+| **Aircraft Management (WP#1)** | Tiago Moreira | complete (Assignment 2: CQRS + events) | [Components](#src-3-components-aircraftmanagement-aircraftmanagement-component) | [Code](#src-4-code-aircraftmanagement-aircraftmanagement-code) | [Scenarios](#src-5-scenarios-aircraftmanagement-aircraftmanagement-scenarios) |
 | **Maintenance (WP#4)** | Diogo Fernandes | complete | [Components](#src-3-components-maintenance-maintenance-components) | [Code](#src-4-code-maintenance-maintenance-code) | [Scenarios](#src-5-scenarios-maintenance-maintenance-scenarios) |
 | **Airports (WP#2)** | Afonso Ribeiro | complete | [Components](#src-3-components-airports-airports-components) | [Code](#src-4-code-airports-airports-code) | [Scenarios](#src-5-scenarios-airports-airports-scenarios) |
 | **Flight Routes (WP#3)** | Tiago Caetano | complete | [Components](#src-3-components-flightroutes-flightroutes-components) | [Code](#src-4-code-flightroutes-flightroutes-code) | [Scenarios](#src-5-scenarios-flightroutes-flightroutes-scenarios) |
@@ -110,7 +110,7 @@ Requirements: **JDK 21** and, for Assignment 2 messaging, **Docker** (Docker Des
 |---|---|---|
 | `RABBITMQ_USER`, `RABBITMQ_PASSWORD` | none (required) | broker account, `spring.rabbitmq.username/password` |
 | `RABBITMQ_HOST`, `RABBITMQ_PORT` | `localhost`, `5672` | `spring.rabbitmq.host/port`, scripts |
-| `AISAFE_MESSAGING_ENABLED` | `true` (Flight Routes) | `aisafe.messaging.enabled` |
+| `AISAFE_MESSAGING_ENABLED` | `true` (Flight Routes, Aircraft Management) | `aisafe.messaging.enabled` |
 | `AISAFE_EXTERNAL_EVENTS` | `false` | Flight Routes `aisafe.flightroutes.external-events.enabled` ([Integration-Contracts §9.4](#sec-9-4-events-expected-from-the-other-services)) |
 
 **2. Build and test.**
@@ -135,8 +135,8 @@ docker compose -f infra/docker-compose.rabbitmq.yml --env-file infra/.env up -d 
 - **Management UI:** <http://localhost:15672>, log in with `RABBITMQ_USER` / `RABBITMQ_PASSWORD` from `infra/.env`. The **Exchanges** and **Queues** tabs show the exchanges `aisafe.<service>.events`, the queues `<instanceId>.<sourceService>` and their `.dlq` ([Integration-Contracts §9.2](#sec-9-2-exchanges-routing-keys-and-queues)); a queue's *Get messages* shows its events.
 - **Running without a broker:** set `AISAFE_MESSAGING_ENABLED=false` before `start-all` (or `java -jar`). The service then neither publishes nor consumes events; Flight Routes still answers from its own read models, which then contain only the writes made on that replica. Event contracts: [Integration-Contracts §9](#sec-9-assignment-2-event-contracts); reliability and known limitations: [Containers §3.4–3.6](#sec-3-4-fault-tolerance).
 - **`start-all`** starts every service with `replicas` (1–3, default 3) replicas, extra Spring `profiles` (default none) and JVM options (default `-Xmx320m`). It builds the jars first if they are missing, writes logs and PID files to `code/logs/`, waits for **`/actuator/health/liveness`** and prints the URL of each replica (`/actuator/health/readiness` also includes RabbitMQ). **`stop-all`** stops them. 12 JVMs need several GB of RAM; use 1 or 2 replicas per service on a small machine. One service only: `scripts/start-replicas.* <service> [profiles] [replicas]`; one replica: `scripts/run-instance.*`.
-- **Databases:** one per replica. Flight Routes uses H2 **files** in `code/data/` (git-ignored; delete the folder, and purge the queues, to start again from the demo data); the other services use in-memory H2.
-- **Profiles:** `demo` loads demonstration data (different in each replica) in Airports, Flight Routes and Maintenance; Aircraft Management always loads its demo fleet. Flight Routes inserts it only once and publishes it as events. `tls` switches every replica and every inter-service call to HTTPS. Before the first `tls` run, create the development certificate with `./scripts/generate-dev-certs.sh` (or `.\scripts\generate-dev-certs.ps1`) and rebuild; it is not stored in git.
+- **Databases:** one per replica. Flight Routes and Aircraft Management use H2 **files** in `code/data/` (git-ignored; delete the folder, and purge the queues, to start again from the demo data); the other services use in-memory H2.
+- **Profiles:** `demo` loads demonstration data (different in each replica) in Aircraft Management, Airports, Flight Routes and Maintenance. Flight Routes and Aircraft Management insert it only once and publish it as events (Aircraft Management also re-announces the state each replica owns at every start). `tls` switches every replica and every inter-service call to HTTPS. Before the first `tls` run, create the development certificate with `./scripts/generate-dev-certs.sh` (or `.\scripts\generate-dev-certs.ps1`) and rebuild; it is not stored in git.
 - **Tokens:** `POST /auth/dev-token` on any replica with `{"username": "atcc1", "roles": ["ATCC"]}` returns a JWT for Postman or Swagger (`/swagger-ui.html`).
 - **Postman:** one collection and environment per service in `5-scenarios/<container>/postman/` (`AircraftManagement`, `Airports`, `FlightRoutes`, `Maintenance`), plus the **`/api/v2/unicorns` mock** in `5-scenarios/unicorns/postman/` ([Unicorns-Mock.md](#src-2-containers-unicorns-mock): how to create the Postman mock server). Run them in the Postman app (Collection Runner) or with `npx newman run <collection>.json -e <environment>.json`; each collection's description lists the services and profiles it needs. FlightRoutes folder 9 measures eventual consistency across the replicas; folders 6 and 10 need replicas stopped by hand first.
 - **Full document:** `Documentation.md` contains all of this documentation in one file (for PDF export). Regenerate it after any change with `powershell -ExecutionPolicy Bypass -File docs\tools\build-full-doc.ps1` or `bash docs/tools/build-full-doc.sh` (from the repository root).
@@ -264,7 +264,7 @@ The monolith was decomposed by **bounded context** (domain-driven segregation). 
 
 | Container | Technology | Replicas (port) | Data (one database per replica) | Responsibility (bounded context) | Details |
 |---|---|---|---|---|---|
-| **Aircraft Management Service** | Java 21, Spring Boot 4 | 8081 / 8181 / 8281 | H2 `aircraftManagementdb-N` (in memory) | *Fleet*: aircraft models, aircraft, operational status (WP#1) | [L3](#src-3-components-aircraftmanagement-aircraftmanagement-component) |
+| **Aircraft Management Service** | Java 21, Spring Boot 4 | 8081 / 8181 / 8281 | H2 file `code/data/aircraftManagementdb-N` (write model + read models) | *Fleet*: aircraft models, aircraft, operational status (WP#1) | [L3](#src-3-components-aircraftmanagement-aircraftmanagement-component) |
 | **Maintenance Service** | Java 21, Spring Boot 4 | 8082 / 8182 / 8282 | H2 `maintenancedb-N` (in memory) | *Maintenance*: templates, records, reports and due-maintenance alerts (WP#4) | [L3](#src-3-components-maintenance-maintenance-components) |
 | **Airports Service** | Java 21, Spring Boot 4 | 8083 / 8183 / 8283 | H2 `airportsdb-N` (file, one per instance) | *Airport infrastructure*: airports, runways, certification (WP#2) | [L3](#src-3-components-airports-airports-components) |
 | **Flight Routes Service** | Java 21, Spring Boot 4, Spring AMQP | 8084 / 8184 / 8284 | H2 **file** `code/data/flightRoutesdb-N`: write model + CQRS read models | *Flight operations*: routes, history, scheduled flights, network queries (WP#3) | [L3](#src-3-components-flightroutes-flightroutes-components) |
@@ -298,9 +298,9 @@ The `ADMIN` role exists in the token, but no endpoint requires it.
 | From | To | Endpoints | Purpose |
 |---|---|---|---|
 | Flight Routes | Airports | B2: `GET /api/airports/{iata}` | Coordinates (route distance) and operational status (US110, US209, US212, US216) — Airports publishes its events; Flight Routes' consumer is switched on with `AISAFE_EXTERNAL_EVENTS=true` |
-| Flight Routes | Aircraft Management | B1: `GET /api/aircrafts/{reg}`, `GET /api/aircraft-models/{model}` | Status, seating capacity and range (US212, US213) — event consumer ready, waiting for Aircraft Management events |
-| Aircraft Management | Flight Routes | B4b: `GET /api/scheduled-flights/statistics/minutes-by-aircraft` | Flight minutes per aircraft for US204 and US206 (answered from Flight Routes' read model) |
-| Aircraft Management | Flight Routes | B6: `GET /api/routes/compatible?range=&capacity=` | Active routes compatible with an aircraft (US203) (read model) |
+| Flight Routes | Aircraft Management | B1: `GET /api/aircrafts/{reg}`, `GET /api/aircraft-models/{model}` | Status, seating capacity and range (US212, US213) — HTTP; Aircraft Management now publishes the events, Flight Routes' consumer can be switched on (`AISAFE_EXTERNAL_EVENTS=true`) |
+| Aircraft Management | Flight Routes | ~~B4b~~ **replaced by events** (`ScheduledFlightCreated` → `KNOWN_SCHEDULED_FLIGHT`) | Flight minutes per aircraft for US204 and US206. The HTTP endpoint is still provided by Flight Routes, no longer called |
+| Aircraft Management | Flight Routes | ~~B6~~ **replaced by events** (`RouteCreated`/`RouteUpdated` → `KNOWN_ROUTE`) | Active routes compatible with an aircraft (US203). The HTTP endpoint is still provided by Flight Routes, no longer called |
 | Airports | Flight Routes | B5 — **replaced by events** (`route.*` → `KNOWN_ROUTE`) | Route counts per airport (US210); the endpoint stays, unused |
 | Maintenance | Aircraft Management | B3a: `GET /api/aircrafts/{reg}` | Aircraft exists, its model and status (US115, US116) |
 | Maintenance | Aircraft Management | B3b: `PATCH /api/aircrafts/{reg}/status` | `UNDER_MAINTENANCE` when a record starts (US115), `AVAILABLE` when the last ongoing record is completed (US119); kept synchronous (a command) |
@@ -312,8 +312,8 @@ The `ADMIN` role exists in the token, but no endpoint requires it.
 
 | Publisher → exchange | Events | Consumers |
 |---|---|---|
-| Flight Routes → `aisafe.flightroutes.events` | `RouteCreated`, `RouteUpdated`, `ScheduledFlightCreated` | every Flight Routes replica (queue `<instanceId>.flightroutes`): read models `REPLICATED_ROUTE`, `REPLICATED_SCHEDULED_FLIGHT`. Airports (queue `<instanceId>.flightroutes`, `route.*` → `KNOWN_ROUTE`, replaces B5). Available to Aircraft Management (B4b, B6) |
-| Aircraft Management → `aisafe.aircraftmanagement.events` (to implement) | `AircraftRegistered`, `AircraftStatusChanged`, `AircraftModelCreated` | Flight Routes (consumer ready, off), Maintenance |
+| Flight Routes → `aisafe.flightroutes.events` | `RouteCreated`, `RouteUpdated`, `ScheduledFlightCreated` | every Flight Routes replica (queue `<instanceId>.flightroutes`): read models `REPLICATED_ROUTE`, `REPLICATED_SCHEDULED_FLIGHT`. Airports (queue `<instanceId>.flightroutes`, `route.*` → `KNOWN_ROUTE`, replaces B5). Every Aircraft Management replica (queue `<instanceId>.flightroutes`, `route.*` + `scheduled-flight.*` → `KNOWN_ROUTE`, `KNOWN_SCHEDULED_FLIGHT`, replace B4b and B6) |
+| Aircraft Management → `aisafe.aircraftmanagement.events` | `AircraftRegistered`, `AircraftStatusChanged`, `AircraftModelCreated`, `AircraftModelUpdated` (+ internal `AircraftSyncRequested`) | every Aircraft Management replica (queue `<instanceId>.aircraftmanagement`): `REPLICATED_AIRCRAFT`, `REPLICATED_AIRCRAFT_MODEL`, `AIRCRAFT_MOOD`; Flight Routes (`KNOWN_AIRCRAFT*`, switch on with `AISAFE_EXTERNAL_EVENTS=true`); Maintenance (possible) |
 | Airports → `aisafe.airports.events` | `AirportCreated`, `AirportUpdated`, `AirportStatusChanged` (+ internal `AirportSyncRequested`) | every Airports replica (queue `<instanceId>.airports`): read model `REPLICATED_AIRPORT`; Flight Routes (`KNOWN_AIRPORT`, switch on with `AISAFE_EXTERNAL_EVENTS=true`) |
 
 The B4b, B5 and B6 endpoints are **service-only** (section 3.7): a user calling them directly gets `401`, even with a valid JWT. Flight Routes also provides `GET /api/scheduled-flights/operational-hours` (B4a), but no other service calls it. Maintenance is only a consumer: the aircraft status in Aircraft Management is the single source of truth for availability.
@@ -331,7 +331,7 @@ Exact schemas, status codes, roles and replica behaviour: [Integration-Contracts
 | `X-Peer-Hops` | request | Present only in replica-to-replica calls; the receiver does not forward again |
 | `X-Service-Key` | request | Shared secret that authenticates the calling service. Sent automatically by `common` on every inter-service and peer call; **required** on peer calls and on the service-only Flight Routes endpoints |
 | `X-Caller-Instance` | request | Calling replica/service (audit) |
-| `X-Partial-Response`, `X-Unavailable-Peers` | response | A peer did not answer an aggregated GET (Aircraft Management, Maintenance). Flight Routes' and Airports' GETs never need it: they read local read models |
+| `X-Partial-Response`, `X-Unavailable-Peers` | response | A peer did not answer an aggregated GET (Maintenance). Flight Routes', Airports' and Aircraft Management's GETs never need it: they read local read models |
 
 
 <a id="sec-3-distribution-design-decisions"></a>
@@ -344,7 +344,7 @@ Exact schemas, status codes, roles and replica behaviour: [Integration-Contracts
 ##### 3.1 Instance replication and data partitioning
 
 - **Cloning:** the same JAR runs three times with the Spring profiles `instance1`, `instance2`, `instance3` (port, instance id, database, peer list in `application-instanceN.properties`). The scripts start 1–3 replicas per service (`start-all`, `start-replicas`, `run-instance`).
-- **Database per replica:** no shared database. A record's **write model** is stored in the replica that received the write (partitioning by write location). Flight Routes uses a **file** database per replica (`code/data/flightRoutesdb-N`), so data and read models survive a restart; the other services still use in-memory H2.
+- **Database per replica:** no shared database. A record's **write model** is stored in the replica that received the write (partitioning by write location). Flight Routes and Aircraft Management use a **file** database per replica (`code/data/flightRoutesdb-N`, `code/data/aircraftManagementdb-N`), so data and read models survive a restart; the other services still use in-memory H2.
 - **Single owner per record:** a write to an existing record is executed by the replica that stores it; other replicas forward the command to it (unicast). Each record has exactly one writer, so there are no write conflicts between replicas, and its events come from one producer, in order.
 - **Peer discovery:** static peer list per replica (`aisafe.peers.urls`), full mesh, excluding the replica itself.
 
@@ -357,7 +357,9 @@ Exact schemas, status codes, roles and replica behaviour: [Integration-Contracts
 
 **Airports (Assignment 2, CQRS).** Same design: the `command` package changes the owner's write model (`AIRPORT`) and publishes `AirportCreated` / `AirportUpdated` / `AirportStatusChanged` after the commit; every replica projects them into `REPLICATED_AIRPORT`, and the route events of Flight Routes into `KNOWN_ROUTE` (US210). All GETs read these local tables. A starting replica republishes its airports and asks the others to do the same (`AirportSyncRequested`), so a late or new replica fills its read model. Details: [Airports L3 §6](#sec-6-cqrs-flow-write-event-projection-on-every-replica).
 
-**Aircraft Management, Maintenance (Assignment 1, still in use).** When a GET reaches a replica that does not hold all the data, the replica forwards the query to its peers and aggregates the answers (`PeerClient` of `common`):
+**Aircraft Management (Assignment 2, CQRS).** Same design as Flight Routes: `command` package (US101, US102, US105/B3b, US201 on the owner's write model) and `query` package (every GET, including B1, B3 and `/api/v2/unicorns`, on `REPLICATED_AIRCRAFT`, `REPLICATED_AIRCRAFT_MODEL`, `AIRCRAFT_MOOD`). It also consumes Flight Routes' events into `KNOWN_ROUTE` / `KNOWN_SCHEDULED_FLIGHT`, so US203, US204 and US206 no longer call Flight Routes. Like Airports, a starting replica republishes the aircraft and models it owns and asks the others to do the same (`AircraftSyncRequested`). Flow: [Aircraft Management L3 §6](#sec-6-cqrs-flow-write-event-projection-on-every-replica-and-on-f).
+
+**Maintenance (Assignment 1, still in use).** When a GET reaches a replica that does not hold all the data, the replica forwards the query to its peers and aggregates the answers (`PeerClient` of `common`):
 
 | Kind of GET | Strategy |
 |---|---|
@@ -455,7 +457,7 @@ AISafe favours **Availability and Partition tolerance (AP)** with **eventual con
 | Limitation | Effect | Mitigation today | Alternative (future work) |
 |---|---|---|---|
 | **No transactional outbox** | Events are published *after* the commit. If the broker is unreachable at that moment (or the JVM dies between commit and publish), the change is saved but the event is lost. The owner shows it; the other replicas do not, until a later event of the same entity carries the full state again. | Logged as an error; state-carrying events mean the **next** update repairs the read models; the owner is always correct. | **Transactional outbox**: write the event to an `OUTBOX` table in the same transaction as the change; a relay publishes pending rows and marks them sent (retrying while the broker is down). Gives at-least-once publishing; consumers are already idempotent. Alternatively, change data capture (e.g. Debezium) on that table. |
-| **New replicas (or new subscribers) miss past events** | A queue only receives events published after it was declared. A brand-new replica (empty database) or a service that subscribes later starts with an **empty** read model. | Demo data is re-published by the replica that inserts it. With file databases (`code/data/`) a restarted replica keeps its read models and its queue keeps the events it missed while down. | **Snapshot / replay**: a bootstrap endpoint or command that re-publishes the current state of every entity owned by each replica (a `...Snapshot` event per entity, or a dedicated replay exchange), or an event store kept by the producer. |
+| **New replicas (or new subscribers) miss past events** | A queue only receives events published after it was declared. A brand-new replica (empty database) or a service that subscribes later starts with an **empty** read model. | Demo data is re-published by the replica that inserts it. With file databases (`code/data/`) a restarted replica keeps its read models and its queue keeps the events it missed while down. **Airports and Aircraft Management** republish the state they own on every start and ask the other replicas to do the same (`AirportSyncRequested` / `AircraftSyncRequested`), which also repairs events lost by the missing outbox. | **Snapshot / replay**: a bootstrap endpoint or command that re-publishes the current state of every entity owned by each replica (a `...Snapshot` event per entity, or a dedicated replay exchange), or an event store kept by the producer. |
 | **Eventual consistency window** | Between a commit on the owner and the arrival of its event, another replica answers with the old state (no read-your-writes across replicas). Typically milliseconds; longer while a consumer is down or busy retrying. Checks done on a replica's read model (route uniqueness, flight overlap) can miss a write made on another replica inside that window. | Clients that need their own write read it from the replica that executed it; the window is measured in folder 9 of the Flight Routes Postman collection. | Route the check to a single owner (e.g. partition uniqueness by origin airport), or a unique constraint in a shared store, at the cost of availability. |
 | **Stale queues** | Durable queues keep events for replicas that are not running, including queues of **old instance ids** (e.g. after renaming instances, or the random ids of the broker test, which deletes its own queues). Stale queues grow forever. | — | In development: purge or delete the queues in the management UI (Queues → queue → *Purge* / *Delete*) when a replica id is no longer used, after erasing `code/data/` (so a fresh database does not get half the history), or erase everything with `docker compose ... down -v`. Never purge the queue of a replica that is only temporarily down: that is how it catches up. Inspect, fix and then purge (or re-publish) `.dlq` queues. |
 
@@ -716,7 +718,7 @@ Every paginated endpoint paginates **in memory, after merging every replica's da
 
 Things to know:
 - In Flight Routes, `sort` is **ignored** by `Pages.of`. Operational hours are always sorted by `registrationNumber`.
-- A **peer** request to `GET /api/aircrafts` gets the plain local list (no page), which the receiving replica merges and pages. Maintenance uses separate non-paginated endpoints for peers (`GET /api/maintenance-records/search`).
+- Assignment 2: `GET /api/aircrafts` always returns a `PageDTO` built from the local read model (no peer requests any more). Maintenance uses separate non-paginated endpoints for peers (`GET /api/maintenance-records/search`).
 - No other endpoint paginates; collections are plain JSON arrays or objects.
 
 Source: `FR/flightroutes/controllers/ScheduledFlightController.java`, `FR/flightroutes/services/Pages.java`, `FR/flightroutes/services/CalculateOperationalHoursService.java`, `code/aircraftmanagement/.../controllers/AircraftController.java`, `AircraftStatisticsController.java`, `dto/PageDTO.java`, `code/maintenance/.../controllers/MaintenanceRecordController.java`, `dto/PageDTO.java`, `spring-boot-data-commons-4.0.6.jar` configuration metadata (default `direct`)
@@ -780,17 +782,17 @@ Source: `COMMON/security/ServiceKeyFilter.java`, `COMMON/config/AisafeProperties
 
 | ID | Consumer → Provider | Purpose (US) | Endpoint | Status | Assignment 2 (section 9) |
 |---|---|---|---|---|---|
-| B1a | Flight Routes → Aircraft Management | Aircraft status, capacity and model (US212, US213) | `GET /api/aircrafts/{registrationNumber}` | `IMPLEMENTED` | `HTTP (waiting for Aircraft Management events)` |
-| B1b | Flight Routes → Aircraft Management | Maximum range of the aircraft model (US212) | `GET /api/aircraft-models/{modelName}` | `IMPLEMENTED` | `HTTP (waiting for Aircraft Management events)` |
+| B1a | Flight Routes → Aircraft Management | Aircraft status, capacity and model (US212, US213) | `GET /api/aircrafts/{registrationNumber}` | `IMPLEMENTED` | `HTTP` (Aircraft Management publishes the events; Flight Routes' consumer is off by default) |
+| B1b | Flight Routes → Aircraft Management | Maximum range of the aircraft model (US212) | `GET /api/aircraft-models/{modelName}` | `IMPLEMENTED` | `HTTP` (Aircraft Management publishes the events; Flight Routes' consumer is off by default) |
 | B2 | Flight Routes → Airports | Coordinates, existence, operational status (US110, US209, US212, US216) | `GET /api/airports/{iataCode}` | `IMPLEMENTED` | `EVENT-BASED available`: Airports publishes its events; Flight Routes uses them with `AISAFE_EXTERNAL_EVENTS=true` (HTTP fallback for unseen airports) |
-| B3a | Maintenance → Aircraft Management | Aircraft exists and its model, for template applicability (US115, US116) | reuse B1a (`GET /api/aircrafts/{registrationNumber}`) | `IMPLEMENTED` | `HTTP (waiting for Aircraft Management events)` |
+| B3a | Maintenance → Aircraft Management | Aircraft exists and its model, for template applicability (US115, US116) | reuse B1a (`GET /api/aircrafts/{registrationNumber}`) | `IMPLEMENTED` | `HTTP` (Aircraft Management events available; Maintenance consumer not implemented) |
 | B3b | Maintenance → Aircraft Management | Set the status to `UNDER_MAINTENANCE` / back to `AVAILABLE` (US115, US119) | `PATCH /api/aircrafts/{registrationNumber}/status` (US105) | `IMPLEMENTED` | `HTTP (kept)`: a command |
-| B3c | Maintenance → Aircraft Management | Applicable models of a template exist (US115 templates) | reuse B1b (`GET /api/aircraft-models/{modelName}`) | `IMPLEMENTED` | `HTTP (waiting for Aircraft Management events)` |
-| B3d | Maintenance → Aircraft Management | Fleet and flight hours per aircraft (US222) | `GET /api/aircrafts?page=&size=` (US104), `GET /api/aircrafts/operational-hours?page=&size=` (US206) | `IMPLEMENTED` | `HTTP (waiting for Aircraft Management events)` |
+| B3c | Maintenance → Aircraft Management | Applicable models of a template exist (US115 templates) | reuse B1b (`GET /api/aircraft-models/{modelName}`) | `IMPLEMENTED` | `HTTP` (Aircraft Management events available; Maintenance consumer not implemented) |
+| B3d | Maintenance → Aircraft Management | Fleet and flight hours per aircraft (US222) | `GET /api/aircrafts?page=&size=` (US104), `GET /api/aircrafts/operational-hours?page=&size=` (US206) | `IMPLEMENTED` | `HTTP` (Aircraft Management events available; Maintenance consumer not implemented) |
 | B4a | (none) → Flight Routes | Paged operational hours per aircraft | `GET /api/scheduled-flights/operational-hours` (service-only) | `IMPLEMENTED (provider only)`: no service calls it; Aircraft Management computes US206 from B4b | `HTTP (provider uses read model)` |
-| B4b | Aircraft Management → Flight Routes | Flight minutes per aircraft: US204 (top models) and US206 (operational hours) | `GET /api/scheduled-flights/statistics/minutes-by-aircraft` (service-only) | `IMPLEMENTED` | `HTTP (provider uses read model)`; `EVENT-BASED` possible now |
+| B4b | Aircraft Management → Flight Routes | Flight minutes per aircraft: US204 (top models) and US206 (operational hours) | `GET /api/scheduled-flights/statistics/minutes-by-aircraft` (service-only) | `IMPLEMENTED` (provider) | **`EVENT-BASED`**: Aircraft Management consumes `ScheduledFlightCreated` and no longer calls it |
 | B5 | Airports → Flight Routes | Number of routes per airport (US210) | `GET /api/routes/statistics/count-by-airport` (service-only) | `IMPLEMENTED (provider)`; Airports no longer calls it | `EVENT-BASED` (**implemented**): Airports counts from `route.*` events (`KNOWN_ROUTE`) |
-| B6 | Aircraft Management → Flight Routes | Active routes compatible with an aircraft (US203) | `GET /api/routes/compatible?range=&capacity=` (service-only) | `IMPLEMENTED` | `HTTP (provider uses read model)`; `EVENT-BASED` possible now |
+| B6 | Aircraft Management → Flight Routes | Active routes compatible with an aircraft (US203) | `GET /api/routes/compatible?range=&capacity=` (service-only) | `IMPLEMENTED` (provider) | **`EVENT-BASED`**: Aircraft Management consumes `RouteCreated`/`RouteUpdated` and no longer calls it |
 
 **Design rule:** Aircraft Management's aircraft `status` is the **single source of truth for availability**. Maintenance changes it through B3b. **Flight Routes never calls Maintenance**; it only reads the status through B1a.
 
@@ -806,7 +808,7 @@ Source: `COMMON/security/ServiceKeyFilter.java`, `COMMON/config/AisafeProperties
 
 ##### B1: Flight Routes → Aircraft Management (`IMPLEMENTED`)
 
-**Consumer:** `AircraftClient` (Flight Routes). **Provider:** Aircraft Management — `AircraftController.getByRegistration` (B1a) and `AircraftModelController.getByName` (B1b), which look the entity up in any replica (`AircraftReplicaQueries`). The provider returns more fields than listed below (e.g. `manufacturingDate`, `manufacturer`); Flight Routes ignores them.
+**Consumer:** `AircraftClient` (Flight Routes). **Provider:** Aircraft Management — `AircraftController.getByRegistration` (B1a) and `AircraftModelController.getByName` (B1b), which (Assignment 2) read the local read models `REPLICATED_AIRCRAFT` / `REPLICATED_AIRCRAFT_MODEL`, holding the data of every replica. The provider returns more fields than listed below (e.g. `manufacturingDate`, `manufacturer`); Flight Routes ignores them.
 
 **Use cases that trigger the calls:**
 
@@ -1026,7 +1028,9 @@ US212 then answers **409** `"Origin airport <IATA> is not operational."` (or Des
 
 ##### B4: Aircraft Management → Flight Routes (usage statistics)
 
-**Consumer:** Aircraft Management — `FlightRoutesClient.minutesByAircraft` (B4b only). **Provider:** Flight Routes.
+> **Assignment 2:** Aircraft Management no longer calls B4b; it computes the same numbers from `ScheduledFlightCreated` events (section 9.6). The text below documents the Assignment 1 contract, which Flight Routes still serves.
+
+**Consumer (Assignment 1):** Aircraft Management — `FlightRoutesClient.minutesByAircraft` (B4b only, removed in Assignment 2). **Provider:** Flight Routes.
 
 **Use cases:**
 - US206: total operational hours per aircraft — `GET /api/aircrafts/operational-hours` (Aircraft Management, `CalculateOperationalHoursService`).
@@ -1143,6 +1147,8 @@ No service calls this endpoint: Aircraft Management computes US206 from B4b and 
 <a id="sec-b6-aircraft-management-flight-routes-compatible-routes-imple"></a>
 
 ##### B6: Aircraft Management → Flight Routes (compatible routes), `IMPLEMENTED`
+
+> **Assignment 2:** Aircraft Management no longer calls B6; it filters `KNOWN_ROUTE`, fed by `RouteCreated`/`RouteUpdated` (section 9.6). The text below documents the Assignment 1 contract, which Flight Routes still serves.
 
 This bridge was not in the work order; it is included because it exists in code and in [Containers.md](#src-2-containers-containers).
 
@@ -1342,8 +1348,8 @@ Binding patterns (topic syntax): `*` = exactly one word, `#` = zero or more word
 
 | Exchange (topic, durable) | Publisher | Routing keys | Queue per consuming instance |
 |---|---|---|---|
-| `aisafe.flightroutes.events` | Flight Routes (owner replica of the entity) | `route.created`, `route.updated`, `scheduled-flight.created`, `scheduled-flight.status-changed` (reserved) | `<instanceId>.flightroutes`, e.g. `flightroutes-2.flightroutes`, `airports-1.flightroutes` |
-| `aisafe.aircraftmanagement.events` | Aircraft Management (**to implement**) | `aircraft.registered`, `aircraft.status-changed`, `aircraft-model.created` | `<instanceId>.aircraftmanagement`, e.g. `flightroutes-1.aircraftmanagement`, `maintenance-1.aircraftmanagement` |
+| `aisafe.flightroutes.events` | Flight Routes (owner replica of the entity) | `route.created`, `route.updated`, `scheduled-flight.created`, `scheduled-flight.status-changed` (reserved) | `<instanceId>.flightroutes`, e.g. `flightroutes-2.flightroutes`, `airports-1.flightroutes`, `aircraftmanagement-1.flightroutes` |
+| `aisafe.aircraftmanagement.events` | Aircraft Management (owner replica of the entity; **implemented**) | `aircraft.registered`, `aircraft.status-changed`, `aircraft-model.created`, `aircraft-model.updated`; `aircraft-sync.requested` (internal to Aircraft Management, see 9.4) | `<instanceId>.aircraftmanagement`, e.g. `aircraftmanagement-2.aircraftmanagement` (implemented), `flightroutes-1.aircraftmanagement` (when enabled), `maintenance-1.aircraftmanagement` |
 | `aisafe.airports.events` | Airports (owner replica of the airport) — **implemented** | `airport.created`, `airport.updated`, `airport.status-changed`; `airport-sync.requested` (internal to Airports, see 9.4) | `<instanceId>.airports`, e.g. `airports-2.airports`, `flightroutes-1.airports` |
 | `aisafe.maintenance.events` | Maintenance (optional, not needed by any bridge) | e.g. `maintenance-record.started`, `maintenance-record.completed` | — |
 | `aisafe.dlx` (direct, shared) | the broker (dead-lettering) | the consumer queue name | `<queue>.dlq` |
@@ -1372,9 +1378,9 @@ Published today, on `aisafe.flightroutes.events`, after the commit, only by the 
 
 | `eventType` | Routing key | Published when | Payload (record) | Consumers (status) |
 |---|---|---|---|---|
-| `RouteCreated` | `route.created` | US110 `POST /api/routes` (and demo bootstrap), by the replica that stored the route (its owner) | `RouteEventPayload`: `routeId`, `originIata`, `destinationIata`, `distance` (km), `minRange` (km), `minCapacity`, `estimatedFlightTime` (min), `status` (`ACTIVE`/`INACTIVE`), `version`, `history[]` (`changeDate`, `description`, `previous*`/`new*` of the attributes that changed) | Flight Routes replicas: `REPLICATED_ROUTE` (**implemented**). Airports: `KNOWN_ROUTE`, count per airport, replaces B5 (**implemented**). Aircraft Management: compatible routes, replaces B6 (**possible now**) |
+| `RouteCreated` | `route.created` | US110 `POST /api/routes` (and demo bootstrap), by the replica that stored the route (its owner) | `RouteEventPayload`: `routeId`, `originIata`, `destinationIata`, `distance` (km), `minRange` (km), `minCapacity`, `estimatedFlightTime` (min), `status` (`ACTIVE`/`INACTIVE`), `version`, `history[]` (`changeDate`, `description`, `previous*`/`new*` of the attributes that changed) | Flight Routes replicas: `REPLICATED_ROUTE` (**implemented**). Airports: `KNOWN_ROUTE`, count per airport, replaces B5 (**implemented**). Aircraft Management: `KNOWN_ROUTE`, replaces B6 (**implemented**) |
 | `RouteUpdated` | `route.updated` | US112 `PATCH /api/routes/{id}` (details or `ACTIVE`/`INACTIVE`), by the **owner** | same | same |
-| `ScheduledFlightCreated` | `scheduled-flight.created` | US212 `POST /api/scheduled-flights` (and demo bootstrap), by the replica that stored the flight | `ScheduledFlightEventPayload`: `flightId`, `aircraftRegistration`, `routeId`, `originIata`, `destinationIata`, `estimatedFlightTime` (min, copied from the route), `date` (`yyyy-MM-dd`), `time` (`HH:mm:ss`), `status`, `version` | Flight Routes replicas: `REPLICATED_SCHEDULED_FLIGHT` (**implemented**). Aircraft Management: minutes per aircraft, replaces B4b (**possible now**). Maintenance: flight hours of B3d (**possible now**) |
+| `ScheduledFlightCreated` | `scheduled-flight.created` | US212 `POST /api/scheduled-flights` (and demo bootstrap), by the replica that stored the flight | `ScheduledFlightEventPayload`: `flightId`, `aircraftRegistration`, `routeId`, `originIata`, `destinationIata`, `estimatedFlightTime` (min, copied from the route), `date` (`yyyy-MM-dd`), `time` (`HH:mm:ss`), `status`, `version` | Flight Routes replicas: `REPLICATED_SCHEDULED_FLIGHT` (**implemented**). Aircraft Management: `KNOWN_SCHEDULED_FLIGHT`, minutes per aircraft, replaces B4b (**implemented**). Maintenance: flight hours of B3d (**possible now**) |
 | `ScheduledFlightStatusChanged` | `scheduled-flight.status-changed` | **reserved**: the API cannot change a flight's status yet. The read model already applies it | same | same |
 
 There is **no `RouteDeleted`**: routes are never deleted. Deactivating a route is a `RouteUpdated` with `status = "INACTIVE"`. Code: `flightroutes/.../events/RouteEvents.java`, `RouteEventPayload.java`, `ScheduledFlightEvents.java`, `ScheduledFlightEventPayload.java`.
@@ -1384,13 +1390,14 @@ There is **no `RouteDeleted`**: routes are never deleted. Deactivating a route i
 
 ##### 9.4 Events expected from the other services
 
-**Airports publishes its events (implemented)**; Aircraft Management's are agreed but not yet published. Flight Routes already has the consumer: queues `<instanceId>.aircraftmanagement` and `<instanceId>.airports`, projections into `KNOWN_AIRCRAFT`, `KNOWN_AIRCRAFT_MODEL` and `KNOWN_AIRPORT`, and lookups that use them before HTTP. It is **off** by default and switched on with `AISAFE_EXTERNAL_EVENTS=true` (`aisafe.flightroutes.external-events.enabled`) once the producers publish. It then uses the local copy first and falls back to HTTP for an entity it has not seen yet, so switching it on never makes a request fail. While off, bridges B1 and B2 stay synchronous HTTP. Code: `flightroutes/.../events/external/`, `query/external/`, `infrastructure/messaging/ExternalEventsMessagingConfiguration.java`, test `ExternalEventsScaffoldingTest.java`.
+**Airports and Aircraft Management publish their events (implemented).** Both publish only from the owner replica, after the commit, and synchronise the read models at startup (a starting replica republishes what it owns and asks the others to do the same: `AirportSyncRequested` / `AircraftSyncRequested`). Flight Routes already has the consumer: queues `<instanceId>.aircraftmanagement` and `<instanceId>.airports`, projections into `KNOWN_AIRCRAFT`, `KNOWN_AIRCRAFT_MODEL` and `KNOWN_AIRPORT`, and lookups that use them before HTTP. It is **off** by default and switched on with `AISAFE_EXTERNAL_EVENTS=true` (`aisafe.flightroutes.external-events.enabled`). It then uses the local copy first and falls back to HTTP for an entity it has not seen yet, so switching it on never makes a request fail. While off, bridges B1 and B2 stay synchronous HTTP. Code: `flightroutes/.../events/external/`, `query/external/`, `infrastructure/messaging/ExternalEventsMessagingConfiguration.java`, test `ExternalEventsScaffoldingTest.java`.
 
 | Producer → exchange | `eventType` | Routing key | When | Payload (all fields required unless marked) | Consumers (status) |
 |---|---|---|---|---|---|
-| Aircraft Management → `aisafe.aircraftmanagement.events` | `AircraftRegistered` | `aircraft.registered` | US101/US102 aircraft registered | `registrationNumber`, `modelName`, `seatingCapacity`, `status` (`AVAILABLE`, `IN_FLIGHT`, `UNDER_MAINTENANCE`, `INACTIVE`), `version` | Flight Routes: `KNOWN_AIRCRAFT`, replaces B1a (**consumer ready, off**). Maintenance: replaces B3a and the fleet of B3d. Unicorns projection ([Unicorns-Mock.md](#src-2-containers-unicorns-mock)) |
+| Aircraft Management → `aisafe.aircraftmanagement.events` | `AircraftRegistered` | `aircraft.registered` | US101/US102 aircraft registered | `registrationNumber`, `modelName`, `seatingCapacity`, `status` (`AVAILABLE`, `IN_FLIGHT`, `UNDER_MAINTENANCE`, `INACTIVE`), `version` | Aircraft Management replicas: `REPLICATED_AIRCRAFT` + `AIRCRAFT_MOOD` (unicorns, [Unicorns-Mock.md](#src-2-containers-unicorns-mock)) (**implemented**). Flight Routes: `KNOWN_AIRCRAFT`, replaces B1a (**consumer ready, off**). Maintenance: replaces B3a and the fleet of B3d. Extra payload field: `manufacturingDate` |
 | | `AircraftStatusChanged` | `aircraft.status-changed` | US105 status changed, including the change requested by Maintenance (B3b) | same fields; `modelName` and `seatingCapacity` may be omitted (null keeps the stored value) | same |
-| | `AircraftModelCreated` | `aircraft-model.created` | aircraft model registered | `modelName`, `maximumRange` (km), `version` | Flight Routes: `KNOWN_AIRCRAFT_MODEL`, replaces B1b (**consumer ready, off**). Maintenance: replaces B3c |
+| | `AircraftModelCreated` | `aircraft-model.created` | US101 aircraft model registered | `modelName`, `maximumRange` (km), `version`; extra: `manufacturer`, `seatingCapacity`, `fuelCapacity`, `cruisingSpeed` | Aircraft Management replicas: `REPLICATED_AIRCRAFT_MODEL` (**implemented**). Flight Routes: `KNOWN_AIRCRAFT_MODEL`, replaces B1b (**consumer ready, off**). Maintenance: replaces B3c |
+| | `AircraftModelUpdated` (**added in Assignment 2**) | `aircraft-model.updated` | US201 specifications updated (e.g. `maximumRange`) | same as `AircraftModelCreated` | Aircraft Management replicas (**implemented**). Flight Routes: `KNOWN_AIRCRAFT_MODEL` (**consumer updated**, it was bound to `aircraft-model.*` already) |
 | Airports → `aisafe.airports.events` | `AirportCreated` | `airport.created` | US107 airport registered | `iataCode`, `latitude`, `longitude`, `status` (`OPERATIONAL`, `CLOSED`, `UNDER_MAINTENANCE`), `version` | Airports replicas: `REPLICATED_AIRPORT` (**implemented**). Flight Routes: `KNOWN_AIRPORT`, replaces B2 (consumer ready, switch on with `AISAFE_EXTERNAL_EVENTS=true`) |
 | | `AirportUpdated` | `airport.updated` | airport details updated | same | same |
 | | `AirportStatusChanged` | `airport.status-changed` | operational status changed | same; `latitude`/`longitude` may be omitted | same |
@@ -1570,15 +1577,15 @@ Reference: `flightroutes/.../infrastructure/messaging/FlightRoutesMessagingConfi
 
 | Bridge | Assignment 2 status | Why / what is missing |
 |---|---|---|
-| B1a, B1b (Flight Routes → Aircraft Management) | `HTTP (waiting for Aircraft Management events)` | Flight Routes' consumer (`KNOWN_AIRCRAFT`, `KNOWN_AIRCRAFT_MODEL`) is implemented and tested in-process; Aircraft Management must publish `AircraftRegistered`, `AircraftStatusChanged` and `AircraftModelCreated`. Note: US212 checks availability on Flight Routes' copy; Aircraft Management stays the source of truth (an aircraft that went `UNDER_MAINTENANCE` a few ms earlier can still be scheduled, see section 9.7). |
+| B1a, B1b (Flight Routes → Aircraft Management) | `HTTP` (events available; Flight Routes' consumer off by default) | Aircraft Management **publishes** `AircraftRegistered`, `AircraftStatusChanged`, `AircraftModelCreated` and `AircraftModelUpdated` with the agreed payloads. Flight Routes' consumer (`KNOWN_AIRCRAFT`, `KNOWN_AIRCRAFT_MODEL`) is switched on with `AISAFE_EXTERNAL_EVENTS=true`. Note: then US212 checks availability on Flight Routes' copy; Aircraft Management stays the source of truth (an aircraft that went `UNDER_MAINTENANCE` a few ms earlier can still be scheduled, see section 9.7). |
 | B2 (Flight Routes → Airports) | `EVENT-BASED available` | Airports publishes `AirportCreated`, `AirportUpdated`, `AirportStatusChanged` (full state, including `latitude`, `longitude`, `status`, `version`). Flight Routes switches its `KNOWN_AIRPORT` consumer on with `AISAFE_EXTERNAL_EVENTS=true`; airports registered before its queue existed are re-announced by Airports' startup synchronisation (`AirportUpdated`). |
-| B3a, B3c (Maintenance → Aircraft Management) | `HTTP (waiting for Aircraft Management events)` | Maintenance needs a local copy of aircraft and models fed by the same events. |
+| B3a, B3c (Maintenance → Aircraft Management) | `HTTP` (events available) | Aircraft Management answers from its read models (never partial). Maintenance could keep a local copy fed by the aircraft events (same consumer pattern as Flight Routes). |
 | B3b (Maintenance → Aircraft Management, status change) | `HTTP (kept)` | It is a **command** on Aircraft Management's aggregate with an immediate answer (409 if the transition is invalid, e.g. `IN_FLIGHT` → `UNDER_MAINTENANCE`) and a compensation on rollback (Q7). An event would make the outcome asynchronous and lose that answer. Aircraft Management then publishes `AircraftStatusChanged`, so the *effect* reaches everyone by event. |
-| B3d (Maintenance → Aircraft Management, fleet and hours) | `HTTP (waiting for Aircraft Management events)` | The fleet can come from aircraft events; the hours come from Flight Routes' `ScheduledFlightCreated` (already published). |
+| B3d (Maintenance → Aircraft Management, fleet and hours) | `HTTP` (events available) | Aircraft Management answers from its read models: the fleet from `REPLICATED_AIRCRAFT`, the hours from `KNOWN_SCHEDULED_FLIGHT` (Flight Routes events). |
 | B4a (→ Flight Routes, operational hours page) | `HTTP (provider uses read model)` | No consumer; answered from `REPLICATED_SCHEDULED_FLIGHT`. |
-| B4b (Aircraft Management → Flight Routes, minutes per aircraft) | `HTTP (provider uses read model)`; `EVENT-BASED` possible now | Flight Routes answers from its read model (never partial). Aircraft Management can drop the call by consuming `ScheduledFlightCreated` and summing `estimatedFlightTime` per `aircraftRegistration`. |
+| B4b (Aircraft Management → Flight Routes, minutes per aircraft) | **`EVENT-BASED`** (implemented) | Aircraft Management consumes `ScheduledFlightCreated` (queue `<instanceId>.flightroutes`) into `KNOWN_SCHEDULED_FLIGHT` and sums `estimatedFlightTime` per `aircraftRegistration` (`FlightMinutesService`). The Flight Routes endpoint still exists, with no consumer. |
 | B5 (Airports → Flight Routes, routes per airport) | `EVENT-BASED` (**implemented**) | Airports counts `originIata`/`destinationIata` of `RouteCreated`/`RouteUpdated` in `KNOWN_ROUTE` (upsert by `routeId`, so duplicates never count twice). Limitation: routes published before the queue `airports-N.flightroutes` existed are not received (Flight Routes has no replay). |
-| B6 (Aircraft Management → Flight Routes, compatible routes) | `HTTP (provider uses read model)`; `EVENT-BASED` possible now | Same; Aircraft Management can keep active routes (`status`, `minRange`, `minCapacity`) from `RouteCreated`/`RouteUpdated` and filter locally. Kept as HTTP until then because it is a query whose filter depends on the request. |
+| B6 (Aircraft Management → Flight Routes, compatible routes) | **`EVENT-BASED`** (implemented) | Aircraft Management keeps the routes (`status`, `minRange`, `minCapacity`, ...) from `RouteCreated`/`RouteUpdated` in `KNOWN_ROUTE` and applies the same filter locally (`FindCompatibleRoutesService`). The Flight Routes endpoint still exists, with no consumer. |
 
 
 <a id="sec-9-7-consistency-of-the-event-based-bridges"></a>
@@ -1667,6 +1674,22 @@ The request's tests check: only `GET` is used, status `200`, JSON content type, 
 A private mock server also needs the header `x-api-key: <your Postman API key>`. Add it to the request if you chose private access.
 
 To change what the mock returns, edit the saved example (`200 - aircraft moods`) in the collection. Postman mock servers answer with the example whose method and path match the request.
+
+
+<a id="sec-4-the-real-projection-in-aircraft-management-assignment-2"></a>
+
+#### 4. The real projection in Aircraft Management (Assignment 2)
+
+Aircraft Management implements the same contract for real: `GET /api/v2/unicorns` on any of its replicas (JWT of any AISafe role), served by the projection **`AIRCRAFT_MOOD`** exactly as described in section 2.
+
+| Piece | Class |
+|---|---|
+| Projection (write side of the read model) | `AircraftProjection`: on `AircraftRegistered` / `AircraftStatusChanged` it upserts `REPLICATED_AIRCRAFT` **and** `AIRCRAFT_MOOD` in one transaction, with `mood = AircraftMood.moodOf(status)` and `timestamp` = when the event was applied |
+| Query | `UnicornsController` → `AircraftMoodQueryService` → `AircraftMoodRepository.findAllOrdered()`; `source` is always `"read-model"` |
+| Tests | `AircraftMoodTest` (rule), `ReplicaCollaborationTest` (moods converge on both replicas after a status change; still answered with the owner down), Postman folder 6 of the Aircraft Management collection (same checks as the mock, plus a poll until a new mood reaches another replica) |
+
+Because every replica keeps its own `AIRCRAFT_MOOD`, the endpoint answers on any replica even when the owners of the aircraft (or the whole write side) are down, and the mock server and the real endpoint are interchangeable for a consumer: the same JSON, the same tests.
+
 
 <div style="page-break-before: always;"></div>
 
@@ -1819,35 +1842,41 @@ Circuit Breaker, Retry with Exponential Backoff, Timeout, Scatter-Gather (aggreg
 
 | Property | Value |
 |---|---|
-| Bounded context | *Fleet* — owns the `AircraftModel` and `Aircraft` aggregates (WP#1: US101–US105, US201–US206) |
+| Bounded context | *Fleet* — owns the `AircraftModel` and `Aircraft` aggregates (WP#1: US101–US105, US201, US203–US206) |
 | Replicas | `aircraftmanagement-1` :8081, `aircraftmanagement-2` :8181, `aircraftmanagement-3` :8281 |
-| Database | H2 in-memory per replica: `aircraftManagementdb-1/2/3` |
+| Database | H2 **file** per replica: `code/data/aircraftManagementdb-1/2/3` — write model (owned rows), read models (rows of every replica), copies of Flight Routes data, processed event ids |
+| Messaging | Publishes on `aisafe.aircraftmanagement.events`; consumes its own events from `<instanceId>.aircraftmanagement` and the route / scheduled-flight events of Flight Routes from `<instanceId>.flightroutes` ([Integration-Contracts §9](#sec-9-assignment-2-event-contracts); flow in section 6) |
 | Source code | [code/aircraftmanagement](../code/aircraftmanagement) |
 | API | `http://localhost:8081/swagger-ui.html` (any replica) |
-| Supplies to other containers | Flight Routes: aircraft status/capacity/model and model range (B1a, B1b); Maintenance: aircraft lookup and status update (B3a, B3b) — see [Integration-Contracts](#src-2-containers-integration-contracts) |
-| Consumes from other containers | Flight Routes: flight minutes per aircraft (B4b) and compatible routes (B6) |
+| Supplies to other containers | Flight Routes: aircraft and model (B1a, B1b, HTTP); Maintenance: aircraft lookup, fleet and hours (B3a, B3c, B3d, HTTP) and status change (B3b, HTTP command). Events `AircraftRegistered`, `AircraftStatusChanged`, `AircraftModelCreated`, `AircraftModelUpdated` for any consumer (Flight Routes `KNOWN_AIRCRAFT*` is ready for them) |
+| Consumes from other containers | **No HTTP call any more.** Flight Routes events `RouteCreated`, `RouteUpdated`, `ScheduledFlightCreated` replace bridges B6 and B4b |
 
 
 <a id="sec-2-components"></a>
 
 #### 2. Components
 
+The module is split into a **command side** (writes) and a **query side** (reads) — CQRS, the same structure as Flight Routes. Both share the domain, the controllers and the `common` infrastructure.
+
 | Component | Technology / classes | Responsibility |
 |---|---|---|
-| **Security & Observability filters** | `common` filters + [`AircraftManagementAuthorizationRules`](../code/aircraftmanagement/src/main/java/isep/psoft/aisafe/infrastructure/security/AircraftManagementAuthorizationRules.java) | Correlation id, audit log, `X-Service-Key` check, JWT authentication, role rules per endpoint. The rules accept the roles of the **end users of the consumer services**, because the JWT is forwarded on inter-service calls |
-| **Aircraft controllers** | [`AircraftController`](../code/aircraftmanagement/src/main/java/isep/psoft/aisafe/aircraftmanagement/controllers/AircraftController.java), [`AircraftStatisticsController`](../code/aircraftmanagement/src/main/java/isep/psoft/aisafe/aircraftmanagement/controllers/AircraftStatisticsController.java) (Spring REST) | `/api/aircrafts` — US102, US103, US104, US105 and the queries that combine Flight Routes data (US203, US206) |
-| **Aircraft model controllers** | [`AircraftModelController`](../code/aircraftmanagement/src/main/java/isep/psoft/aisafe/aircraftmanagement/controllers/AircraftModelController.java), [`AircraftModelStatisticsController`](../code/aircraftmanagement/src/main/java/isep/psoft/aisafe/aircraftmanagement/controllers/AircraftModelStatisticsController.java) (Spring REST) | `/api/aircraft-models` — US101, contract B1b, US204 |
-| **Application services** | `CreateAircraftModelService`, `CreateAircraftService`, `SearchAircraftsService`, `SearchAircraftModelsService`, `UpdateAircraftStatusService`, `CalculateOperationalHoursService`, `TopUtilizedModelsService`, `FindCompatibleRoutesService` | One service per use case: transactions, orchestration, cross-replica uniqueness checks |
-| **Replica queries** | [`AircraftReplicaQueries`](../code/aircraftmanagement/src/main/java/isep/psoft/aisafe/aircraftmanagement/services/AircraftReplicaQueries.java) | Combines the local data with the data of the peer replicas: find an aircraft/model in any replica, merge collections by registration number, encode peer URIs |
-| **Domain model** | `domain` package: `Aircraft`, `AircraftModel`, `AircraftStatus`, read models `AircraftSummary`, `AircraftModelSummary` | Aggregates `Aircraft` and `AircraftModel` and their invariants; status transition rule — see [L4](#src-4-code-aircraftmanagement-aircraftmanagement-code) |
-| **Repositories** | `AircraftRepository`, `AircraftModelRepository` (Spring Data JPA) | Access to the data of **this** replica only |
-| **Anti-Corruption Layer** | [`FlightRoutesClient`](../code/aircraftmanagement/src/main/java/isep/psoft/aisafe/aircraftmanagement/clients/FlightRoutesClient.java), `CompatibleRouteDTO`, `RestClientConfig` | Translates the Flight Routes API into local results and reports partial answers (`X-Partial-Response`) |
-| **Assembler / DTOs** | `AircraftAssembler`, `dto` package, `PageDTO` | Published language: API contract separate from the domain; stable page format |
-| **PeerClient** *(common)* | `PeerClient` | GET to the peer replicas (first answer / aggregation) and command forwarding to the owner replica |
-| **ReplicatedServiceClient** *(common)* | `ReplicatedServiceClient`, `ReplicatedServiceClientFactory` | Round-robin + failover over the replicas of Flight Routes |
-| **ResilientExecutor** *(common)* | `ResilientExecutor`, `CircuitBreaker` | Timeouts, retry with exponential backoff, circuit breaker per target |
+| **Security & Observability filters** | `common` filters + [`AircraftManagementAuthorizationRules`](../code/aircraftmanagement/src/main/java/isep/psoft/aisafe/infrastructure/security/AircraftManagementAuthorizationRules.java) | Correlation id, audit log, `X-Service-Key` check, JWT authentication, role rules per endpoint. The rules accept the roles of the **end users of the consumer services**, because the JWT is forwarded |
+| **Controllers** | `AircraftController`, `AircraftModelController`, `AircraftStatisticsController`, `AircraftModelStatisticsController`, `AircraftAvailabilityController`, [`UnicornsController`](../code/aircraftmanagement/src/main/java/isep/psoft/aisafe/aircraftmanagement/controllers/UnicornsController.java) | Unchanged REST API: POST/PATCH go to the command side, every GET to the query side. New: `GET /api/v2/unicorns` |
+| **Command side** | package [`command`](../code/aircraftmanagement/src/main/java/isep/psoft/aisafe/aircraftmanagement/command): `CreateAircraftModelService` (US101), `UpdateAircraftModelService` (US201), `CreateAircraftService` (US102), `UpdateAircraftStatusService` (US105, B3b) | Validate, write the **owner's** write model (forward to the owner if the entity is not local), emit one event. Checks that need data of every replica (registration / model name unique, model exists) read the local read models |
+| **Event emitter and relay** | `AircraftManagementEventEmitter`, `OutgoingIntegrationEvent`, `IntegrationEventRelay`, `IntegrationEventTransport` (+ `infrastructure.messaging.RabbitIntegrationEventTransport`) | Build one `IntegrationEvent`, apply it to the local read model **in the write transaction** (read-your-writes), publish the same event after the commit through `common`'s `EventPublisher` |
+| **Startup synchronisation** | `ReadModelSynchronizer`, `AircraftStateRepublisher`, event `AircraftSyncRequested` (same design as Airports) | On start, a replica republishes the state of every model and aircraft it **owns** (same `version`) and asks the other replicas to do the same, so a late or new replica fills its read model, and a late subscriber or an event lost while the broker was down is healed (section 6) |
+| **Write model** | `AircraftRepository`, `AircraftModelRepository` (Spring Data JPA) | Rows **owned** by this replica only; used only by the command side, the bootstrap and the announcer |
+| **Query side** | package [`query`](../code/aircraftmanagement/src/main/java/isep/psoft/aisafe/aircraftmanagement/query): `SearchAircraftsService` (US103, US104, B1a, B3a), `SearchAircraftModelsService` (B1b, B3c), `AircraftAvailabilityService` (US205), `CalculateOperationalHoursService` (US206, B3d), `TopUtilizedModelsService` (US204), `FindCompatibleRoutesService` (US203), `FlightMinutesService`, `AircraftMoodQueryService` (unicorns) | Answer every GET from **this replica's read models**: no peer call, no aggregation, no call to Flight Routes, never `X-Partial-Response` |
+| **Read models** | `ReplicatedAircraft`, `ReplicatedAircraftModel`, `AircraftMood` and their repositories | Copies of the aircraft and models of **every** replica (with owner, source version and last event) and the mood projection |
+| **Projections** | `AircraftManagementEventRouter`, `AircraftProjection` (aircraft + mood, one transaction), `AircraftModelProjection`, `infrastructure.messaging.JpaProcessedEventStore` | Apply events idempotently (eventId recorded in the same transaction), ignore stale versions and unknown types |
+| **Event listener** | `AircraftManagementEventsListener` (`@RabbitListener`), `infrastructure.messaging.AircraftManagementMessagingConfiguration` | Consume `aircraft.*`, `aircraft-model.*` and `aircraft-sync.requested` from this replica's queue; ack after commit; bounded retry then DLQ (`common`) |
+| **Flight Routes read models** | package `query.external`: `KnownRoute`, `KnownScheduledFlight`, `FlightRoutesEventsProjection`, `FlightRoutesEventsListener`; `events.external` (contracts) | Consumer of Flight Routes' `route.*` and `scheduled-flight.*` (queue `<instanceId>.flightroutes`); feeds US203 (replaces B6) and US204/US206 (replaces B4b) |
+| **Event contracts** | package `events`: `AircraftEvents`, `AircraftEventPayload`, `AircraftModelEvents`, `AircraftModelEventPayload` | Published language of Aircraft Management (names, routing keys, payload records) |
+| **Domain model** | `domain` package: `Aircraft`, `AircraftModel`, `AircraftStatus`, views `AircraftSummary`, `AircraftModelSummary` | Aggregates and invariants; status transition rule — see [L4](#src-4-code-aircraftmanagement-aircraftmanagement-code) |
+| **Assembler / DTOs** | `AircraftAssembler`, `dto` package (`PageDTO`, `AircraftMoodDTO`, ...) | API contract separate from the domain; stable page format |
+| **PeerClient / ResilientExecutor** *(common)* | `PeerClient`, `ResilientExecutor`, `CircuitBreaker` | Only `forwardToOwner`: a PATCH for an aircraft / model owned by another replica |
 | **Error mapping / OpenAPI** | `GlobalExceptionHandler`, `OpenApiConfig` | Exception → HTTP status; Swagger UI with the JWT *Authorize* button |
-| *Demo data* | `DemoDataBootstrap` (properties `aisafe.bootstrap.*`) | Loads **different** models and aircraft in each replica, to demonstrate peer-to-peer behaviour |
+| *Demo data* | `DemoDataBootstrap` (profile `demo`) | On `ApplicationReadyEvent`, inserts this replica's demo models/aircraft **only if missing** and emits their events like any other write |
 
 The `common` components are described in [common — Components](#src-3-components-common-common-components).
 
@@ -1856,58 +1885,58 @@ The `common` components are described in [common — Components](#src-3-componen
 
 #### 3. Provided interfaces (REST API)
 
-Every endpoint is served by every replica; **every GET returns the data of all replicas**.
+Every endpoint is served by every replica. **Every GET answers from the local read models**, which contain the data of all replicas (eventually consistent: a write made on another replica appears when its event arrives).
 
 **Aircraft — `/api/aircrafts`**
 
-| Method | Endpoint | US | Input | Output | Roles | Status |
+| Method | Endpoint | US | Side | Input | Output | Roles |
 |---|---|---|---|---|---|---|
-| POST | `/api/aircrafts` | US102 | `CreateAircraftDTO` (registrationNumber, modelName, seatingCapacity, manufacturingDate, status?) | `201` `AircraftDTO` | ATCC | Implemented |
-| GET | `/api/aircrafts?modelName=&status=&manufacturingYear=&page=&size=` | US104 | optional filters (combined with AND), `page` ≥ 0, `size` 1–100 (default 20) | `200` `PageDTO<AircraftDTO>` | ATCC, BACKOFFICE_OPERATOR, MAINTENANCE_TECHNICIAN, MAINTENANCE_SUPERVISOR | Implemented |
-| GET | `/api/aircrafts/{registrationNumber}` | US103, **B1a**, B3a | registration number | `200` `AircraftDTO` | ATCC, BACKOFFICE_OPERATOR, MAINTENANCE_TECHNICIAN, MAINTENANCE_SUPERVISOR | Implemented |
-| PATCH | `/api/aircrafts/{registrationNumber}/status` | US105, **B3b** | `UpdateAircraftStatusDTO` (`status`) | `200` `AircraftDTO` | ATCC, MAINTENANCE_TECHNICIAN, MAINTENANCE_SUPERVISOR | Implemented |
-| GET | `/api/aircrafts/operational-hours?page=&size=` | US206 | pagination | `200` `PageDTO<AircraftOperationalHoursDTO>` (+ `X-Partial-Response`) | ATCC | Implemented |
-| GET | `/api/aircrafts/{registrationNumber}/compatible-routes` | US203 | registration number | `200` `List<CompatibleRouteDTO>` (+ `X-Partial-Response`) | ATCC | Implemented |
+| POST | `/api/aircrafts` | US102 | command | `CreateAircraftDTO` (registrationNumber, modelName, seatingCapacity, manufacturingDate, status?) | `201` `AircraftDTO` | ATCC |
+| GET | `/api/aircrafts?modelName=&status=&manufacturingYear=&page=&size=` | US104, B3d | query | optional filters (AND), `page` ≥ 0, `size` 1–100 | `200` `PageDTO<AircraftDTO>` | ATCC, BACKOFFICE_OPERATOR, MAINTENANCE_* |
+| GET | `/api/aircrafts/{registrationNumber}` | US103, **B1a**, B3a | query | registration number | `200` `AircraftDTO` | ATCC, BACKOFFICE_OPERATOR, MAINTENANCE_* |
+| PATCH | `/api/aircrafts/{registrationNumber}/status` | US105, **B3b** | command (owner) | `UpdateAircraftStatusDTO` (`status`) | `200` `AircraftDTO` | ATCC, MAINTENANCE_* |
+| GET | `/api/aircrafts/{registrationNumber}/availability`, `/api/aircrafts/availability` | US205 | query | — | `200` `AircraftAvailabilityDTO` / `FleetAvailabilityDTO` | ATCC |
+| GET | `/api/aircrafts/operational-hours?page=&size=` | US206, B3d | query | pagination | `200` `PageDTO<AircraftOperationalHoursDTO>` | ATCC |
+| GET | `/api/aircrafts/{registrationNumber}/compatible-routes` | US203 | query | registration number | `200` `List<CompatibleRouteDTO>` | ATCC |
 
 **Aircraft models — `/api/aircraft-models`**
 
-| Method | Endpoint | US | Input | Output | Roles | Status |
+| Method | Endpoint | US | Side | Input | Output | Roles |
 |---|---|---|---|---|---|---|
-| POST | `/api/aircraft-models` | US101 | `CreateAircraftModelDTO` (modelName, manufacturer, seatingCapacity, fuelCapacity, maximumRange, cruisingSpeed) | `201` `AircraftModelDTO` | BACKOFFICE_OPERATOR | Implemented |
-| GET | `/api/aircraft-models/{modelName}` | **B1b** | model name | `200` `AircraftModelDTO` | ATCC, BACKOFFICE_OPERATOR, MAINTENANCE_TECHNICIAN, MAINTENANCE_SUPERVISOR | Implemented |
-| GET | `/api/aircraft-models/top-utilized?limit=` | US204 | `limit` 1–20 (default 5) | `200` `List<ModelUtilizationDTO>` (+ `X-Partial-Response`) | BACKOFFICE_OPERATOR, ATCC | Implemented |
+| POST | `/api/aircraft-models` | US101 | command | `CreateAircraftModelDTO` | `201` `AircraftModelDTO` | BACKOFFICE_OPERATOR |
+| GET | `/api/aircraft-models/{modelName}` | **B1b**, B3c | query | model name | `200` `AircraftModelDTO` | ATCC, BACKOFFICE_OPERATOR, MAINTENANCE_* |
+| PATCH | `/api/aircraft-models/{modelName}` | US201 | command (owner) | `UpdateAircraftModelDTO` (any subset) | `200` `AircraftModelDTO` | BACKOFFICE_OPERATOR |
+| GET | `/api/aircraft-models/top-utilized?limit=` | US204 | query | `limit` 1–20 (default 5) | `200` `List<ModelUtilizationDTO>` | BACKOFFICE_OPERATOR, ATCC |
 
-**Planned (not implemented yet — proposed design, to be confirmed with the customer)**
+**Assignment 2 — `/api/v2/unicorns`**
 
-| Method | Endpoint | US | Idea | Roles |
+| Method | Endpoint | Side | Output | Roles |
 |---|---|---|---|---|
-| PATCH | `/api/aircraft-models/{modelName}` | US201 | Partial update of the specifications; executed by the owner replica (`PeerClient.forwardToOwner`); `@Version` → `409` on a clash | BACKOFFICE_OPERATOR |
-| POST / PATCH | `/api/aircraft-models` (+ optional `imageUrl`) | US202 | Optional image/diagram stored as a **URL** (same decision as the photos of Airports); no file upload | BACKOFFICE_OPERATOR |
-| GET | `/api/aircrafts/{registrationNumber}/availability` | US205 | Real-time availability: the stored status (`AVAILABLE`, `UNDER_MAINTENANCE`, `INACTIVE`) and `IN_FLIGHT` — needs a decision on who sets `IN_FLIGHT` (open question Q-AM1) | ATCC |
-| GET | `/api/aircrafts?feature=…` | US224 (bonus) | Search by features (Wi-Fi, engine type): new optional attributes of the model | ATCC |
+| GET | `/api/v2/unicorns` | query (projection `AIRCRAFT_MOOD`) | `200` `List<AircraftMoodDTO>`: `registration`, `model`, `operationalStatus`, `mood`, `timestamp`, `source = "read-model"` ([contract](#src-2-containers-unicorns-mock)) | any AISafe role |
 
-Infrastructure endpoints (from `common`): `GET /actuator/health`, `POST /auth/dev-token` (development only), `/swagger-ui.html`, `/v3/api-docs`.
+`X-Partial-Response` is no longer produced by this service. Infrastructure endpoints (from `common` / Spring Boot): `GET /actuator/health`, `/actuator/health/liveness`, `/actuator/health/readiness` (includes RabbitMQ), `POST /auth/dev-token` (development only), `/swagger-ui.html`.
 
 **Errors** — body `{ "error": "<message>" }` (Bean Validation: `{ "<field>": "<message>" }`):
 
 | Exception | HTTP | Example in this service |
 |---|---|---|
-| `IllegalArgumentException`, `MethodArgumentNotValidException` | 400 | invalid status string, unknown model when registering an aircraft, `size` out of range, bad registration format |
-| `EntityNotFoundException` | 404 | aircraft or model not found in any replica |
+| `IllegalArgumentException`, `MethodArgumentNotValidException` | 400 | invalid status, unknown model when registering an aircraft, `size` out of range |
+| `EntityNotFoundException` | 404 | aircraft or model not in the read model (no replica has announced it) |
 | `IllegalStateException`, `ObjectOptimisticLockingFailureException` | 409 | model/aircraft already exists; `IN_FLIGHT` → `UNDER_MAINTENANCE`/`INACTIVE`; concurrent update (`@Version`) |
-| `RemoteServiceUnavailableException` | 503 | no Flight Routes replica answered (US203, US204, US206), or no peer reachable to execute a command |
-| `ResponseStatusException` | same status | Flight Routes rejected the forwarded JWT (`401`/`403`); business error of the owner replica |
+| `RemoteServiceUnavailableException` | 503 | the owner replica of the aircraft/model being changed is down |
+| `ResponseStatusException` | same status | business error of the owner replica after forwarding |
 
 
 <a id="sec-4-required-interfaces"></a>
 
 #### 4. Required interfaces
 
-| Component | Calls | Endpoint | Contract | US |
-|---|---|---|---|---|
-| `FlightRoutesClient.minutesByAircraft` | Flight Routes (all replicas) | `GET /api/scheduled-flights/statistics/minutes-by-aircraft` | B4b | US204, US206 |
-| `FlightRoutesClient.compatibleRoutes` | Flight Routes (all replicas) | `GET /api/routes/compatible?range=&capacity=` | B6 | US203 |
-| `PeerClient` | Aircraft Management peer replicas | the same endpoint as the incoming request (`GET /api/aircrafts/{reg}`, `GET /api/aircrafts?…`, `GET /api/aircraft-models/{name}`, `PATCH /api/aircrafts/{reg}/status`), `X-Peer-Hops: 1` | — | US102–US105 |
+| Component | Calls | Endpoint / channel |
+|---|---|---|
+| `PeerClient` | Aircraft Management peer replicas | `PATCH /api/aircrafts/{reg}/status`, `PATCH /api/aircraft-models/{name}` forwarded to the owner, `X-Peer-Hops: 1` |
+| `RabbitIntegrationEventTransport` | RabbitMQ | publish to `aisafe.aircraftmanagement.events` |
+| `AircraftManagementEventsListener` | RabbitMQ | consume `<instanceId>.aircraftmanagement` |
+| `FlightRoutesEventsListener` | RabbitMQ | consume `<instanceId>.flightroutes` (Flight Routes' `route.*`, `scheduled-flight.*`) |
 
 
 <a id="sec-5-how-the-components-realise-the-distribution-requirements"></a>
@@ -1916,24 +1945,67 @@ Infrastructure endpoints (from `common`): `GET /actuator/health`, `POST /auth/de
 
 | Requirement | Components involved |
 |---|---|
-| Peer forwarding of GET by id (US103/B1a, B1b, uniqueness checks of US101/US102) | services → `AircraftReplicaQueries.findAircraft` / `findModel` → `PeerClient.findFirst` |
-| Aggregation of collections (US104; the fleet used by US203, US204, US206) | `SearchAircraftsService.search` → `AircraftReplicaQueries.withPeers` → `PeerClient.collectList`, merged by registration number; `AircraftController` paginates **after** merging |
-| Aggregated statistics (US204, US206) | `CalculateOperationalHoursService`, `TopUtilizedModelsService`: fleet of all replicas (above) × flight minutes of all Flight Routes replicas (`FlightRoutesClient` → `ReplicatedServiceClient`) |
-| Single owner per record (US105) | `UpdateAircraftStatusService` → local update, otherwise `PeerClient.forwardToOwner` |
-| Concurrent updates | `@Version` on `Aircraft` and `AircraftModel` → `ObjectOptimisticLockingFailureException` → `409` |
-| Calls to other services with failover | ACL (`FlightRoutesClient`) → `ReplicatedServiceClient` → `ResilientExecutor` |
-| Partial answers | `PeerClient` marks `X-Partial-Response` when a peer fails; the statistics controllers also mark it when **Flight Routes** answered partially |
-| Security and audit | filter chain of `common` + `AircraftManagementAuthorizationRules` (JWT, roles, `X-Service-Key` on peer calls, audit log, TLS with profile `tls`) |
+| CQRS: separate write and read models | `command` services → write model; `query` services → read models; events in between |
+| Every replica sees every aircraft and model (US103, US104, B1, B3) | events → `AircraftManagementEventsListener` → `AircraftManagementEventRouter` → `AircraftProjection` / `AircraftModelProjection` → `REPLICATED_*` |
+| Data of another service without HTTP (US203, US204, US206) | Flight Routes events → `FlightRoutesEventsListener` → `FlightRoutesEventsProjection` → `KNOWN_ROUTE`, `KNOWN_SCHEDULED_FLIGHT` |
+| Read-your-writes on the owner | `AircraftManagementEventEmitter` applies the event to the local read model in the write transaction |
+| Single owner per entity (US105, US201) | `Update*Service` → `PeerClient.forwardToOwner`; only the owner publishes the entity's events (in order) |
+| Concurrent updates | `@Version` on `Aircraft` and `AircraftModel` → `409` |
+| Reliable consumption | durable queue per replica, ack after commit, bounded retry, DLQ, `JpaProcessedEventStore` (idempotency) |
+| Late subscribers / lost events | `ReadModelSynchronizer`: republish the owned state on start + `AircraftSyncRequested` to the peers |
+| Broker down | writes still committed (event lost, logged; republished at the next start or sync request), reads served from read models, liveness `UP` / readiness `DOWN` |
+| Database per instance, survives restarts | file H2 per replica; demo bootstrap inserts only missing rows |
+| Security and audit | filter chain of `common` + `AircraftManagementAuthorizationRules` |
 
-The system-wide decisions (consistency model, fault tolerance, security) are in [L2 §3](#sec-3-distribution-design-decisions).
+The system-wide decisions are in [L2 §3](#sec-3-distribution-design-decisions); the event contracts in [Integration-Contracts §9](#sec-9-assignment-2-event-contracts).
 
 
-<a id="sec-6-observations"></a>
+<a id="sec-6-cqrs-flow-write-event-projection-on-every-replica-and-on-f"></a>
 
-#### 6. Observations
+#### 6. CQRS flow: write → event → projection on every replica (and on Flight Routes)
 
-- **O1 — HATEOAS.** The PSOFT non-functional requirements ask for links in the representations. The starter is a dependency, but `AircraftAssembler` returns plain DTOs (no `_links`) and `springdoc.enable-hateoas=false`. To be added (the contract allows extra fields such as `_links`).
-- **O2 — Implementation status.** US101–US105, US203, US204, US206 are implemented. US201, US202, US205 and the bonus US223/US224 are planned only.
+```text
+POST/PATCH ─▶ command/*Service ──(1) save + flush──▶ write model (AIRCRAFT / AIRCRAFT_MODEL, owned rows only)
+                 │
+                 └─(2) AircraftManagementEventEmitter: build ONE IntegrationEvent
+                        ├─(3) AircraftManagementEventRouter → projection → read model of THIS replica   } same transaction
+                        └─(4) OutgoingIntegrationEvent (Spring)                                           }
+                                       │ AFTER COMMIT
+                                       ▼
+                        IntegrationEventRelay ─▶ RabbitIntegrationEventTransport ─▶ [aisafe.aircraftmanagement.events]
+                                                                                      │ aircraft.*, aircraft-model.*
+                        ┌─────────────────────────────────────────────┬───────────────┴──────────────┐
+                        ▼                                             ▼                              ▼
+       aircraftmanagement-1.aircraftmanagement        ...-2/-3.aircraftmanagement        flightroutes-N.aircraftmanagement
+       (owner: eventId already processed → skipped)   → REPLICATED_AIRCRAFT(_MODEL),     (Flight Routes KNOWN_AIRCRAFT*,
+                                                        AIRCRAFT_MOOD                      when enabled)
+
+[aisafe.flightroutes.events] ─ route.*, scheduled-flight.* ─▶ aircraftmanagement-N.flightroutes ─▶ KNOWN_ROUTE, KNOWN_SCHEDULED_FLIGHT
+
+GET ─▶ query/*Service ─▶ local tables only (no peer calls, no call to Flight Routes, no X-Partial-Response)
+```
+
+| Read model (table) | Built from | Answers |
+|---|---|---|
+| `REPLICATED_AIRCRAFT` | `AircraftRegistered`, `AircraftStatusChanged` | US103/B1a/B3a by id, US104 search, US205, fleet of US204/US206; uniqueness check of US102 |
+| `REPLICATED_AIRCRAFT_MODEL` | `AircraftModelCreated`, `AircraftModelUpdated` | B1b/B3c, range of US203; uniqueness of US101, model check of US102 |
+| `AIRCRAFT_MOOD` | `AircraftRegistered`, `AircraftStatusChanged` | `GET /api/v2/unicorns` |
+| `KNOWN_ROUTE` | Flight Routes `RouteCreated`, `RouteUpdated` | US203 (replaces B6) |
+| `KNOWN_SCHEDULED_FLIGHT` | Flight Routes `ScheduledFlightCreated`, `ScheduledFlightStatusChanged` | US204, US206 (replaces B4b) |
+| `PROCESSED_EVENT` | every applied event | idempotency |
+
+**Startup synchronisation (same design as Airports).** A queue only receives events published after it exists, and there is no outbox. On the very first start the replicas start in parallel, so a replica can publish its demo data before a peer (or Flight Routes) has declared its queue; a new replica, or one whose database was erased, starts empty. On `ApplicationReadyEvent` (after the demo data), `ReadModelSynchronizer` (1) republishes, through `AircraftStateRepublisher`, the current state of the rows this replica owns, with their **current** `version`, and (2) publishes `AircraftSyncRequested` (routing key `aircraft-sync.requested`, which does not match `aircraft.*`, so only Aircraft Management replicas receive it); every other replica answers by republishing what it owns. Consumers that already have an entity apply an identical upsert (only *older* versions are ignored); consumers that missed it catch up. Alternatives: a transactional outbox (fixes lost events, not late subscribers), or a snapshot endpoint (needs HTTP between replicas again).
+
+Sequence diagrams: [+1 Scenarios](#src-5-scenarios-aircraftmanagement-aircraftmanagement-scenarios).
+
+
+<a id="sec-7-observations"></a>
+
+#### 7. Observations
+
+- **O1 — HATEOAS.** `AircraftAssembler` returns plain DTOs (no `_links`); the contract allows adding them later.
+- **O2 — Implementation status.** US101–US105, US201, US203–US206 and `/api/v2/unicorns` are implemented. US202 (model image) and the bonus US223/US224 are not.
+- **O3 — US205 "real time".** Availability is read from the local read model: current on the owner replica as soon as the command commits, and on the other replicas once the `AircraftStatusChanged` event is applied (typically milliseconds). Flight Routes still reads the status over HTTP (B1a), so scheduling (US212) uses the owner's current value.
 
 <a id="src-4-code-aircraftmanagement-aircraftmanagement-code"></a>
 
@@ -1965,11 +2037,12 @@ The system-wide decisions (consistency model, fault tolerance, security) are in 
 | Aircraft | [`Aircraft`](../code/aircraftmanagement/src/main/java/isep/psoft/aisafe/aircraftmanagement/domain/Aircraft.java) | [`AircraftStatus`](../code/aircraftmanagement/src/main/java/isep/psoft/aisafe/aircraftmanagement/domain/AircraftStatus.java) | Registration number and model name required; seating capacity positive; status defaults to `AVAILABLE`; an `IN_FLIGHT` aircraft cannot change to `UNDER_MAINTENANCE` or `INACTIVE` (`changeStatus`) |
 
 - **Identity.** The identity of an aircraft is its **registration number** and the identity of a model is its **model name** (`@Id`), not technical ids. Other services reference aircraft and models this way (Flight Routes stores the registration number, Maintenance too), so a lookup on any replica is a primary-key read.
-- **`Aircraft` → `AircraftModel` by identity.** `Aircraft` stores only `modelName`. The model may live in **another replica**, so a JPA association (foreign key/JOIN) is impossible. Existence of the model is verified at creation time through `AircraftReplicaQueries.findModel`.
+- **`Aircraft` → `AircraftModel` by identity.** `Aircraft` stores only `modelName`. The model may live in **another replica**, so a JPA association (foreign key/JOIN) is impossible. Existence of the model is verified at creation time on the local read model `REPLICATED_AIRCRAFT_MODEL`, which holds the models of every replica.
 - **The seating capacity is an attribute of the aircraft**, not only of the model: the same model can have different seat configurations and therefore different capacities (US203). `AircraftModel.seatingCapacity` is the model's reference value.
 - **Optimistic locking.** Both roots have `@Version`. Two concurrent updates of the same aircraft in the owner replica → the second fails with `ObjectOptimisticLockingFailureException` → `409`. `saveAndFlush` forces the check inside the request, so the conflict is reported to the caller.
 - **State only through behaviour.** `Aircraft` and `AircraftModel` have no setters; `Aircraft.status` changes only through `changeStatus`, which holds the transition rule. Constructors validate, so an invalid aggregate cannot be created.
-- **Read models** (not persisted, no identity): [`AircraftSummary`](../code/aircraftmanagement/src/main/java/isep/psoft/aisafe/aircraftmanagement/domain/AircraftSummary.java) and [`AircraftModelSummary`](../code/aircraftmanagement/src/main/java/isep/psoft/aisafe/aircraftmanagement/domain/AircraftModelSummary.java) — immutable records, independent of the replica where the record is stored. They are created from local entities (`toSummary()`) and from DTOs received from peers (`AircraftAssembler.toSummary`), so the services treat local and remote records in the same way.
+- **Views** (not persisted, no identity): [`AircraftSummary`](../code/aircraftmanagement/src/main/java/isep/psoft/aisafe/aircraftmanagement/domain/AircraftSummary.java) and [`AircraftModelSummary`](../code/aircraftmanagement/src/main/java/isep/psoft/aisafe/aircraftmanagement/domain/AircraftModelSummary.java) — immutable records, independent of the replica that owns the record. Assignment 2: the query side builds them from the CQRS read models (`ReplicatedAircraft.toSummary()`, `ReplicatedAircraftModel.toSummary()`), never from peer DTOs.
+- **Write model vs read model (Assignment 2).** `Aircraft`/`AircraftModel` are the **write model**: only the owner replica stores and changes a given row. `ReplicatedAircraft`, `ReplicatedAircraftModel` and `AircraftMood` (package `query`) are **read models**: plain JPA entities without behaviour, written only by projections from events, with the owner's `sourceVersion` (not a local `@Version`).
 - **Status transitions.** Only the rule "`IN_FLIGHT` → `UNDER_MAINTENANCE`/`INACTIVE` is forbidden" exists (proposal for contract question Q7). Other transitions are accepted; setting the current status again is a no-op.
 - **Statuses** are the strings fixed in [Integration-Contracts §2.2](#src-2-containers-integration-contracts): `AVAILABLE`, `IN_FLIGHT`, `UNDER_MAINTENANCE`, `INACTIVE` (the value Flight Routes requires to schedule is exactly `AVAILABLE`). `AircraftStatus.parse` accepts any case and rejects unknown values with `400`.
 
@@ -1985,82 +2058,77 @@ The system-wide decisions (consistency model, fault tolerance, security) are in 
 
 #### 3. Design rationale (responsibility assignment)
 
-**Register aircraft model / aircraft (US101, US102)**
+**Register aircraft model / aircraft (US101, US102) — command side**
 
 | Question: which class is responsible for... | Answer | Justification (patterns) |
 |---|---|---|
-| ...receiving the HTTP request and validating the input format? | `AircraftController` / `AircraftModelController` + `CreateAircraftDTO` / `CreateAircraftModelDTO` (Bean Validation: required fields, positive numbers, registration pattern `^[A-Z0-9]{1,2}-[A-Z0-9]{2,5}$`, date not in the future) | **Controller (REST)**, **DTO** |
-| ...coordinating the use case and the transaction? | `CreateAircraftService`, `CreateAircraftModelService` | **Application Service** |
-| ...checking that the registration/model name is not used in any replica? | `AircraftReplicaQueries.findAircraft` / `findModel` → repository + `PeerClient.findFirst` | **Repository** (local) + peer query. Best-effort (AP): a peer that is down is skipped |
-| ...checking that the aircraft's model exists (in any replica)? | `AircraftReplicaQueries.findModel` | **Indirection** — the model may be remote, so there is no association |
+| ...receiving the HTTP request and validating the input format? | `AircraftController` / `AircraftModelController` + `CreateAircraftDTO` / `CreateAircraftModelDTO` (Bean Validation) | **Controller (REST)**, **DTO** |
+| ...coordinating the use case and the transaction? | `CreateAircraftService`, `CreateAircraftModelService` (package `command`) | **Application Service** (CQRS command handler) |
+| ...checking that the registration/model name is not used in any replica, and that the model exists? | `ReplicatedAircraftRepository.existsById`, `ReplicatedAircraftModelRepository.existsById` | **CQRS read model**: no peer call; eventual consistency window accepted (AP) |
 | ...enforcing the domain rules? | `Aircraft`, `AircraftModel` constructors | **Information Expert / Aggregate Root** |
-| ...persisting it? | `AircraftRepository`, `AircraftModelRepository` | **Repository** — stored in the replica that received the request (it becomes the owner) |
-| ...building the response? | `AircraftAssembler` | **DTO / Assembler** |
+| ...persisting it? | `AircraftRepository`, `AircraftModelRepository` (`saveAndFlush`, so the version is final) | **Repository** — the replica that received the request becomes the owner |
+| ...announcing the change? | `AircraftManagementEventEmitter` → one `IntegrationEvent` (`AircraftRegistered` / `AircraftModelCreated`) applied to the local read model in the same transaction, published after commit by `IntegrationEventRelay` | **Domain/integration events**, **Observer** (Spring `@TransactionalEventListener`), **Strategy** for the transport (`IntegrationEventTransport`: RabbitMQ or in-process in tests) |
 
-**Change aircraft status (US105, contract B3b)**
+**Change aircraft status (US105, B3b) and model specifications (US201) — command side, owner only**
 
 | Question | Answer | Justification |
 |---|---|---|
 | ...parsing and rejecting an unknown status? | `AircraftStatus.parse` | **Information Expert** (`400` before any forwarding) |
-| ...finding the replica that stores the aircraft? | `AircraftRepository` (local), otherwise `PeerClient.forwardToOwner` | **Indirection** — a record has a single owner (unicast to the peers, `404` = "not mine") |
-| ...validating the status transition? | `Aircraft.changeStatus` | **Information Expert** — the rule lives with the data it protects |
-| ...detecting concurrent updates? | `@Version` + `saveAndFlush` | **Optimistic Locking** |
-| ...translating a business conflict into HTTP? | `GlobalExceptionHandler` | `IllegalStateException` → `409`, optimistic-lock failure → `409` |
+| ...executing the write on the right replica? | local `AircraftRepository`/`AircraftModelRepository`, otherwise `PeerClient.forwardToOwner` | **Single owner per entity** — one writer, so one event producer and ordered events |
+| ...validating the status transition? | `Aircraft.changeStatus` | **Information Expert** |
+| ...avoiding meaningless events? | `UpdateAircraftStatusService` compares the status before/after: same status → no write, no event | Events describe facts that happened |
+| ...detecting concurrent updates? | `@Version` + `saveAndFlush` | **Optimistic Locking** → `409` |
+| ...keeping other services' copies of the model current? | `AircraftModelUpdated` (new event of Assignment 2) | Flight Routes `KNOWN_AIRCRAFT_MODEL` also applies it |
 
-**Search and view aircraft (US103, US104, contract B1a/B1b)**
-
-| Question | Answer | Justification |
-|---|---|---|
-| ...finding one aircraft/model in any replica? | `AircraftReplicaQueries.findAircraft` / `findModel` | **Pure Fabrication** — local first, then `PeerClient.findFirst` |
-| ...filtering by model, status and year? | `SearchAircraftsService.search` | **Application Service** — filters combined with AND, status parsed once |
-| ...obtaining the data of the other replicas? | `AircraftReplicaQueries.withPeers` → `PeerClient.collectList`, merged by registration (local copy wins) | **Pure Fabrication** |
-| ...avoiding forwarding loops? | `PeerClient.isPeerRequest` (`X-Peer-Hops`) — a peer request is answered with local data only | `common` library; services do not decide whether to forward |
-| ...paginating? | `AircraftController` → `PageDTO.of` **after** merging; a peer request gets the complete, unpaginated local list | **Pure Fabrication**; stable JSON instead of Spring's `Page` (contract Q8) |
-
-**Statistics that combine two services (US203, US204, US206)**
+**Queries (US103, US104, US203–US206, B1, B3, unicorns) — query side**
 
 | Question | Answer | Justification |
 |---|---|---|
-| ...obtaining the fleet of all replicas? | `SearchAircraftsService.search(null, null, null)` | Reuse of the US104 aggregation |
-| ...obtaining flight minutes per aircraft? | `FlightRoutesClient.minutesByAircraft` (B4b) | **Anti-Corruption Layer** — Flight Routes only knows registrations, never models |
-| ...joining fleet and minutes? | `CalculateOperationalHoursService` (per aircraft, 0 when it has no flights), `TopUtilizedModelsService` (sum per model, descending, ties by model name, models without minutes excluded, top *N*) | **Application Service** — the join happens here because the model of an aircraft is Aircraft Management data |
-| ...finding compatible routes? | `FindCompatibleRoutesService`: range = `maximumRange` of the **model**, capacity = `seatingCapacity` of the **aircraft**, then B6 | **Information Expert** — the two values live in two different aggregates |
-| ...knowing the answer is incomplete? | `FlightRoutesClient.isPartial` → `X-Partial-Response` on the response | Graceful degradation (AP) |
-| ...failing when Flight Routes is down? | `ReplicatedServiceClient` → `RemoteServiceUnavailableException` → `503` | Retry + failover + circuit breaker in `common` |
+| ...answering a GET? | `query/*Service` on the local tables only | **CQRS**: no peer aggregation, never partial |
+| ...keeping the read models current? | `AircraftManagementEventsListener` → `AircraftManagementEventRouter` → `AircraftProjection` / `AircraftModelProjection` | **Event-driven projection**; router = **Pure Fabrication** that dispatches by `eventType` |
+| ...applying an event exactly once? | `IdempotentEventHandler` + `JpaProcessedEventStore` (same transaction) and `isNewerThan(version)` | At-least-once delivery made idempotent |
+| ...knowing the flight minutes and the routes (data of Flight Routes)? | `FlightRoutesEventsProjection` → `KnownScheduledFlight`, `KnownRoute`; `FlightMinutesService` sums minutes per registration | **Anti-Corruption Layer** by events (`events.external` payloads with only the fields used) — replaces the HTTP bridges B4b/B6 |
+| ...joining fleet and minutes? | `CalculateOperationalHoursService`, `TopUtilizedModelsService` | **Application Service** — the model of an aircraft is Aircraft Management data |
+| ...finding compatible routes? | `FindCompatibleRoutesService`: range of the **model**, capacity of the **aircraft**, `KnownRouteRepository.findCompatibleRoutes` (same rule as Flight Routes) | **Information Expert** |
+| ...computing the mood of an aircraft? | `AircraftMood.moodOf(status)` in `AircraftProjection` (same transaction as `ReplicatedAircraft`) | Projection computed at write time, the GET only reads |
 
 
 <a id="sec-4-package-organization"></a>
 
 #### 4. Package organization
 
-| Package | Layer / L3 component | DDD role |
+| Package | Layer / L3 component | DDD / CQRS role |
 |---|---|---|
 | `aircraftmanagement.controllers`, `dto`, `assemblers` | Controllers, Assembler / DTOs | Published Language (API contract separate from the domain) |
-| `aircraftmanagement.services` | Application services, Replica queries | Application Services (`AircraftReplicaQueries`: pure fabrication) |
-| `aircraftmanagement.domain` | Domain model | Entities (aggregate roots), Value Object (`AircraftStatus`), Read Models |
-| `aircraftmanagement.repositories` | Repositories | One repository per aggregate root (local data) |
-| `aircraftmanagement.clients` | Anti-Corruption Layer | ACL towards Flight Routes |
-| `aircraftmanagement.bootstrap` | Demo data | properties `aisafe.bootstrap.*` |
+| `aircraftmanagement.command` | Command side, event emitter and relay, startup synchronisation | Command handlers (Application Services) |
+| `aircraftmanagement.events` | Event contracts | Published language of the events (owned by this service) |
+| `aircraftmanagement.events.external` | Flight Routes event contracts (tolerant reader) | Anti-Corruption Layer |
+| `aircraftmanagement.query` | Query side, projections, read models, listener | Query handlers, projections |
+| `aircraftmanagement.query.external` | Flight Routes read models | ACL + projection of another bounded context |
+| `aircraftmanagement.domain` | Domain model | Aggregate roots, Value Object (`AircraftStatus`), views |
+| `aircraftmanagement.repositories` | Write model | One repository per aggregate root (owned rows) |
+| `aircraftmanagement.bootstrap` | Demo data | profile `demo` |
+| `infrastructure.messaging` | RabbitMQ topology, transport, processed events | Infrastructure |
 | `infrastructure.security`, `infrastructure.config`, `exceptions` | Security & config | Authorization rules, OpenAPI, error mapping |
 
-The `factories` package is empty (`.gitkeep`): the aggregates are created through their validating constructors, which is enough while there is no complex construction logic.
+The `clients` and `factories` packages are empty (`.gitkeep`): Aircraft Management no longer calls another service over HTTP, and the aggregates are created through their validating constructors.
 
 
 <a id="sec-5-implementation-notes"></a>
 
 #### 5. Implementation notes
 
-- **Remote access:** `RestClientConfig` creates one `ReplicatedServiceClient` bean (`flightRoutesService`) with all replicas of Flight Routes (`services.flightroutes.urls`). `FlightRoutesClient` maps `401`/`403` to `ResponseStatusException` (same status); no replica available → `RemoteServiceUnavailableException` (`503`). Any other `4xx` is not mapped (it would end as `500`, as the contract documents for the consumers).
-- **Services never decide whether to forward:** `PeerClient` does nothing when the current request already came from a peer, so the same service code answers clients (all replicas) and peers (local only).
-- **URIs sent to peers** are built with encoded path segments and query values (`AircraftReplicaQueries.uri`, `pathSegment`); null/blank filters are omitted.
-- **Tolerant reader:** DTOs exchanged between replicas use `@JsonIgnoreProperties(ignoreUnknown = true)`, so a future `_links` or new field does not break the peers or the consumers (contract §2.2).
-- **Pagination after merging:** `PageDTO.of` cuts the page after merging and sorting by registration; maximum page size 100 (`400` otherwise).
-- **Contract values are never null:** `AircraftDTO` (B1a) always carries `registrationNumber`, `modelName`, `seatingCapacity`, `status`; `AircraftModelDTO` (B1b) always carries `maximumRange` — Flight Routes unboxes them.
-- **Demo data:** `DemoDataBootstrap` parses `modelName:manufacturer:seats:fuel:range:speed` and `registration:model:seats:date[:status]` from `aisafe.bootstrap.*`; each replica loads different data.
+- **Same structure as Flight Routes.** `AircraftManagementEventEmitter`, `IntegrationEventRelay`, `IntegrationEventTransport`, `OutgoingIntegrationEvent`, `RabbitIntegrationEventTransport`, `JpaProcessedEventStore` and the router/projection split are copies of the Flight Routes classes; the `common` library does the AMQP work (exchange, queues, DLQ, retry, confirms).
+- **Queues of each replica:** `<instanceId>.aircraftmanagement` (bound to `aircraft.*`, `aircraft-model.*`) and `<instanceId>.flightroutes` (bound to `route.*`, `scheduled-flight.*`), declared by `AircraftManagementMessagingConfiguration`; both listeners exist only with `aisafe.messaging.enabled=true`.
+- **Payloads are state-carrying** and include the entity's `version`; null fields of a payload keep the stored value (tolerant to status-only events).
+- **Startup synchronisation (as in Airports):** `DemoDataBootstrap` (`@Order(1)`) inserts the demo rows, then `ReadModelSynchronizer` (`@Order(2)`) republishes the owned state through `AircraftStateRepublisher` and publishes `AircraftSyncRequested`; `AircraftManagementEventsListener` hands a request of another replica to `ReadModelSynchronizer.onSyncRequested`.
+- **No `X-Partial-Response`** any more: every GET reads local tables. The peer branch of `GET /api/aircrafts` (plain list for peers) was removed; it always returns a `PageDTO`.
+- **Contract values are never null:** `AircraftDTO` (B1a) always carries `registrationNumber`, `modelName`, `seatingCapacity`, `status`; `AircraftModelDTO` (B1b) always carries `maximumRange`.
+- **Demo data:** `DemoDataBootstrap` (profile `demo`, `ApplicationReadyEvent`) parses `modelName:manufacturer:seats:fuel:range:speed` and `registration:model:seats:date[:status]`; each replica loads different data, inserted once and published as events.
 
 | Replica | Models | Aircraft |
 |---|---|---|
-| 1 (`application.properties`) | `A320` (180 seats, 6100 km), `B737` (189 seats, 5600 km) | `CS-TUA` (A320, `AVAILABLE`), `CS-TUB` (B737, `UNDER_MAINTENANCE`) |
+| 1 (`application-instance1.properties`) | `A320` (180 seats, 6100 km), `B737` (189 seats, 5600 km) | `CS-TUA` (A320, `AVAILABLE`), `CS-TUB` (B737, `UNDER_MAINTENANCE`) |
 | 2 (`application-instance2.properties`) | `A330` (300 seats, 11750 km) | `CS-TUC` (A330, 300 seats), `CS-TUD` (A330, 290 seats) |
 | 3 (`application-instance3.properties`) | `E190` (100 seats, 4500 km) | `CS-TUE` (E190, 100 seats), `CS-TUF` (E190, 96 seats, `INACTIVE`) |
 
@@ -2071,23 +2139,22 @@ The `factories` package is empty (`.gitkeep`): the aggregates are created throug
 
 | File | Content |
 |---|---|
-| [`application.properties`](../code/aircraftmanagement/src/main/resources/application.properties) | Defaults (= replica 1), remote URLs, resilience, security (`jwt.secret`, `aisafe.security.service-key`), logging, actuator, demo data of replica 1 |
-| `application-instance1/2/3.properties` | Port (8081/8181/8281), instance id, database, peers and demo data of each replica |
+| [`application.properties`](../code/aircraftmanagement/src/main/resources/application.properties) | Defaults (= replica 1), file database, resilience, security, messaging (RabbitMQ, retries), health probes, logging |
+| `application-instance1/2/3.properties` | Port (8081/8181/8281), instance id, database file, peers and demo data of each replica |
+| `application-demo.properties` | `aisafe.bootstrap.enabled=true` |
 | `application-tls.properties` | HTTPS: server keystore, client truststore, `aisafe.scheme=https` |
+| `src/test/resources/config/application.properties` | Tests: messaging off, in-memory database |
 
 
 <a id="sec-7-code-level-observations"></a>
 
 #### 7. Code-level observations
 
-- **Value Objects:** `registrationNumber`, `maximumRange` (km) and similar are primitives validated in the constructors/DTOs. Value Objects such as `RegistrationNumber` would centralise the format rule (today only `CreateAircraftDTO` checks it; the demo data and peer DTOs bypass it).
-- **Registration normalisation (Q10):** the registration is stored as received and the pattern forces upper case at creation time; lookups are case-sensitive.
-- **Aircraft vs model capacity:** no rule relates `Aircraft.seatingCapacity` to `AircraftModel.seatingCapacity` (e.g. an upper bound). To be agreed with the customer.
-- **Remote calls inside a transaction:** `CreateAircraftService`, `CreateAircraftModelService` and `UpdateAircraftStatusService` are `@Transactional` and call peers (HTTP) inside the transaction. Short timeouts (`read-timeout=3s`) limit the impact; moving the remote lookups before the transaction would remove it.
-- **Optimistic locking for clients:** the `version` is not exposed, so a client cannot send the version it read (contract Q7); the check protects concurrent writes inside the owner replica only.
-- **`GET /api/aircrafts` return type** is `Object` (page for clients, list for peers), so the generated OpenAPI schema is generic. Documenting both shapes with `@ApiResponse`, or a separate internal endpoint for peers, would make the specification exact.
-- **`IN_FLIGHT` has no producer:** nothing sets it automatically; it is only a value that can be set through US105. See open question Q-AM1.
-- `bootstrap-instance1.snippet.properties` is a leftover of the migration (its content is already in `application.properties`); it can be deleted.
+- **Value Objects:** `registrationNumber`, `maximumRange` (km) and similar are primitives validated in the constructors/DTOs; a `RegistrationNumber` Value Object would centralise the format rule.
+- **Optimistic locking for clients:** the `version` is not exposed by the REST API, so the check protects concurrent writes inside the owner replica only.
+- **Uniqueness in the consistency window:** two replicas can accept the same registration if the requests arrive before the first event (milliseconds). Accepted price of AP; a fix would be a deterministic owner per registration (hash partitioning) instead of "the replica that received the POST".
+- **No transactional outbox:** an event that cannot be published at commit time is lost until the owner republishes its state (its next start, or a sync request of another replica).
+- **`IN_FLIGHT` has no producer:** nothing sets it automatically; it is a value set through US105 (open question Q-AM1).
 
 <a id="src-5-scenarios-aircraftmanagement-aircraftmanagement-scenarios"></a>
 
@@ -2112,12 +2179,13 @@ The `factories` package is empty (`.gitkeep`): the aggregates are created throug
 | 1A | US103 | View an aircraft's details given its registration number | Backoffice Operator, ATCC | Implemented |
 | 1A | US104 | Search aircraft by model, status or manufacturing year | ATCC | Implemented |
 | 1A | US105 | Update an aircraft's operational status | ATCC | Implemented |
-| 1B | US201 | Update an aircraft model's specifications | Backoffice Operator | Planned |
+| 1B | US201 | Update an aircraft model's specifications | Backoffice Operator | Implemented (A2: publishes `AircraftModelUpdated`) |
 | 1B | US202 | Register an aircraft model with an optional image or technical diagram | Backoffice Operator | Planned |
 | 1B | US203 | View the routes compatible with an aircraft (range of the model, capacity of the aircraft) | ATCC | Implemented |
 | 1B | US204 | Top 5 most utilised aircraft models | Backoffice Operator | Implemented |
-| 1B | US205 | Real-time aircraft availability status (available, in-flight, under maintenance, inactive) | ATCC | Planned |
+| 1B | US205 | Real-time aircraft availability status (available, in-flight, under maintenance, inactive) | ATCC | Implemented (read model) |
 | 1B | US206 | Total operational hours of each aircraft of the fleet | ATCC | Implemented |
+| A2 | — | `GET /api/v2/unicorns`: mood of every aircraft (SIDIS Assignment 2) | any role | Implemented (projection `AIRCRAFT_MOOD`) |
 | Bonus | US223, US224 | Utilisation graphs; search by features (Wi-Fi, engine type) | ATCC | Planned |
 
 **Supplied to other containers** (the consumers depend on them): **US103** is contract **B1a** and **US101/US103** give **B1b** (Flight Routes, US212/US213); **US103** is also **B3a** and **US105** is **B3b** (Maintenance, US115/US119). See [Integration-Contracts §4](#sec-4-bridges).
@@ -2131,9 +2199,9 @@ The `factories` package is empty (`.gitkeep`): the aggregates are created throug
 - **Status transitions (Q7, proposal):** an `IN_FLIGHT` aircraft cannot go to `UNDER_MAINTENANCE` or `INACTIVE` (`409`); every other change is accepted. Optimistic locking (`@Version`) protects concurrent updates in the owner replica; the client does not send a version.
 - **Units (Q9):** `maximumRange` in **km**, the same unit as the route distances computed by Flight Routes.
 - **Registration format (Q10, proposal):** `PREFIX-SUFFIX`, upper case, e.g. `CS-TUA` (`^[A-Z0-9]{1,2}-[A-Z0-9]{2,5}$`), checked when an aircraft is registered. To be confirmed with the customer.
-- **"Most utilised" (Q5):** total **flight time** (minutes) of all the aircraft of the model, from contract B4b. Models without flights are not ranked.
+- **"Most utilised" (Q5):** total **flight time** (minutes) of all the aircraft of the model, from the Flight Routes `ScheduledFlightCreated` events (Assignment 1: contract B4b). Models without flights are not ranked.
 - **Pagination (Q8):** a stable `PageDTO` (`content`, `page`, `size`, `totalElements`, `totalPages`) instead of Spring's `Page`; maximum size 100.
-- **Roles (Q4):** US102 → ATCC; US101 → Backoffice Operator; reads (US103/US104, B1, B3a) also for the Backoffice and Maintenance roles because the JWT of the consumer's user is forwarded; US105/B3b → ATCC and Maintenance roles; US203/US206 → ATCC; US204 → Backoffice Operator and ATCC (Flight Routes admits both roles on `minutes-by-aircraft`, B4b).
+- **Roles (Q4):** US102 → ATCC; US101 → Backoffice Operator; reads (US103/US104, B1, B3a) also for the Backoffice and Maintenance roles because the JWT of the consumer's user is forwarded; US105/B3b → ATCC and Maintenance roles; US203/US206 → ATCC; US204 → Backoffice Operator and ATCC; `/api/v2/unicorns` → any AISafe role.
 - **Open question Q-AM1 (US205):** what is "in-flight"? Today `IN_FLIGHT` is only a status that can be set through US105. A real-time value would be derived from the scheduled flights of Flight Routes (a flight whose date/time interval contains *now*), which needs a new endpoint there. To be decided with the customer and the Flight Routes owner before implementing.
 
 
@@ -2145,7 +2213,7 @@ The `factories` package is empty (`.gitkeep`): the aggregates are created throug
 
 **Queries:** AC9 US104 filters (`modelName`, `status`, `manufacturingYear`) are optional and combinable, results sorted by registration, paginated **after** merging all replicas (`page` ≥ 0, `size` 1–100, else `400`); AC10 US203 uses the model's range and the aircraft's own capacity, only `ACTIVE` compatible routes of all Flight Routes replicas; AC11 US204 ranks models by total flight minutes (ties by model name), `limit` 1–20 (default 5), models without flights are excluded; AC12 US206 lists **every** aircraft of the fleet, with 0 hours when it has no flights.
 
-**Distribution:** AC13 any replica answers with the data of all replicas, `404` if no replica has the record; AC14 a failed peer gives a `200` with `X-Partial-Response: true`; AC15 an aircraft/model is only modified by its owner replica (the one that stored it); AC16 peer requests without a valid `X-Service-Key` → `401`, `X-Peer-Hops > 1` → `400`; AC17 JWT + roles on every endpoint (`401`/`403`), every request audited with the correlation id; AC18 `503` when no Flight Routes replica answers (US203, US204, US206) or no peer is reachable to execute a command; AC19 if Flight Routes answers partially, so does the statistics response (`X-Partial-Response: true`); AC20 the contract fields of B1a/B1b are never `null`.
+**Distribution (Assignment 2):** AC13 any replica answers every GET from its local read models, which hold the data of all replicas; `404` only if no replica has announced the record; never `X-Partial-Response`; AC14 a replica answers reads even with its peers (and Flight Routes) down; AC15 an aircraft/model is only modified by its owner replica, a command on another replica is forwarded (`503` if the owner is down); AC16 every committed change is published once, after the commit, as a state-carrying event with the entity's `version`; AC17 consumers apply an event at most once (eventId) and ignore older versions and unknown types; a failing handler is retried and then dead-lettered; AC18 the owner reads its own write immediately, the other replicas after the event (eventual consistency); AC19 US203, US204 and US206 are computed from Flight Routes events (no HTTP call to Flight Routes); AC20 `/api/v2/unicorns` follows the mood rule of the contract and reports `source = "read-model"`; AC21 peer requests without a valid `X-Service-Key` → `401`, JWT + roles on every endpoint; AC22 the contract fields of B1a/B1b are never `null`.
 
 
 <a id="sec-3-system-sequence-diagram"></a>
@@ -2162,40 +2230,36 @@ The `factories` package is empty (`.gitkeep`): the aggregates are created throug
 #### 4. Scenarios (sequence diagrams)
 
 
-<a id="sec-4-1-distributed-scenarios"></a>
+<a id="sec-4-1-distributed-scenarios-assignment-2-cqrs-rabbitmq"></a>
 
-##### 4.1 Distributed scenarios
+##### 4.1 Distributed scenarios (Assignment 2: CQRS + RabbitMQ)
 
-**S1 — Peer-to-peer query resolution: GET an aircraft stored in another replica (US103, contract B1a; the same for B1b)**
+**S1 — Command on a non-owner replica: forwarded to the owner, which writes, emits the event and every replica projects it (US105 / B3b; the same for US101, US102, US201)**
 
-![AircraftManagement-SD-PeerForwarding](5-scenarios/aircraftmanagement/svg/AircraftManagement-SD-PeerForwarding.svg)
+![AircraftManagement-SD-WriteEventProjection](5-scenarios/aircraftmanagement/svg/AircraftManagement-SD-WriteEventProjection.svg)
 
-**S2 — Response aggregation with a failed replica (US104; the fleet of US203/US204/US206 is built the same way)**
+**S2 — Query answered from the local read model with the owner replica down (US103 / B1a; the same for US104, US205)**
 
-![AircraftManagement-SD-PeerAggregation](5-scenarios/aircraftmanagement/svg/AircraftManagement-SD-PeerAggregation.svg)
+![AircraftManagement-SD-ReadModelQuery](5-scenarios/aircraftmanagement/svg/AircraftManagement-SD-ReadModelQuery.svg)
 
-**S3 — Command forwarded to the owner replica (US105, contract B3b)**
+**S3 — Data of Flight Routes by events (US203, US204, US206; replaces bridges B4b and B6)**
 
-![AircraftManagement-SD-OwnerCommand](5-scenarios/aircraftmanagement/svg/AircraftManagement-SD-OwnerCommand.svg)
+![AircraftManagement-SD-FlightRoutesEvents](5-scenarios/aircraftmanagement/svg/AircraftManagement-SD-FlightRoutesEvents.svg)
+
+**S4 — `/api/v2/unicorns` and CQRS**
+
+![AircraftManagement-SD-Unicorns](5-scenarios/aircraftmanagement/svg/AircraftManagement-SD-Unicorns.svg)
 
 
 <a id="sec-4-2-use-case-scenarios"></a>
 
 ##### 4.2 Use-case scenarios
 
-**S4 — Register aircraft whose model is stored in another replica (US102)**
+**S5 — Register an aircraft whose model is owned by another replica (US102)**
 
 ![AircraftManagement-SD-CreateAircraft](5-scenarios/aircraftmanagement/svg/AircraftManagement-SD-CreateAircraft.svg)
 
-**S5 — Operational hours of the fleet (US206, contract B4b with Flight Routes)**
-
-![AircraftManagement-SD-OperationalHours](5-scenarios/aircraftmanagement/svg/AircraftManagement-SD-OperationalHours.svg)
-
-**S6 — Top utilised models (US204, contract B4b)**
-
-![AircraftManagement-SD-TopUtilizedModels](5-scenarios/aircraftmanagement/svg/AircraftManagement-SD-TopUtilizedModels.svg)
-
-**S7 — Compatible routes (US203, contract B6)**
+**S6 — Compatible routes (US203)**
 
 ![AircraftManagement-SD-CompatibleRoutes](5-scenarios/aircraftmanagement/svg/AircraftManagement-SD-CompatibleRoutes.svg)
 
@@ -2204,64 +2268,48 @@ The `factories` package is empty (`.gitkeep`): the aggregates are created throug
 
 #### 5. Tests
 
-From `code/`: `./mvnw -pl aircraftmanagement -am test`.
-
-**Existing**
+From `code/`: `./mvnw -pl aircraftmanagement -am test` (no broker needed: messaging is off in tests).
 
 | Test class | Type | What is verified |
 |---|---|---|
-| [`AircraftManagementApplicationTests`](../code/aircraftmanagement/src/test/java/isep/psoft/aisafe/AircraftManagementApplicationTests.java) | Context | The service starts with the shared configuration (security chain of `common` + `AircraftManagementAuthorizationRules`) |
+| `AircraftManagementApplicationTests` | Context | The service starts with the shared configuration |
+| `AircraftTest`, `AircraftModelTest`, `AircraftStatusTest` | Unit (domain) | Invariants, status parsing and the transition rule |
+| `command/CreateAircraftServiceTest`, `CreateAircraftModelServiceTest` | Unit (Mockito) | Uniqueness and model existence on the read models (`409`/`400`), write on this replica, one event emitted |
+| `command/UpdateAircraftStatusServiceTest`, `UpdateAircraftModelServiceTest` | Unit (Mockito) | Owner write + `AircraftStatusChanged` / `AircraftModelUpdated`; same status → no event; forwarding to the owner (who publishes); `404`, `400`, `409` |
+| `query/TopUtilizedModelsServiceTest`, `AircraftAvailabilityServiceTest`, `AircraftMoodTest` | Unit | US204 ranking from flight minutes, US205, the mood rule |
+| `messaging/ReadModelProjectionsTest` | Integration (one real replica, events as JSON trees) | Idempotency (eventId recorded), stale versions ignored, status-only events, `AircraftModelUpdated`, unknown types, no AMQP bean with messaging off |
+| **`distributed/ReplicaCollaborationTest`** | **Distributed** — two real replicas, events delivered by `support/InProcessEventBus` (JSON, one delivery per replica, like one queue per replica) | S1–S6: owners, read-your-writes, every replica sees everything, duplicates on the read model, forwarding of US105/US201 and propagated `409`, moods converge, US203/US204/US206 from Flight Routes events (with a duplicate delivery), a late replica filled by the sync request of its peers, health probes, replica failure (reads still work, owner writes → `503`) |
 
-**To implement** (proposed plan; the list follows the acceptance criteria above and the pattern of the other services)
-
-| Test class | Type | What should be verified |
-|---|---|---|
-| `AircraftTest` | Unit (domain) | Constructor validation (blank registration/model, non-positive seats), default status `AVAILABLE`, `changeStatus`: allowed transitions, `IN_FLIGHT` → `UNDER_MAINTENANCE`/`INACTIVE` rejected, same status is a no-op |
-| `AircraftModelTest` | Unit (domain) | Required fields; seats, fuel, range and speed must be positive |
-| `AircraftStatusTest` | Unit | `parse` accepts any case, trims, rejects blank/unknown with the allowed values in the message |
-| `PageDTOTest` | Unit | First/middle/last/out-of-range page, empty list, `totalPages` |
-| `TopUtilizedModelsServiceTest`, `CalculateOperationalHoursServiceTest` | Unit (Mockito: `SearchAircraftsService`, `FlightRoutesClient`) | Sum per model, descending order, tie-break by name, exclusion of models with 0 minutes, 0 hours for aircraft without flights, propagation of `partial` |
-| `UpdateAircraftStatusServiceTest` | Unit (Mockito) | Local update; not local → `forwardToOwner`; nothing found → `404`; unknown status → `400` before any call |
-| `AircraftManagementAuthorizationRulesTest` | Slice (MockMvc + JWT) | `401` without token; `403` for the wrong role on each restricted endpoint (US101, US102, US105, US203, US206); allowed roles of B1/B3 |
-| **`AircraftReplicaCollaborationTest`** | **Distributed** — two real replicas + a stub of Flight Routes (like `ReplicaCollaborationTest`) | Scenarios S1–S7: forwarding by id, merged and sorted search (S2), owner command and propagated `409` (S3), registration and model uniqueness across replicas, `400` for a model stored nowhere, peer headers (`401`/`400`), replica stopped → `X-Partial-Response`, B1a/B1b example JSON from the contract |
-
-**Postman:** [postman/AircraftManagement.postman_collection.json](5-scenarios/aircraftmanagement/postman/AircraftManagement.postman_collection.json) + [environment](5-scenarios/aircraftmanagement/postman/AircraftManagement.postman_environment.json), against the three replicas — folders: setup, local access, forwarding, aggregation, commands (US101, US102, US105), security, integration with Flight Routes (US203, US204, US206, needs Flight Routes), replica failure (stop replica 2 before the last folder). Requests that create data use random values, so the collection can be run more than once.
+**Postman:** [postman/AircraftManagement.postman_collection.json](5-scenarios/aircraftmanagement/postman/AircraftManagement.postman_collection.json) + [environment](5-scenarios/aircraftmanagement/postman/AircraftManagement.postman_environment.json). Folders: 0 setup (tokens, readiness), 1–2 commands and queries (US101–US105, US201), **3 CQRS read models and owner replicas (polls until the replicas converge)**, 4 US205, **5 Flight Routes data from events**, **6 `/api/v2/unicorns`**, **7 asynchronous integration with Flight Routes and Airports (end to end)**, 8 replica failure (stop replica 3 first). Run in order with the Collection Runner or newman. The Postman mock of the unicorns contract is in [../unicorns/postman](5-scenarios/unicorns/postman).
 
 
 <a id="sec-6-demo"></a>
 
 #### 6. Demo
 
-From `code/`:
+From `code/` (RabbitMQ: `infra/.env`, see [docs/README.md](#sec-how-to-build-and-run)):
 
 1. `./mvnw clean install`
-2. `./scripts/start-replicas.sh aircraftmanagement` (Windows: `.\scripts\start-replicas.ps1 -Service aircraftmanagement`). Each replica loads different data (the `aisafe.bootstrap.*` properties; no `demo` profile is needed): replica 1 — models A320, B737 and aircraft CS-TUA, CS-TUB; replica 2 — model A330 and aircraft CS-TUC, CS-TUD; replica 3 — model E190 and aircraft CS-TUE, CS-TUF.
-3. For US203, US204 and US206 also start Flight Routes: `.\scripts\start-replicas.ps1 -Service flightroutes -Profiles demo`.
-4. `GET http://localhost:8081/actuator/health` (also 8181, 8281).
-5. `POST http://localhost:8081/auth/dev-token` `{"username":"atcc1","roles":["ATCC"]}` (and `["BACKOFFICE_OPERATOR"]`, `["MAINTENANCE_TECHNICIAN"]`) → tokens for Postman / Swagger *Authorize*.
-6. Run the Postman collection, or by hand:
-   - `GET :8081/api/aircrafts` and `:8281/api/aircrafts` → the same 6 aircraft (`CS-TUA` … `CS-TUF`).
-   - `GET :8081/api/aircrafts/CS-TUC` → `200`; log of replica 1: `Not found locally: forwarding GET ...`; replica 2: `AUDIT ... source=peer:aircraftmanagement-1` with the same correlation id.
-   - `GET :8081/api/aircrafts?modelName=A330` → CS-TUC, CS-TUD (stored in replica 2); `?status=INACTIVE` → CS-TUF; `?manufacturingYear=2022` → CS-TUE, CS-TUF.
-   - `POST :8081/api/aircrafts` with `modelName` `E190` (model stored in replica 3) → `201`; an unknown model → `400`; the registration `CS-TUC` → `409`.
-   - `PATCH :8081/api/aircrafts/CS-TUC/status` `{"status":"UNDER_MAINTENANCE"}` → executed by replica 2; a US212 flight for CS-TUC in Flight Routes now gets `409` (aircraft not available). Set it back to `AVAILABLE`.
-   - `PATCH …/CS-TUA/status` `{"status":"IN_FLIGHT"}` and then `{"status":"UNDER_MAINTENANCE"}` → `409` (transition rule). Set it back to `AVAILABLE`.
-   - `GET :8081/api/aircrafts/operational-hours`, `…/CS-TUC/compatible-routes`, `GET :8081/api/aircraft-models/top-utilized?limit=5` (ATCC) → Flight Routes figures joined with the fleet.
-   - Close the window of replica 2 → `GET :8081/api/aircrafts` returns 4 aircraft with `X-Partial-Response: true`; `GET …/CS-TUC` → `404`; `PATCH …/CS-TUC/status` → `503`.
-   - HTTPS: add the `tls` profile (`instance1,tls`) and use `https://`.
+2. `./scripts/start-all.sh 3 demo` (Windows: `.\scripts\start-all.ps1 -Profiles demo`). With the `demo` profile each replica loads different data: replica 1 — models A320, B737 and aircraft CS-TUA, CS-TUB; replica 2 — model A330 and aircraft CS-TUC, CS-TUD; replica 3 — model E190 and aircraft CS-TUE, CS-TUF. Each replica publishes its rows, so every read model ends with the 6 aircraft.
+3. RabbitMQ UI <http://localhost:15672>: exchange `aisafe.aircraftmanagement.events`, queues `aircraftmanagement-N.aircraftmanagement` and `aircraftmanagement-N.flightroutes` (+ `.dlq`).
+4. `POST http://localhost:8081/auth/dev-token` `{"username":"atcc1","roles":["ATCC"]}` (and `BACKOFFICE_OPERATOR`, `MAINTENANCE_TECHNICIAN`) → tokens.
+5. Run the Postman collection, or by hand:
+   - `GET :8081/api/aircrafts` and `:8281/api/aircrafts` → the same 6 aircraft, answered locally (no peer call in the logs).
+   - `PATCH :8081/api/aircrafts/CS-TUC/status` `{"status":"UNDER_MAINTENANCE"}` → forwarded to replica 2 (owner); its log shows `Published AircraftStatusChanged`, the logs of replicas 1 and 3 show `Applied AircraftStatusChanged for aircraft CS-TUC`; `GET :8281/api/v2/unicorns` → CS-TUC `GROUNDED_AND_GRUMPY`.
+   - Schedule a flight in Flight Routes (US212) → `GET :8181/api/aircrafts/operational-hours` counts it a few milliseconds later (`ScheduledFlightCreated` consumed); stop Flight Routes and the endpoint still answers.
+   - Stop replica 3 → `GET :8081/api/aircrafts/CS-TUE` still `200`; `PATCH …/CS-TUE/status` → `503` (owner down).
 
-H2 console: `http://localhost:8081/h2-console` (JDBC URL `jdbc:h2:mem:aircraftManagementdb-1`).
+H2 console: `http://localhost:8081/h2-console` (JDBC URL `jdbc:h2:file:./data/aircraftManagementdb-1`, from `code/`): tables `AIRCRAFT` (write model), `REPLICATED_AIRCRAFT`, `AIRCRAFT_MOOD`, `KNOWN_ROUTE`, `KNOWN_SCHEDULED_FLIGHT`, `PROCESSED_EVENT`.
 
 
-<a id="sec-7-observations"></a>
+<a id="sec-7-observations-2"></a>
 
 #### 7. Observations
 
-- Cross-replica uniqueness of the registration number and of the model name is best-effort (AP, see [L2 §3.3](#sec-3-3-consistency-model-cap)): during a partition, or with two simultaneous registrations on different replicas, the same value can be stored twice. Deterministic ownership (hash of the registration → replica) would remove this at the cost of availability for writes when that replica is down.
-- US203, US204 and US206 depend on Flight Routes being available (`503` otherwise); the figures are already summed over the Flight Routes replicas and a partial answer is passed on with `X-Partial-Response`.
-- **US204 works for the Backoffice Operator and for the ATCC**: the JWT is forwarded to Flight Routes, whose rule for `GET /api/scheduled-flights/statistics/minutes-by-aircraft` (B4b) accepts `ATCC` and `BACKOFFICE_OPERATOR` (contract Q4); the rest of `/api/scheduled-flights/**` stays `ATCC` only, which matches US206. The Postman request *US204 Top 5 modelos mais utilizados (BACKOFFICE) -> 200* covers it.
-- US205 depends on the answer to Q-AM1. US201 and US202 reuse the owner-forwarding pattern of S3 and need an `update` behaviour on `AircraftModel`.
-- The PSOFT requirement of HATEOAS links is not implemented yet (see O1 in L3).
+- Uniqueness of registration and model name is checked on the read model: two simultaneous registrations on different replicas, inside the consistency window, can both succeed (AP, see [L2 §3.3](#sec-3-3-consistency-model-cap)).
+- B3b stays a synchronous command (Maintenance needs the immediate `409`); its effect reaches every consumer as `AircraftStatusChanged`.
+- Flight Routes reads aircraft over HTTP (B1) until `AISAFE_EXTERNAL_EVENTS=true` is set there; Aircraft Management already publishes every event its consumer expects, plus `AircraftModelUpdated`.
+- Late subscribers and events lost while the broker was down are healed by the startup synchronisation (`ReadModelSynchronizer` republishes the owned state and sends `AircraftSyncRequested`, as Airports does) (see [L3 §6](#sec-6-cqrs-flow-write-event-projection-on-every-replica-and-on-f)).
 
 <div style="page-break-before: always;"></div>
 
@@ -3169,7 +3217,7 @@ Supplied to other containers (service-only endpoints, `X-Service-Key` required):
 #### 4. Scenarios (sequence diagrams)
 
 
-<a id="sec-4-1-distributed-scenarios-2"></a>
+<a id="sec-4-1-distributed-scenarios"></a>
 
 ##### 4.1 Distributed scenarios
 
@@ -3264,7 +3312,7 @@ From `code/`:
 H2 console: `http://localhost:8084/h2-console` (JDBC URL `jdbc:h2:file:./data/flightRoutesdb-1`, while the replica runs from `code/`): tables `FLIGHT_ROUTE` (owned), `REPLICATED_ROUTE`, `REPLICATED_SCHEDULED_FLIGHT`, `PROCESSED_EVENT`.
 
 
-<a id="sec-7-observations-2"></a>
+<a id="sec-7-observations-3"></a>
 
 #### 7. Observations
 
@@ -3674,7 +3722,7 @@ The use cases are the WP#4 user stories of the PSOFT assignment (the monolith th
 #### 4. Scenarios (sequence diagrams)
 
 
-<a id="sec-4-1-distributed-scenarios-3"></a>
+<a id="sec-4-1-distributed-scenarios-2"></a>
 
 ##### 4.1 Distributed scenarios
 
@@ -3764,7 +3812,7 @@ From `code/`:
 H2 console: `http://localhost:8082/h2-console` (JDBC URL `jdbc:h2:mem:maintenancedb-1`).
 
 
-<a id="sec-7-observations-3"></a>
+<a id="sec-7-observations-4"></a>
 
 #### 7. Observations
 
@@ -3789,9 +3837,10 @@ H2 console: `http://localhost:8082/h2-console` (JDBC URL `jdbc:h2:mem:maintenanc
 
 | Folder | Request | Method | URL |
 |---|---|---|---|
-| 0 - Setup (obter tokens e gerar dados únicos) | 0.1 Token ATCC | POST | `{{base1}}/auth/dev-token` |
-| 0 - Setup (obter tokens e gerar dados únicos) | 0.2 Token BACKOFFICE_OPERATOR | POST | `{{base1}}/auth/dev-token` |
-| 0 - Setup (obter tokens e gerar dados únicos) | 0.3 Token MAINTENANCE_TECHNICIAN | POST | `{{base1}}/auth/dev-token` |
+| 0 - Setup (tokens, unique data, health) | 0.1 Token ATCC | POST | `{{base1}}/auth/dev-token` |
+| 0 - Setup (tokens, unique data, health) | 0.2 Token BACKOFFICE_OPERATOR | POST | `{{base1}}/auth/dev-token` |
+| 0 - Setup (tokens, unique data, health) | 0.3 Token MAINTENANCE_TECHNICIAN | POST | `{{base1}}/auth/dev-token` |
+| 0 - Setup (tokens, unique data, health) | 0.4 Liveness and readiness of the 3 replicas (readiness includes RabbitMQ) | GET | `{{base1}}/actuator/health/readiness` |
 | 1 - Aircraft models (US101, US201, ponte B1b) | US101 Criar modelo (BACKOFFICE) -> 201 | POST | `{{base1}}/api/aircraft-models` |
 | 1 - Aircraft models (US101, US201, ponte B1b) | US101 Modelo duplicado -> 409 | POST | `{{base1}}/api/aircraft-models` |
 | 1 - Aircraft models (US101, US201, ponte B1b) | US101 Dados inválidos (maximumRange negativo) -> 400 | POST | `{{base1}}/api/aircraft-models` |
@@ -3828,31 +3877,51 @@ H2 console: `http://localhost:8082/h2-console` (JDBC URL `jdbc:h2:mem:maintenanc
 | 2 - Aircraft (US102 a US105, pontes B1a/B3a/B3b) | US105 Passar a IN_FLIGHT -> 200 | PATCH | `{{base1}}/api/aircrafts/{{newReg}}/status` |
 | 2 - Aircraft (US102 a US105, pontes B1a/B3a/B3b) | US105 IN_FLIGHT -> UNDER_MAINTENANCE (transição inválida) -> 409 | PATCH | `{{base1}}/api/aircrafts/{{newReg}}/status` |
 | 2 - Aircraft (US102 a US105, pontes B1a/B3a/B3b) | US105 IN_FLIGHT -> AVAILABLE -> 200 | PATCH | `{{base1}}/api/aircrafts/{{newReg}}/status` |
-| 3 - Peer-to-peer (precisa das 3 réplicas ligadas) | 3.1 Criar aeronave diretamente na RÉPLICA 2 (8181) -> 201 | POST | `{{base2}}/api/aircrafts` |
-| 3 - Peer-to-peer (precisa das 3 réplicas ligadas) | 3.2 GET na réplica 1 (aeronave só existe na 2) -> 200 (peer forwarding) | GET | `{{base1}}/api/aircrafts/{{p2pReg}}` |
-| 3 - Peer-to-peer (precisa das 3 réplicas ligadas) | 3.3 GET na réplica 3 -> 200 (também encontra no peer) | GET | `{{base3}}/api/aircrafts/{{p2pReg}}` |
-| 3 - Peer-to-peer (precisa das 3 réplicas ligadas) | 3.4 GET modelo A330 na réplica 1 (modelo só existe na 2) -> 200 | GET | `{{base1}}/api/aircraft-models/A330` |
-| 3 - Peer-to-peer (precisa das 3 réplicas ligadas) | 3.5 PATCH na réplica 1 encaminhado para o dono (réplica 2) -> 200 | PATCH | `{{base1}}/api/aircrafts/{{p2pReg}}/status` |
-| 3 - Peer-to-peer (precisa das 3 réplicas ligadas) | 3.6 GET direto na réplica 2: a escrita ficou no dono | GET | `{{base2}}/api/aircrafts/{{p2pReg}}` |
-| 3 - Peer-to-peer (precisa das 3 réplicas ligadas) | 3.7 PATCH de modelo na réplica 1 encaminhado para a réplica 2 -> 200 | PATCH | `{{base1}}/api/aircraft-models/A330` |
-| 3 - Peer-to-peer (precisa das 3 réplicas ligadas) | 3.8 Criar aeronave na réplica 1 com modelo da réplica 2 -> 201 | POST | `{{base1}}/api/aircrafts` |
-| 3 - Peer-to-peer (precisa das 3 réplicas ligadas) | 3.9 Listagem agregada (réplica 1) contém dados das 3 réplicas -> 200 | GET | `{{base1}}/api/aircrafts?size=100` |
-| 3 - Peer-to-peer (precisa das 3 réplicas ligadas) | 3.10 Pesquisa agregada por modelo A330 -> 200 | GET | `{{base1}}/api/aircrafts?modelName=A330&size=100` |
+| 3 - Assignment 2: CQRS read models and owner replicas (3 replicas + RabbitMQ) | 3.1 Create an aircraft on REPLICA 2 -> 201 (replica 2 owns it; publishes AircraftRegistered) | POST | `{{base2}}/api/aircrafts` |
+| 3 - Assignment 2: CQRS read models and owner replicas (3 replicas + RabbitMQ) | 3.2 Replica 2 reads its own write immediately (read-your-writes on the owner) | GET | `{{base2}}/api/aircrafts/{{p2pReg}}` |
+| 3 - Assignment 2: CQRS read models and owner replicas (3 replicas + RabbitMQ) | 3.3 Poll replica 1 until the aircraft appears (AircraftRegistered) | GET | `{{base1}}/api/aircrafts/{{p2pReg}}` |
+| 3 - Assignment 2: CQRS read models and owner replicas (3 replicas + RabbitMQ) | 3.4 Poll replica 3 until the aircraft appears (AircraftRegistered) | GET | `{{base3}}/api/aircrafts/{{p2pReg}}` |
+| 3 - Assignment 2: CQRS read models and owner replicas (3 replicas + RabbitMQ) | 3.5 Model A330 (owned by replica 2) read on replica 1 -> 200 (read model, no peer call) | GET | `{{base1}}/api/aircraft-models/A330` |
+| 3 - Assignment 2: CQRS read models and owner replicas (3 replicas + RabbitMQ) | 3.6 Aircraft on replica 1 with the model of replica 2 -> 201 (model checked on the read model) | POST | `{{base1}}/api/aircrafts` |
+| 3 - Assignment 2: CQRS read models and owner replicas (3 replicas + RabbitMQ) | 3.7 Duplicate registration on replica 3 -> 409 (uniqueness checked on the read model) | POST | `{{base3}}/api/aircrafts` |
+| 3 - Assignment 2: CQRS read models and owner replicas (3 replicas + RabbitMQ) | 3.8 PATCH on replica 1 forwarded to the owner (replica 2) -> 200 (AircraftStatusChanged) | PATCH | `{{base1}}/api/aircrafts/{{p2pReg}}/status` |
+| 3 - Assignment 2: CQRS read models and owner replicas (3 replicas + RabbitMQ) | 3.9 Poll replica 3 until the status is UNDER_MAINTENANCE (AircraftStatusChanged) | GET | `{{base3}}/api/aircrafts/{{p2pReg}}` |
+| 3 - Assignment 2: CQRS read models and owner replicas (3 replicas + RabbitMQ) | 3.10 Model update on replica 3 forwarded to its owner (replica 1, folder 1) -> 200 (AircraftModelUpdated) | PATCH | `{{base3}}/api/aircraft-models/{{newModel}}` |
+| 3 - Assignment 2: CQRS read models and owner replicas (3 replicas + RabbitMQ) | 3.11 Poll replica 2 until the new range is visible (AircraftModelUpdated) | GET | `{{base2}}/api/aircraft-models/{{newModel}}` |
+| 3 - Assignment 2: CQRS read models and owner replicas (3 replicas + RabbitMQ) | 3.12 Fleet listed on replica 1 contains the demo aircraft of the 3 replicas -> 200 | GET | `{{base1}}/api/aircrafts?size=100` |
+| 3 - Assignment 2: CQRS read models and owner replicas (3 replicas + RabbitMQ) | 3.13 Search by model A330 on replica 3 -> 200 | GET | `{{base3}}/api/aircrafts?modelName=A330&size=100` |
 | 4 - Disponibilidade (US205) | US205 Disponibilidade de uma aeronave -> 200 | GET | `{{base1}}/api/aircrafts/{{newReg}}/availability` |
 | 4 - Disponibilidade (US205) | US205 Disponibilidade de aeronave de outra réplica -> 200 | GET | `{{base1}}/api/aircrafts/{{p2pReg}}/availability` |
 | 4 - Disponibilidade (US205) | US205 Disponibilidade da frota -> 200 | GET | `{{base1}}/api/aircrafts/availability` |
 | 4 - Disponibilidade (US205) | US205 Aeronave inexistente -> 404 | GET | `{{base1}}/api/aircrafts/CS-XXX/availability` |
 | 4 - Disponibilidade (US205) | US205 Role errada (BACKOFFICE) -> 403 | GET | `{{base1}}/api/aircrafts/availability` |
-| 5 - Integração com Flight Routes (US203, US204, US206) - precisa do Flight Routes ou do stub na 8084 | US206 Horas operacionais da frota -> 200 | GET | `{{base1}}/api/aircrafts/operational-hours?size=100` |
-| 5 - Integração com Flight Routes (US203, US204, US206) - precisa do Flight Routes ou do stub na 8084 | US206 Role errada (BACKOFFICE) -> 403 | GET | `{{base1}}/api/aircrafts/operational-hours` |
-| 5 - Integração com Flight Routes (US203, US204, US206) - precisa do Flight Routes ou do stub na 8084 | US203 Rotas compatíveis com CS-TUA -> 200 | GET | `{{base1}}/api/aircrafts/CS-TUA/compatible-routes` |
-| 5 - Integração com Flight Routes (US203, US204, US206) - precisa do Flight Routes ou do stub na 8084 | US203 Aeronave inexistente -> 404 | GET | `{{base1}}/api/aircrafts/CS-XXX/compatible-routes` |
-| 5 - Integração com Flight Routes (US203, US204, US206) - precisa do Flight Routes ou do stub na 8084 | US203 Role errada (BACKOFFICE) -> 403 | GET | `{{base1}}/api/aircrafts/CS-TUA/compatible-routes` |
-| 5 - Integração com Flight Routes (US203, US204, US206) - precisa do Flight Routes ou do stub na 8084 | US204 Top 5 modelos mais utilizados (BACKOFFICE) -> 200 | GET | `{{base1}}/api/aircraft-models/top-utilized` |
-| 5 - Integração com Flight Routes (US203, US204, US206) - precisa do Flight Routes ou do stub na 8084 | US204 limit=0 -> 400 | GET | `{{base1}}/api/aircraft-models/top-utilized?limit=0` |
-| 6 - Tolerância a falhas (MANUAL: pára a réplica 3 e corre só esta pasta) | 6.1 Réplica 3 em baixo: aeronave da réplica 2 continua acessível -> 200 | GET | `{{base1}}/api/aircrafts/{{p2pReg}}` |
-| 6 - Tolerância a falhas (MANUAL: pára a réplica 3 e corre só esta pasta) | 6.2 Réplica 3 em baixo: aeronave da réplica 3 -> 404 + X-Partial-Response | GET | `{{base1}}/api/aircrafts/CS-TUE` |
-| 6 - Tolerância a falhas (MANUAL: pára a réplica 3 e corre só esta pasta) | 6.3 Réplica 3 em baixo: listagem agregada continua a responder (200 parcial) | GET | `{{base1}}/api/aircrafts?size=100` |
+| 5 - Flight Routes data from events (US203, US204, US206): no HTTP call to Flight Routes | US206 Horas operacionais da frota -> 200 | GET | `{{base1}}/api/aircrafts/operational-hours?size=100` |
+| 5 - Flight Routes data from events (US203, US204, US206): no HTTP call to Flight Routes | US206 Role errada (BACKOFFICE) -> 403 | GET | `{{base1}}/api/aircrafts/operational-hours` |
+| 5 - Flight Routes data from events (US203, US204, US206): no HTTP call to Flight Routes | US203 Rotas compatíveis com CS-TUA -> 200 | GET | `{{base1}}/api/aircrafts/CS-TUA/compatible-routes` |
+| 5 - Flight Routes data from events (US203, US204, US206): no HTTP call to Flight Routes | US203 Aeronave inexistente -> 404 | GET | `{{base1}}/api/aircrafts/CS-XXX/compatible-routes` |
+| 5 - Flight Routes data from events (US203, US204, US206): no HTTP call to Flight Routes | US203 Role errada (BACKOFFICE) -> 403 | GET | `{{base1}}/api/aircrafts/CS-TUA/compatible-routes` |
+| 5 - Flight Routes data from events (US203, US204, US206): no HTTP call to Flight Routes | US204 Top 5 modelos mais utilizados (BACKOFFICE) -> 200 | GET | `{{base1}}/api/aircraft-models/top-utilized` |
+| 5 - Flight Routes data from events (US203, US204, US206): no HTTP call to Flight Routes | US204 limit=0 -> 400 | GET | `{{base1}}/api/aircraft-models/top-utilized?limit=0` |
+| 6 - /api/v2/unicorns: real projection AIRCRAFT_MOOD (same contract as the Postman mock) | 6.1 Moods on replica 1 -> 200 (read model) | GET | `{{base1}}/api/v2/unicorns` |
+| 6 - /api/v2/unicorns: real projection AIRCRAFT_MOOD (same contract as the Postman mock) | 6.2 Owner (replica 2) sets it back to AVAILABLE -> 200 | PATCH | `{{base2}}/api/aircrafts/{{p2pReg}}/status` |
+| 6 - /api/v2/unicorns: real projection AIRCRAFT_MOOD (same contract as the Postman mock) | 6.3 Poll replica 3 until the mood is HAPPY (eventual consistency of the projection) | GET | `{{base3}}/api/v2/unicorns` |
+| 6 - /api/v2/unicorns: real projection AIRCRAFT_MOOD (same contract as the Postman mock) | 6.4 Without token -> 401 | GET | `{{base1}}/api/v2/unicorns` |
+| 7 - Assignment 2: asynchronous integration with Flight Routes (needs Flight Routes fr1/fr2 and Airports ap1) | 7.0 Setup: random identifiers + Flight Routes health | GET | `{{fr1}}/actuator/health` |
+| 7 - Assignment 2: asynchronous integration with Flight Routes (needs Flight Routes fr1/fr2 and Airports ap1) | 7.1 Setup: origin airport (Airports) -> 201 | POST | `{{ap1}}/api/airports` |
+| 7 - Assignment 2: asynchronous integration with Flight Routes (needs Flight Routes fr1/fr2 and Airports ap1) | 7.2 Setup: destination airport (Airports) -> 201 | POST | `{{ap1}}/api/airports` |
+| 7 - Assignment 2: asynchronous integration with Flight Routes (needs Flight Routes fr1/fr2 and Airports ap1) | 7.3 Register an A320 on replica 2 -> 201 | POST | `{{base2}}/api/aircrafts` |
+| 7 - Assignment 2: asynchronous integration with Flight Routes (needs Flight Routes fr1/fr2 and Airports ap1) | 7.4 Flight Routes: create a route (minRange 400 km, minCapacity 120) -> 201 (RouteCreated) | POST | `{{fr1}}/api/routes` |
+| 7 - Assignment 2: asynchronous integration with Flight Routes (needs Flight Routes fr1/fr2 and Airports ap1) | 7.5 Poll replica 1 until the route is compatible with the aircraft (US203, RouteCreated consumed) | GET | `{{base1}}/api/aircrafts/{{xsReg}}/compatible-routes` |
+| 7 - Assignment 2: asynchronous integration with Flight Routes (needs Flight Routes fr1/fr2 and Airports ap1) | 7.6 Flight Routes: schedule a flight with the aircraft -> 201 (ScheduledFlightCreated) | POST | `{{fr2}}/api/scheduled-flights` |
+| 7 - Assignment 2: asynchronous integration with Flight Routes (needs Flight Routes fr1/fr2 and Airports ap1) | 7.7 Poll replica 3 until the operational hours count the flight (US206, ScheduledFlightCreated consumed) | GET | `{{base3}}/api/aircrafts/operational-hours?size=100` |
+| 7 - Assignment 2: asynchronous integration with Flight Routes (needs Flight Routes fr1/fr2 and Airports ap1) | 7.8 US204 top models on replica 1 -> 200 (A320 is ranked) | GET | `{{base1}}/api/aircraft-models/top-utilized?limit=20` |
+| 7 - Assignment 2: asynchronous integration with Flight Routes (needs Flight Routes fr1/fr2 and Airports ap1) | 7.9 Maintenance sets the aircraft UNDER_MAINTENANCE (B3b, on replica 1 -> owner 2) -> 200 | PATCH | `{{base1}}/api/aircrafts/{{xsReg}}/status` |
+| 7 - Assignment 2: asynchronous integration with Flight Routes (needs Flight Routes fr1/fr2 and Airports ap1) | 7.10 Flight Routes refuses a new flight for that aircraft -> 409 (it reads the status from Aircraft Management) | POST | `{{fr1}}/api/scheduled-flights` |
+| 8 - Replica failure (MANUAL: stop replica 3 and run only this folder) | 8.1 Replica 3 down: its aircraft CS-TUE is still readable on replica 1 -> 200 (read model) | GET | `{{base1}}/api/aircrafts/CS-TUE` |
+| 8 - Replica failure (MANUAL: stop replica 3 and run only this folder) | 8.2 Replica 3 down: the fleet is complete and never partial | GET | `{{base1}}/api/aircrafts?size=100` |
+| 8 - Replica failure (MANUAL: stop replica 3 and run only this folder) | 8.3 Replica 3 down: moods still answered (query side independent of the owners) | GET | `{{base1}}/api/v2/unicorns` |
+| 8 - Replica failure (MANUAL: stop replica 3 and run only this folder) | 8.4 Replica 3 down: write of CS-TUE (owned by replica 3) -> 503 | PATCH | `{{base1}}/api/aircrafts/CS-TUE/status` |
+| 8 - Replica failure (MANUAL: stop replica 3 and run only this folder) | 8.5 Replica 3 down: write of an aircraft owned by replica 1 still works -> 200 | PATCH | `{{base1}}/api/aircrafts/{{newReg}}/status` |
 
 <a id="sec-aisafe-airports-assignment-2-cqrs-amqp"></a>
 

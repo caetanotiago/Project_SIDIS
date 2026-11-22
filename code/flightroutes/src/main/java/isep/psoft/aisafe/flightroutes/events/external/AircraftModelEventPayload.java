@@ -1,7 +1,8 @@
 package isep.psoft.aisafe.flightroutes.events.external;
 
 /**
- * Expected payload of {@code AircraftModelCreated} (published by Aircraft Management).
+ * Expected payload of {@code AircraftModelCreated} and {@code AircraftModelUpdated} (published by Aircraft
+ * Management). Unknown extra fields (manufacturer, seatingCapacity, ...) are ignored.
  *
  * <pre>
  * { "modelName": "A320", "maximumRange": 6100.0, "version": 0 }

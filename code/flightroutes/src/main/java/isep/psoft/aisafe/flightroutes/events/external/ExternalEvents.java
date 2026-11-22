@@ -17,6 +17,8 @@ import isep.sidis.common.messaging.MessagingNames;
  *       <td>{@link AircraftEventPayload}</td></tr>
  *   <tr><td></td><td>{@code AircraftModelCreated}</td><td>{@code aircraft-model.created}</td>
  *       <td>{@link AircraftModelEventPayload}</td></tr>
+ *   <tr><td></td><td>{@code AircraftModelUpdated}</td><td>{@code aircraft-model.updated}</td>
+ *       <td>{@link AircraftModelEventPayload}</td></tr>
  *   <tr><td>{@code aisafe.airports.events}</td><td>{@code AirportCreated}</td><td>{@code airport.created}</td>
  *       <td>{@link AirportEventPayload}</td></tr>
  *   <tr><td></td><td>{@code AirportUpdated}</td><td>{@code airport.updated}</td><td>{@link AirportEventPayload}</td></tr>
@@ -32,6 +34,8 @@ public final class ExternalEvents {
     public static final String AIRCRAFT_REGISTERED = "AircraftRegistered";
     public static final String AIRCRAFT_STATUS_CHANGED = "AircraftStatusChanged";
     public static final String AIRCRAFT_MODEL_CREATED = "AircraftModelCreated";
+    /** US201 (specifications changed, e.g. maximumRange); added by Aircraft Management in Assignment 2. */
+    public static final String AIRCRAFT_MODEL_UPDATED = "AircraftModelUpdated";
 
     public static final String AIRPORT_CREATED = "AirportCreated";
     public static final String AIRPORT_UPDATED = "AirportUpdated";
@@ -40,6 +44,7 @@ public final class ExternalEvents {
     public static final String AIRCRAFT_REGISTERED_KEY = MessagingNames.routingKey("aircraft", "registered");
     public static final String AIRCRAFT_STATUS_CHANGED_KEY = MessagingNames.routingKey("aircraft", "status-changed");
     public static final String AIRCRAFT_MODEL_CREATED_KEY = MessagingNames.routingKey("aircraft-model", "created");
+    public static final String AIRCRAFT_MODEL_UPDATED_KEY = MessagingNames.routingKey("aircraft-model", "updated");
     public static final String AIRPORT_CREATED_KEY = MessagingNames.routingKey("airport", "created");
     public static final String AIRPORT_UPDATED_KEY = MessagingNames.routingKey("airport", "updated");
     public static final String AIRPORT_STATUS_CHANGED_KEY = MessagingNames.routingKey("airport", "status-changed");

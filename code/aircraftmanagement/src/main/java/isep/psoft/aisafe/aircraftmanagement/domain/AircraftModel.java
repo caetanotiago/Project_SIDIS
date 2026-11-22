@@ -75,4 +75,6 @@ public class AircraftModel {
     public double getFuelCapacity() { return fuelCapacity; }
     public double getMaximumRange() { return maximumRange; }
     public double getCruisingSpeed() { return cruisingSpeed; }
+    /** Optimistic-lock version; also the {@code version} of the events about this entity. */
+    public Long getVersion() { return version; }
 }

@@ -1,64 +1,36 @@
 @startuml AircraftManagement-SD-CreateAircraft
 autonumber
-title Register aircraft — POST /api/aircrafts (US102); the model is stored in another replica
+title Register an aircraft whose model is owned by another replica (US102) — checks on the read models
 actor "ATCC" as ATCC
 participant "aircraftmanagement-1\n: AircraftController" as Ctrl
-participant ": CreateAircraftService" as Service
-participant ": AircraftReplicaQueries" as Queries
-participant "aircraftRepo (H2 #1)" as Repo
-participant ": PeerClient" as Peers
-participant "aircraftmanagement-2" as R2
-participant "aircraftmanagement-3\n(has model E190)" as R3
+participant ": CreateAircraftService" as Cmd <<command>>
+database "REPLICATED_AIRCRAFT\nREPLICATED_AIRCRAFT_MODEL" as RM <<read model>>
+database "AIRCRAFT\n(write model, replica 1)" as W
+participant ": AircraftManagementEventEmitter" as E
+queue "RabbitMQ" as MQ
 
-activate ATCC
-ATCC -> Ctrl : POST /api/aircrafts\n{"registrationNumber":"CS-TUG","modelName":"E190",\n"seatingCapacity":98,"manufacturingDate":"2023-03-01"}
+ATCC -> Ctrl : POST /api/aircrafts {CS-XYZ, model A330, ...}
 activate Ctrl
-Ctrl -> Ctrl : @Valid CreateAircraftDTO\n(registration pattern, positive seats,\ndate not in the future) → 400 on error
-Ctrl -> Service : create(dto)
-activate Service
-Service -> Service : AircraftStatus.parse(dto.status)\n(default AVAILABLE)
-
-Service -> Queries : findAircraft("CS-TUG")
-activate Queries
-Queries -> Repo : findById("CS-TUG")
-Repo --> Queries : empty
-Queries -> Peers : findFirst("/api/aircrafts/CS-TUG")
-Peers -> R2 : GET (X-Peer-Hops: 1)
-R2 --> Peers : 404
-Peers -> R3 : GET (X-Peer-Hops: 1)
-R3 --> Peers : 404
-Peers --> Queries : empty
-Queries --> Service : empty (registration is free)
-deactivate Queries
-
-Service -> Queries : findModel("E190")
-activate Queries
-Queries -> Peers : findFirst("/api/aircraft-models/E190")
-Peers -> R3 : GET /api/aircraft-models/E190
-R3 --> Peers : 200 AircraftModelDTO
-Peers --> Queries : Optional(dto)
-Queries --> Service : AircraftModelSummary
-deactivate Queries
-
-Service -> Service : new Aircraft(...)\n(validates the invariants)
-Service -> Repo : save(aircraft)
-Repo --> Service : Aircraft (this replica is now the owner)
-Service --> Ctrl : Aircraft
-deactivate Service
-Ctrl --> ATCC : 201 Created (AircraftDTO)
-deactivate Ctrl
-
-alt registration found in any replica that answers
-    Service --> Ctrl : IllegalStateException
-    Ctrl --> ATCC : 409 Conflict "Aircraft already registered: CS-TUG"
-else model found in no replica
-    Service --> Ctrl : IllegalArgumentException
-    Ctrl --> ATCC : 400 Bad Request "Aircraft model not found: E190"
+Ctrl -> Cmd : create(dto) (Bean Validation → 400)
+activate Cmd
+Cmd -> RM : existsById("CS-XYZ")?
+alt already known (any replica)
+  Cmd --> Ctrl : IllegalStateException → 409
 end
-
-note over ATCC, R3
-  Uniqueness across replicas is best-effort (AP): if a peer is down the check continues
-  with the replicas that answer, so a duplicate is possible under a partition
-  or with simultaneous POSTs on two replicas (L2 §3.3).
+Cmd -> RM : model "A330" exists? (owned by replica 2, known by its event)
+alt unknown
+  Cmd --> Ctrl : IllegalArgumentException → 400
+end
+Cmd -> W : saveAndFlush(new Aircraft) — replica 1 becomes the owner
+Cmd -> E : aircraftRegistered(aircraft)
+E -> RM : apply to the local read model (same transaction)
+Cmd --> Ctrl : Aircraft
+deactivate Cmd
+Ctrl --> ATCC : 201 AircraftDTO
+deactivate Ctrl
+E -> MQ : AircraftRegistered (after commit) → other replicas, Flight Routes, unicorns
+note over Cmd, RM
+  No peer call. Inside the consistency window (an aircraft registered on another replica
+  whose event has not arrived yet) a duplicate can slip through — the accepted price of AP.
 end note
 @enduml

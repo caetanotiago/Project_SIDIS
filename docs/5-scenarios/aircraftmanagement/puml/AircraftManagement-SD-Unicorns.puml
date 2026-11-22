@@ -1,0 +1,27 @@
+@startuml AircraftManagement-SD-Unicorns
+autonumber
+title GET /api/v2/unicorns — a pure query on the projection AIRCRAFT_MOOD
+participant ": AircraftProjection" as P <<projection>>
+database "AIRCRAFT_MOOD" as T <<read model>>
+actor "Client / Postman" as C
+participant ": UnicornsController" as Ctrl
+participant ": AircraftMoodQueryService" as Q <<query>>
+
+== write side → projection (on every replica, when an event arrives) ==
+P -> P : AircraftRegistered / AircraftStatusChanged
+P -> T : upsert (registration, model, operationalStatus,\nmood = moodOf(status), timestamp = now)
+note right of T
+  AVAILABLE → HAPPY, IN_FLIGHT → BUSY,
+  UNDER_MAINTENANCE → GROUNDED_AND_GRUMPY, else NEUTRAL
+end note
+== query side ==
+C -> Ctrl : GET /api/v2/unicorns (JWT)
+Ctrl -> Q : moods()
+Q -> T : findAllOrdered()
+Q --> Ctrl : List<AircraftMoodDTO> (source = "read-model")
+Ctrl --> C : 200 [ { registration, model, operationalStatus, mood, timestamp, source } ]
+note over C, T
+  The Postman mock server returns the same JSON: consumers depend on the read-model contract,
+  not on how it is produced, so the mock and this projection are interchangeable.
+end note
+@enduml

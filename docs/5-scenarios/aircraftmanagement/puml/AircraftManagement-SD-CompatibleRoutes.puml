@@ -1,29 +1,25 @@
 @startuml AircraftManagement-SD-CompatibleRoutes
 autonumber
-title Routes compatible with an aircraft — GET /api/aircrafts/{registrationNumber}/compatible-routes (US203, contract B6)
+title Compatible routes (US203) — range of the MODEL, capacity of the AIRCRAFT, routes from Flight Routes events
 actor "ATCC" as ATCC
-participant "aircraftmanagement-1\n: AircraftStatisticsController" as Ctrl
-participant ": FindCompatibleRoutesService" as Service
-participant ": AircraftReplicaQueries" as Queries
-participant ": FlightRoutesClient" as FRC
-participant "Flight Routes\n(replicas)" as FR
+participant ": AircraftStatisticsController" as Ctrl
+participant ": FindCompatibleRoutesService" as S <<query>>
+participant ": SearchAircraftsService" as A
+participant ": SearchAircraftModelsService" as M
+database "KNOWN_ROUTE" as K <<read model>>
 
-activate ATCC
-ATCC -> Ctrl : GET /api/aircrafts/CS-TUC/compatible-routes
+ATCC -> Ctrl : GET /api/aircrafts/CS-TUA/compatible-routes
 activate Ctrl
-Ctrl -> Service : findFor("CS-TUC")
-activate Service
-Service -> Queries : findAircraft("CS-TUC")
-Queries --> Service : AircraftSummary (seatingCapacity = 290 → the AIRCRAFT's configuration)
-Service -> Queries : findModel(aircraft.modelName)
-Queries --> Service : AircraftModelSummary (maximumRange = 11750 km)
-note right of Queries : aircraft and model are looked up with the\nsame local-then-peers strategy\n(either may be in another replica; 404 if absent)
-Service -> FRC : compatibleRoutes(11750, 290)
-FRC -> FR : GET /api/routes/compatible?range=11750.0&capacity=290
-FR --> FRC : 200 [ACTIVE routes with minRange <= 11750 and minCapacity <= 290]\n(all Flight Routes replicas)
-FRC --> Service : CompatibleRoutes(routes, partial)
-Service --> Ctrl : CompatibleRoutes
-deactivate Service
-Ctrl --> ATCC : 200 OK (List<CompatibleRouteDTO>)\n+ X-Partial-Response: true (only if partial)
+Ctrl -> S : findFor("CS-TUA")
+activate S
+S -> A : getByRegistration (404 if unknown)
+A --> S : CS-TUA, A320, 180 seats
+S -> M : getByName("A320") (404 if unknown)
+M --> S : maximumRange 6100 km
+S -> K : status = ACTIVE AND minRange ≤ 6100 AND minCapacity ≤ 180
+K --> S : routes
+S --> Ctrl : List<CompatibleRouteDTO> (same JSON as Flight Routes' FlightRouteDTO)
+deactivate S
+Ctrl --> ATCC : 200
 deactivate Ctrl
 @enduml

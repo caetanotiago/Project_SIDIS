@@ -1,0 +1,23 @@
+@startuml AircraftManagement-SD-ReadModelQuery
+autonumber
+title Query answered from the local read model, with the owner replica down (US103 / B1a; the same for US104, US205, /api/v2/unicorns)
+actor "ATCC / Flight Routes / Maintenance" as C
+participant "aircraftmanagement-1\n: AircraftController" as Ctrl
+participant ": SearchAircraftsService" as Q <<query>>
+database "REPLICATED_AIRCRAFT\n(aircraftmanagement-1)" as RM <<read model>>
+participant "aircraftmanagement-3\n(owner of CS-TUE)" as R3 #lightgray
+
+note over R3 : DOWN
+C -> Ctrl : GET /api/aircrafts/CS-TUE
+activate Ctrl
+Ctrl -> Q : getByRegistration("CS-TUE")
+Q -> RM : findById("CS-TUE")
+RM --> Q : row (owner = aircraftmanagement-3, sourceVersion = n)
+Q --> Ctrl : AircraftSummary
+Ctrl --> C : 200 AircraftDTO (no X-Partial-Response)
+deactivate Ctrl
+note over C, RM
+  No peer is called on a GET (Assignment 1 asked every peer and could answer 404 / partial).
+  A WRITE of CS-TUE still needs its owner: PATCH on replica 1 → forwardToOwner → 503 while replica 3 is down.
+end note
+@enduml
