@@ -25,8 +25,9 @@ import org.springframework.transaction.annotation.Transactional;
  * {@code ScheduledFlightCreated}.
  *
  * <p>The route and the overlap check come from this replica's read models (routes and flights of every replica),
- * so no peer is called. The aircraft (B1) and the airports (B2) are still read over HTTP until Aircraft Management
- * and Airports publish events.
+ * so no peer is called. The aircraft (B1) and the airports (B2) come from the local copies built from the events of
+ * Aircraft Management and Airports when {@code aisafe.flightroutes.external-events.enabled=true}, and over HTTP
+ * otherwise (or when the local copy does not know them yet).
  */
 @Service
 @RequiredArgsConstructor

@@ -11,8 +11,8 @@ import java.util.Optional;
 /**
  * Local copies of the aircraft and airports of the other services, used by {@code AircraftClient} and
  * {@code AirportClient} BEFORE they call the other service over HTTP. With
- * {@code aisafe.flightroutes.external-events.enabled=false} (the default, until Aircraft Management and Airports
- * publish events) it always answers "unknown", so B1 and B2 stay HTTP exactly as before.
+ * {@code aisafe.flightroutes.external-events.enabled=false} (the default outside the {@code demo} profile) it always
+ * answers "unknown", so B1 and B2 stay HTTP exactly as before.
  *
  * <p>When enabled, a miss (an aircraft or airport whose event has not arrived, e.g. data created before this replica
  * subscribed) still falls back to HTTP, so the switch never makes a request fail.

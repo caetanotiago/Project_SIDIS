@@ -5,8 +5,8 @@ import isep.sidis.common.messaging.MessagingNames;
 /**
  * Events that Flight Routes is READY to consume from other services, as agreed in docs/2-containers/Integration-Contracts.md
  * (section 9.4, "Events expected from the other services"). Nothing is subscribed unless
- * {@code aisafe.flightroutes.external-events.enabled=true}, because Aircraft Management and Airports do not publish
- * them yet; until then B1 and B2 stay synchronous HTTP calls.
+ * {@code aisafe.flightroutes.external-events.enabled=true} (on in the {@code demo} profile); while it is off, B1 and
+ * B2 stay synchronous HTTP calls.
  *
  * <table>
  *   <caption>Consumed events</caption>
