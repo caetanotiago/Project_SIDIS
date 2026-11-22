@@ -1,0 +1,21 @@
+package isep.psoft.aisafe.infrastructure.messaging;
+
+import isep.psoft.aisafe.maintenance.command.IntegrationEventTransport;
+import isep.psoft.aisafe.maintenance.command.OutgoingIntegrationEvent;
+import isep.sidis.common.messaging.EventPublisher;
+import lombok.RequiredArgsConstructor;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.stereotype.Component;
+
+@Component
+@ConditionalOnProperty(prefix = "aisafe.messaging", name = "enabled", havingValue = "true")
+@RequiredArgsConstructor
+public class RabbitIntegrationEventTransport implements IntegrationEventTransport {
+
+    private final EventPublisher eventPublisher;
+
+    @Override
+    public void send(OutgoingIntegrationEvent outgoing) {
+        eventPublisher.publish(outgoing.event(), outgoing.routingKey());
+    }
+}
