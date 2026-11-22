@@ -101,6 +101,39 @@ class ExternalEventsScaffoldingTest {
     }
 
     @Test
+    void aircraftModelUpdatedKeepsTheRangeCurrentWhateverTheOrderOfArrival() {
+        ExternalEventsProjection projection = on.getBean(ExternalEventsProjection.class);
+        AircraftClient client = on.getBean(AircraftClient.class);
+
+        // Update of a model this replica never saw (created before its queue existed): stored anyway (upsert).
+        // Exact JSON published by Aircraft Management: the extra fields are ignored.
+        assertTrue(projection.apply(external(ExternalEvents.AIRCRAFT_SERVICE, ExternalEvents.AIRCRAFT_MODEL_UPDATED, "E190",
+                json("{\"modelName\":\"E190\",\"manufacturer\":\"Embraer\",\"seatingCapacity\":100,"
+                        + "\"fuelCapacity\":12971.0,\"maximumRange\":4000.0,\"cruisingSpeed\":829.0,\"version\":1}"))));
+        assertTrue(projection.apply(external(ExternalEvents.AIRCRAFT_SERVICE, ExternalEvents.AIRCRAFT_REGISTERED, "CS-UPD",
+                json("{\"registrationNumber\":\"CS-UPD\",\"modelName\":\"E190\",\"seatingCapacity\":100,"
+                        + "\"manufacturingDate\":\"2020-01-15\",\"status\":\"AVAILABLE\",\"version\":0}"))));
+        assertEquals(4000.0, client.getAircraft("CS-UPD").maximumRange());
+
+        // The creation (version 0) arrives late: older than the stored version -> ignored
+        projection.apply(external(ExternalEvents.AIRCRAFT_SERVICE, ExternalEvents.AIRCRAFT_MODEL_CREATED, "E190",
+                new AircraftModelEventPayload("E190", 3500.0, 0L)));
+        assertEquals(4000.0, client.getAircraft("CS-UPD").maximumRange());
+
+        // A newer update is applied; the same event delivered again by the broker is a duplicate
+        IntegrationEvent<?> updatedAgain = external(ExternalEvents.AIRCRAFT_SERVICE,
+                ExternalEvents.AIRCRAFT_MODEL_UPDATED, "E190", new AircraftModelEventPayload("E190", 4500.0, 2L));
+        assertTrue(projection.apply(updatedAgain));
+        assertFalse(projection.apply(updatedAgain));
+        assertEquals(4500.0, client.getAircraft("CS-UPD").maximumRange());
+
+        // Republished by Aircraft Management at start-up (AircraftModelCreated with the CURRENT version): no change
+        assertTrue(projection.apply(external(ExternalEvents.AIRCRAFT_SERVICE, ExternalEvents.AIRCRAFT_MODEL_CREATED, "E190",
+                new AircraftModelEventPayload("E190", 4500.0, 2L))));
+        assertEquals(4500.0, client.getAircraft("CS-UPD").maximumRange());
+    }
+
+    @Test
     void airportEventsReplaceTheB2HttpCallsSoARouteCanBeCreatedWithAirportsDown() throws Exception {
         ExternalEventsProjection projection = on.getBean(ExternalEventsProjection.class);
         projection.apply(external(ExternalEvents.AIRPORTS_SERVICE, ExternalEvents.AIRPORT_CREATED, "OPO",
@@ -145,6 +178,11 @@ class ExternalEventsScaffoldingTest {
     private static IntegrationEvent<?> external(String service, String type, String aggregateId, Object payload) {
         return IntegrationEvent.create(type, Instant.now(), service, service + "-1", aggregateId,
                 WIRE.valueToTree(payload));
+    }
+
+    /** A payload exactly as another service serialises it (not built from Flight Routes' own records). */
+    private static Object json(String raw) {
+        return WIRE.readTree(raw);
     }
 
     private static ConfigurableApplicationContext startReplica(String id, int port, String nobody, boolean external) {

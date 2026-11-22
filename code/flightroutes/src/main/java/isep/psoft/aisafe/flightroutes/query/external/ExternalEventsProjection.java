@@ -64,6 +64,7 @@ public class ExternalEventsProjection {
                 require(p.modelName(), "modelName", event);
                 KnownAircraftModel m = models.findById(p.modelName()).orElseGet(() -> new KnownAircraftModel(p.modelName()));
                 if (m.isNewerThan(p.version())) {
+                    log.info("Ignoring stale {} for aircraft model {}", event.eventType(), p.modelName());
                     return;
                 }
                 m.apply(p);
