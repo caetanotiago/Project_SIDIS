@@ -60,10 +60,6 @@ public class AirportAssembler {
                 a.getContactPhone());
     }
 
-    public List<AirportDTO> toDTOList(List<Airport> airports) {
-        return airports.stream().map(this::toDTO).toList();
-    }
-
     private static RunwayDTO toDTO(Runway r) {
         return new RunwayDTO(r.getName(), r.getLengthMeters(), r.getOrientation(), r.getSurface());
     }

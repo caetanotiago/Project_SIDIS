@@ -9,8 +9,6 @@ import java.util.List;
 /** Acesso ao read model {@code REPLICATED_AIRPORT} desta réplica. */
 public interface ReplicatedAirportRepository extends JpaRepository<ReplicatedAirport, String> {
 
-    List<ReplicatedAirport> findAllByOrderByIataCodeAsc();
-
     /** US108 — filtros opcionais e combináveis (valores já em minúsculas; null = sem filtro). */
     @Query("""
             select a from ReplicatedAirport a
