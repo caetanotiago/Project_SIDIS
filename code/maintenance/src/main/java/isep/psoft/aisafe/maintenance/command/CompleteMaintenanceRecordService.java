@@ -1,4 +1,4 @@
-package isep.psoft.aisafe.maintenance.services;
+package isep.psoft.aisafe.maintenance.command;
 
 import isep.psoft.aisafe.maintenance.assemblers.MaintenanceRecordAssembler;
 import isep.psoft.aisafe.maintenance.domain.CompletionDetails;
@@ -11,7 +11,10 @@ import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpMethod;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.support.TransactionTemplate;
+import org.springframework.web.util.UriUtils;
 
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.util.Optional;
 
@@ -22,7 +25,10 @@ public class CompleteMaintenanceRecordService {
     private final MaintenanceRecordRepository repository;
     private final MaintenanceRecordAssembler assembler;
     private final PeerClient peerClient;
+    private final RecordOwnership ownership;
     private final AircraftAvailabilityService availability;
+    private final MaintenanceEventEmitter events;
+    private final TransactionTemplate transaction;
 
     public record Result(MaintenanceRecordDTO record, Boolean aircraftReleased) { }
 
@@ -30,15 +36,15 @@ public class CompleteMaintenanceRecordService {
         Optional<MaintenanceRecord> local = repository.findById(id);
         MaintenanceRecordDTO completed;
         if (local.isPresent()) {
-            completed = completeLocally(local.get(), dto);
+            completed = transaction.execute(status -> completeLocally(id, dto));
         } else {
             completed = peerClient.forwardToOwner(HttpMethod.PATCH,
-                            "/api/maintenance-records/" + MaintenanceReplicaQueries.pathSegment(id) + "/complete",
+                            "/api/maintenance-records/" + UriUtils.encodePathSegment(id, StandardCharsets.UTF_8)
+                                    + "/complete",
                             dto, MaintenanceRecordDTO.class)
                     .map(assembler::withLinks)
-                    .orElseThrow(() -> new EntityNotFoundException("Maintenance record not found: " + id));
+                    .orElseThrow(() -> ownership.notExecutedByAnyPeer(id));
         }
-
         if (peerClient.isPeerRequest()) {
             return new Result(completed, null);
         }
@@ -46,10 +52,14 @@ public class CompleteMaintenanceRecordService {
         return new Result(completed, released);
     }
 
-    private MaintenanceRecordDTO completeLocally(MaintenanceRecord record, CompleteMaintenanceRecordDTO dto) {
+    private MaintenanceRecordDTO completeLocally(String id, CompleteMaintenanceRecordDTO dto) {
+        MaintenanceRecord record = repository.findById(id)
+                .orElseThrow(() -> new EntityNotFoundException("Maintenance record not found: " + id));
         LocalDate date = dto.completionDate() == null ? LocalDate.now() : dto.completionDate();
         record.complete(new CompletionDetails(date, dto.notes(), dto.cost(), dto.actualDurationMinutes(),
                 dto.aircraftFlightHours()));
-        return assembler.toDTO(repository.saveAndFlush(record));
+        MaintenanceRecord saved = repository.saveAndFlush(record);
+        events.recordCompleted(saved);
+        return assembler.toDTO(saved);
     }
 }

@@ -1,11 +1,12 @@
-package isep.psoft.aisafe.maintenance.services;
+package isep.psoft.aisafe.maintenance.command;
 
-import isep.psoft.aisafe.maintenance.clients.AircraftClient;
 import isep.psoft.aisafe.maintenance.clients.AircraftSnapshot;
 import isep.psoft.aisafe.maintenance.domain.MaintenanceRecord;
 import isep.psoft.aisafe.maintenance.dto.CreateMaintenanceRecordDTO;
-import isep.psoft.aisafe.maintenance.dto.MaintenanceTemplateDTO;
 import isep.psoft.aisafe.maintenance.factories.MaintenanceRecordFactory;
+import isep.psoft.aisafe.maintenance.query.ReplicatedMaintenanceTemplate;
+import isep.psoft.aisafe.maintenance.query.ReplicatedMaintenanceTemplateRepository;
+import isep.psoft.aisafe.maintenance.query.external.FleetDirectory;
 import isep.psoft.aisafe.maintenance.repositories.MaintenanceRecordRepository;
 import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
@@ -16,26 +17,26 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class CreateMaintenanceRecordService {
 
-    private final AircraftClient aircraftClient;
-    private final MaintenanceReplicaQueries replicas;
+    private final FleetDirectory fleet;
+    private final ReplicatedMaintenanceTemplateRepository templates;
     private final MaintenanceRecordFactory factory;
     private final MaintenanceRecordRepository repository;
     private final AircraftAvailabilityService availability;
+    private final MaintenanceEventEmitter events;
 
     @Transactional
     public MaintenanceRecord create(CreateMaintenanceRecordDTO dto) {
         String registration = dto.aircraftRegistration().trim().toUpperCase();
-        AircraftSnapshot aircraft = aircraftClient.getAircraft(registration);
-
-        MaintenanceTemplateDTO template = replicas.findTemplate(dto.templateId().trim())
+        AircraftSnapshot aircraft = fleet.aircraft(registration);
+        ReplicatedMaintenanceTemplate template = templates.findById(dto.templateId().trim())
                 .orElseThrow(() -> new EntityNotFoundException("Maintenance template not found: " + dto.templateId()));
         if (!template.appliesTo(aircraft.modelName())) {
             throw new IllegalArgumentException("Maintenance template '" + template.getName()
                     + "' does not apply to aircraft model " + aircraft.modelName() + ".");
         }
-
         MaintenanceRecord saved = repository.saveAndFlush(factory.create(aircraft, template, dto));
         availability.markUnderMaintenance(aircraft);
+        events.recordCreated(saved);
         return saved;
     }
 }

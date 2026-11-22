@@ -1,7 +1,9 @@
-package isep.psoft.aisafe.maintenance.services;
+package isep.psoft.aisafe.maintenance.command;
 
 import isep.psoft.aisafe.maintenance.clients.AircraftClient;
 import isep.psoft.aisafe.maintenance.clients.AircraftSnapshot;
+import isep.psoft.aisafe.maintenance.domain.MaintenanceStatus;
+import isep.psoft.aisafe.maintenance.query.ReplicatedMaintenanceRecordRepository;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -16,7 +18,7 @@ public class AircraftAvailabilityService {
     private static final Logger log = LoggerFactory.getLogger(AircraftAvailabilityService.class);
 
     private final AircraftClient aircraftClient;
-    private final MaintenanceReplicaQueries replicas;
+    private final ReplicatedMaintenanceRecordRepository readModel;
 
     public void markUnderMaintenance(AircraftSnapshot aircraft) {
         String previous = aircraft.status();
@@ -27,15 +29,12 @@ public class AircraftAvailabilityService {
     }
 
     public boolean releaseIfNoOtherOngoing(String registration, String completedRecordId) {
-        MaintenanceReplicaQueries.RecordSearch ongoing = replicas.searchRecordsWithStatus(RecordFilter.ongoingOf(registration));
-        boolean otherOngoing = ongoing.records().stream().anyMatch(r -> !r.getId().equals(completedRecordId));
+        boolean otherOngoing = readModel
+                .findByAircraftRegistrationIgnoreCaseAndStatus(registration, MaintenanceStatus.IN_PROGRESS.name())
+                .stream()
+                .anyMatch(r -> !r.getRecordId().equals(completedRecordId));
         if (otherOngoing) {
             log.info("Aircraft {} keeps UNDER_MAINTENANCE: other maintenance records are still in progress", registration);
-            return false;
-        }
-        if (!ongoing.complete()) {
-            log.warn("Aircraft {} keeps UNDER_MAINTENANCE: not every replica answered, other records may be in progress",
-                    registration);
             return false;
         }
         try {

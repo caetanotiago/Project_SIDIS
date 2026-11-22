@@ -1,5 +1,6 @@
 package isep.psoft.aisafe.maintenance.bootstrap;
 
+import isep.psoft.aisafe.maintenance.command.MaintenanceEventEmitter;
 import isep.psoft.aisafe.maintenance.domain.CompletionDetails;
 import isep.psoft.aisafe.maintenance.domain.MaintenanceComponent;
 import isep.psoft.aisafe.maintenance.domain.MaintenanceRecord;
@@ -33,6 +34,7 @@ public class DemoDataBootstrap implements ApplicationRunner {
 
     private final MaintenanceRecordRepository recordRepository;
     private final MaintenanceTemplateRepository templateRepository;
+    private final MaintenanceEventEmitter events;
 
     @Value("${maintenance.demo.records:}")
     private List<String> records;
@@ -60,7 +62,12 @@ public class DemoDataBootstrap implements ApplicationRunner {
             record.complete(new CompletionDetails(LocalDate.parse(p[6]), "Demo: work completed without findings.",
                     new BigDecimal(p[7]), Integer.parseInt(p[8]), p.length > 9 ? Double.parseDouble(p[9]) : null));
         }
-        recordRepository.save(record);
+        MaintenanceRecord saved = recordRepository.saveAndFlush(record);
+        if (saved.isOngoing()) {
+            events.recordCreated(saved);
+        } else {
+            events.recordCompleted(saved);
+        }
         log.info("Demo maintenance record loaded: {} {} ({})", p[0], p[2], record.getStatus());
     }
 }

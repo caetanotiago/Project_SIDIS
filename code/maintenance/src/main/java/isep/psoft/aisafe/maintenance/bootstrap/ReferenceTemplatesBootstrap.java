@@ -1,5 +1,6 @@
 package isep.psoft.aisafe.maintenance.bootstrap;
 
+import isep.psoft.aisafe.maintenance.command.MaintenanceEventEmitter;
 import isep.psoft.aisafe.maintenance.domain.MaintenanceInterval;
 import isep.psoft.aisafe.maintenance.domain.MaintenanceTemplate;
 import isep.psoft.aisafe.maintenance.domain.TemplateType;
@@ -32,6 +33,7 @@ public class ReferenceTemplatesBootstrap implements ApplicationRunner {
     private static final Logger log = LoggerFactory.getLogger(ReferenceTemplatesBootstrap.class);
 
     private final MaintenanceTemplateRepository repository;
+    private final MaintenanceEventEmitter events;
 
     @Override
     @Transactional
@@ -55,7 +57,7 @@ public class ReferenceTemplatesBootstrap implements ApplicationRunner {
 
     private void save(MaintenanceTemplate template) {
         if (!repository.existsById(template.getId())) {
-            repository.save(template);
+            events.templateCreated(repository.saveAndFlush(template));
             log.info("Reference maintenance template loaded: {}", template.getName());
         }
     }

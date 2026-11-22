@@ -7,16 +7,16 @@ import isep.psoft.aisafe.maintenance.domain.RecordDetails;
 import isep.psoft.aisafe.maintenance.domain.TemplateReference;
 import isep.psoft.aisafe.maintenance.domain.TemplateType;
 import isep.psoft.aisafe.maintenance.dto.CreateMaintenanceRecordDTO;
-import isep.psoft.aisafe.maintenance.dto.MaintenanceTemplateDTO;
+import isep.psoft.aisafe.maintenance.query.ReplicatedMaintenanceTemplate;
 import org.springframework.stereotype.Component;
 
 @Component
 public class MaintenanceRecordFactory {
 
-    public MaintenanceRecord create(AircraftSnapshot aircraft, MaintenanceTemplateDTO template,
+    public MaintenanceRecord create(AircraftSnapshot aircraft, ReplicatedMaintenanceTemplate template,
                                     CreateMaintenanceRecordDTO dto) {
         TemplateReference reference = new TemplateReference(
-                template.getId(), template.getName(), TemplateType.parse(template.getType()));
+                template.getTemplateId(), template.getName(), TemplateType.parse(template.getType()));
         RecordDetails details = new RecordDetails(dto.description(), dto.startDate(), dto.expectedDurationMinutes());
         return new MaintenanceRecord(
                 aircraft.registrationNumber(),
