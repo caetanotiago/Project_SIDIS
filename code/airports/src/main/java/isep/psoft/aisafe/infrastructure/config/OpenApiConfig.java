@@ -8,10 +8,12 @@ import io.swagger.v3.oas.models.security.SecurityScheme;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
+// Configuração do Swagger
 @Configuration
 public class OpenApiConfig {
     private static final String SECURITY_SCHEME_NAME = "bearerAuth";
 
+    // Documentação da API
     @Bean
     public OpenAPI aisafeOpenAPI() {
         return new OpenAPI()

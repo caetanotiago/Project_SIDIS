@@ -7,16 +7,19 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
 
+// Publica depois do commit
 @Component
 public class IntegrationEventRelay {
     private static final Logger log = LoggerFactory.getLogger(IntegrationEventRelay.class);
 
     private final ObjectProvider<IntegrationEventTransport> transports;
 
+    // Construtor
     public IntegrationEventRelay(ObjectProvider<IntegrationEventTransport> transports) {
         this.transports = transports;
     }
 
+    // Envia para o transporte
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void afterCommit(OutgoingIntegrationEvent outgoing) {
         transports.orderedStream().forEach(transport -> {

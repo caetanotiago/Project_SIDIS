@@ -13,6 +13,7 @@ import java.util.TreeMap;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
+// Consulta: US211
 @Service
 @RequiredArgsConstructor
 public class GroupAirportsService {
@@ -20,6 +21,7 @@ public class GroupAirportsService {
 
     private final SearchAirportsService searchService;
 
+    // Agrupa por país/região
     @Transactional(readOnly = true)
     public List<AirportGroupDTO> groupBy(String by) {
         Function<AirportDTO, String> key = switch (by == null ? "country" : by.trim().toLowerCase(Locale.ROOT)) {

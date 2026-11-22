@@ -6,6 +6,7 @@ import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AuthorizeHttpRequestsConfigurer;
 import org.springframework.stereotype.Component;
 
+// Permissões por endpoint
 @Component
 public class AirportsAuthorizationRules implements AuthorizationRules {
     private static final String BACKOFFICE = "BACKOFFICE_OPERATOR";

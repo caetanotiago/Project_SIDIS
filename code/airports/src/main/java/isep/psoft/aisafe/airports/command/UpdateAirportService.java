@@ -22,6 +22,7 @@ import java.util.Optional;
 import java.util.function.Consumer;
 import java.util.function.Function;
 
+// Comandos: alterar aeroporto
 @Service
 @RequiredArgsConstructor
 public class UpdateAirportService {
@@ -30,12 +31,14 @@ public class UpdateAirportService {
     private final AirportAssembler assembler;
     private final AirportEventEmitter events;
 
+    // US106a: certificar modelo
     @Transactional
     public AirportDTO addCertification(String iataCode, AddCertificationDTO dto) {
         return onOwner(iataCode, HttpMethod.POST, "/certifications", dto,
                 airport -> airport.certifyModel(dto.aircraftModel()), events::airportUpdated);
     }
 
+    // US109: mudar estado
     @Transactional
     public AirportDTO changeStatus(String iataCode, UpdateAirportStatusDTO dto) {
         AirportStatus status = AirportStatus.from(dto.status());
@@ -43,6 +46,7 @@ public class UpdateAirportService {
                 airport -> airport.changeStatus(status), events::airportStatusChanged);
     }
 
+    // US208: atualizar detalhes
     @Transactional
     public AirportDTO updateDetails(String iataCode, UpdateAirportDetailsDTO dto) {
         return onOwner(iataCode, HttpMethod.PATCH, "", dto,
@@ -51,6 +55,7 @@ public class UpdateAirportService {
                 events::airportUpdated);
     }
 
+    // Executa na réplica dona
     private AirportDTO onOwner(String iataCode, HttpMethod method, String subPath, Object body,
                                Consumer<Airport> change, Function<Airport, ?> announce) {
         String iata = IataCode.normalize(iataCode);

@@ -5,6 +5,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import java.util.List;
 import java.util.Set;
 
+// Resposta da API
 @JsonIgnoreProperties(ignoreUnknown = true)
 public record AirportDTO(
         String iataCode,

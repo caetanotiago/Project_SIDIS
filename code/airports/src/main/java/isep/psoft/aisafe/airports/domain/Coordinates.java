@@ -7,6 +7,7 @@ import lombok.EqualsAndHashCode;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
+// Latitude e longitude
 @Embeddable
 @Getter
 @EqualsAndHashCode
@@ -18,6 +19,7 @@ public class Coordinates {
     @Column(nullable = false)
     private double longitude;
 
+    // Valida coordenadas
     public Coordinates(Double latitude, Double longitude) {
         if (latitude == null || latitude < -90 || latitude > 90) {
             throw new IllegalArgumentException("Latitude must be between -90 and 90.");

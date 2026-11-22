@@ -2,6 +2,7 @@ package isep.psoft.aisafe.airports.events;
 
 import isep.sidis.common.messaging.MessagingNames;
 
+// Nomes e routing keys
 public final class AirportEvents {
     public static final String SOURCE_SERVICE = "airports";
 

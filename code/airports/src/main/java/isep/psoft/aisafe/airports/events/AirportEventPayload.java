@@ -6,6 +6,7 @@ import isep.psoft.aisafe.airports.domain.Runway;
 import java.util.List;
 import java.util.Set;
 
+// Conteúdo dos eventos
 public record AirportEventPayload(
         String iataCode,
         String name,
@@ -26,6 +27,7 @@ public record AirportEventPayload(
         String contactEmail,
         String contactPhone,
         Long version) {
+    // Listas nunca nulas
     public AirportEventPayload {
         runways = runways == null ? List.of() : List.copyOf(runways);
         certifiedModels = certifiedModels == null ? Set.of() : Set.copyOf(certifiedModels);
@@ -33,6 +35,7 @@ public record AirportEventPayload(
         photoUrls = photoUrls == null ? List.of() : List.copyOf(photoUrls);
     }
 
+    // Aeroporto → payload
     public static AirportEventPayload of(Airport a) {
         return new AirportEventPayload(
                 a.getIataCode(), a.getName(), a.getCity(), a.getCountry(), a.getRegion(), a.getTimezone(),
@@ -42,6 +45,7 @@ public record AirportEventPayload(
                 a.getOperationalHours(), a.getContactEmail(), a.getContactPhone(), a.getVersion());
     }
 
+    // Pista no evento
     public record RunwayData(String name, Integer lengthMeters, Integer orientation, String surface) {
         static RunwayData of(Runway r) {
             return new RunwayData(r.getName(), r.getLengthMeters(), r.getOrientation(), r.getSurface());

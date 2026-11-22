@@ -18,6 +18,7 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 
+// RabbitMQ falso (testes)
 public final class InProcessEventBus implements IntegrationEventTransport {
     private static final JsonMapper JSON = EventMessageConverters.jsonMapper();
     private static final TypeReference<IntegrationEvent<AirportEventPayload>> ENVELOPE = new TypeReference<>() { };
@@ -26,6 +27,7 @@ public final class InProcessEventBus implements IntegrationEventTransport {
     private final Set<String> disconnected = ConcurrentHashMap.newKeySet();
     private final List<IntegrationEvent<AirportEventPayload>> delivered = new CopyOnWriteArrayList<>();
 
+    // Arranca réplica com bus
     public ConfigurableApplicationContext start(String name, String... args) {
         ConfigurableApplicationContext ctx = new SpringApplicationBuilder(AirportsApplication.class)
                 .initializers(c -> c.getBeanFactory().registerSingleton("inProcessEventBus", this))
@@ -34,18 +36,22 @@ public final class InProcessEventBus implements IntegrationEventTransport {
         return ctx;
     }
 
+    // Simula partição
     public void disconnect(String name) {
         disconnected.add(name);
     }
 
+    // Volta a ligar
     public void reconnect(String name) {
         disconnected.remove(name);
     }
 
+    // Eventos entregues
     public List<IntegrationEvent<AirportEventPayload>> delivered() {
         return List.copyOf(delivered);
     }
 
+    // Entrega a todas as réplicas
     @Override
     public void send(OutgoingIntegrationEvent outgoing) {
         IntegrationEvent<AirportEventPayload> overTheWire =

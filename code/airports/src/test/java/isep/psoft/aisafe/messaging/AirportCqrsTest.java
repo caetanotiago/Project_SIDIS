@@ -40,6 +40,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+// Testes do CQRS
 class AirportCqrsTest {
     private static final String SELF = "it-cqrs";
     private static final JsonMapper JSON = EventMessageConverters.jsonMapper();
@@ -51,6 +52,7 @@ class AirportCqrsTest {
     private static AirportProjection projection;
     private static ReplicatedAirportRepository readModel;
 
+    // Arranca uma réplica
     @BeforeAll
     static void start() {
         replica = new SpringApplicationBuilder(AirportsApplication.class)
@@ -65,6 +67,7 @@ class AirportCqrsTest {
         readModel = replica.getBean(ReplicatedAirportRepository.class);
     }
 
+    // Para a réplica
     @AfterAll
     static void stop() {
         if (replica != null) replica.close();
@@ -224,27 +227,32 @@ class AirportCqrsTest {
         assertTrue(replica.getBeansOfType(AirportsEventsListener.class).isEmpty());
     }
 
+    // Cria evento de aeroporto
     private static IntegrationEvent<AirportEventPayload> event(String type, AirportEventPayload payload, String from) {
         String id = payload.iataCode() == null ? "unknown" : payload.iataCode();
         return IntegrationEvent.create(type, Instant.now(), "airports", from, id, payload);
     }
 
+    // Cria evento de rota
     private static IntegrationEvent<FlightRouteEventPayload> routeEvent(String type, String id, String origin,
                                                                        String destination, long version) {
         return IntegrationEvent.create(type, Instant.now(), "flightroutes", "flightroutes-1", id,
                 new FlightRouteEventPayload(id, origin, destination, "ACTIVE", version));
     }
 
+    // Simula JSON do RabbitMQ
     private static IntegrationEvent<JsonNode> overTheWire(IntegrationEvent<?> event) {
         return JSON.readValue(JSON.writeValueAsString(event), new TypeReference<IntegrationEvent<JsonNode>>() { });
     }
 
+    // Payload de exemplo
     private static AirportEventPayload payload(String iata, String status, Long version) {
         return new AirportEventPayload(iata, "Faro Airport", "Faro", "Portugal", "Europe", "Europe/Lisbon",
                 37.0144, -7.9659, status, List.of(new AirportEventPayload.RunwayData("10/28", 2490, 100, "ASPHALT")),
                 Set.of("A320"), 1, 16, Set.of("WIFI"), List.of(), "05:00-24:00", null, null, version);
     }
 
+    // Pedido de registo de exemplo
     private static CreateAirportDTO createDto(String iata) {
         return new CreateAirportDTO(iata, iata + " Airport", "City " + iata, "Country", "Europe", "Europe/Lisbon",
                 40.0, -8.0, List.of(new RunwayDTO("17/35", 3000, 170, "ASPHALT")),

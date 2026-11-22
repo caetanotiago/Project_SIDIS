@@ -26,6 +26,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 
+// Agregado Airport (write model)
 @Entity
 @Table(name = "airport")
 @Getter
@@ -90,6 +91,7 @@ public class Airport {
     @Version
     private Long version;
 
+    // Cria aeroporto válido
     public Airport(String iataCode, String name, String city, String country, String region,
                    String timezone, Coordinates coordinates, List<Runway> runways) {
         this.iataCode = IataCode.normalize(iataCode);
@@ -115,6 +117,7 @@ public class Airport {
         this.status = AirportStatus.OPERATIONAL;
     }
 
+    // Terminais, portas, serviços
     public void describeFacilities(Integer terminals, Integer gates, Set<String> services, List<String> photoUrls) {
         if (terminals != null && terminals < 0) {
             throw new IllegalArgumentException("Number of terminals cannot be negative.");
@@ -134,6 +137,7 @@ public class Airport {
         }
     }
 
+    // Horário e contactos
     public void updateContactDetails(String operationalHours, String contactEmail, String contactPhone) {
         if (operationalHours != null) {
             this.operationalHours = optional(operationalHours);
@@ -146,6 +150,7 @@ public class Airport {
         }
     }
 
+    // Atualização parcial (US208)
     public void updateDetails(String operationalHours, String contactEmail, String contactPhone,
                               Integer terminals, Integer gates, Set<String> services, List<String> photoUrls) {
         updateContactDetails(operationalHours, contactEmail, contactPhone);
@@ -156,6 +161,7 @@ public class Airport {
                 photoUrls != null ? photoUrls : new ArrayList<>(this.photoUrls));
     }
 
+    // Muda estado operacional
     public void changeStatus(AirportStatus newStatus) {
         if (newStatus == null) {
             throw new IllegalArgumentException("Airport status is required.");
@@ -163,6 +169,7 @@ public class Airport {
         this.status = newStatus;
     }
 
+    // Certifica modelo de aeronave
     public void certifyModel(String aircraftModel) {
         String model = required(aircraftModel, "Aircraft model");
         boolean alreadyCertified = certifiedModels.stream().anyMatch(m -> m.equalsIgnoreCase(model));
@@ -172,31 +179,38 @@ public class Airport {
         certifiedModels.add(model);
     }
 
+    // Modelo está certificado?
     public boolean isCertifiedFor(String aircraftModel) {
         return aircraftModel != null
                 && certifiedModels.stream().anyMatch(m -> m.equalsIgnoreCase(aircraftModel.trim()));
     }
 
+    // Está operacional?
     public boolean isOperational() {
         return status == AirportStatus.OPERATIONAL;
     }
 
+    // Pistas (só leitura)
     public List<Runway> getRunways() {
         return Collections.unmodifiableList(runways);
     }
 
+    // Modelos certificados (só leitura)
     public Set<String> getCertifiedModels() {
         return Collections.unmodifiableSet(certifiedModels);
     }
 
+    // Serviços (só leitura)
     public Set<String> getServices() {
         return Collections.unmodifiableSet(services);
     }
 
+    // Fotos (só leitura)
     public List<String> getPhotoUrls() {
         return Collections.unmodifiableList(photoUrls);
     }
 
+    // Valida campo obrigatório
     private static String required(String value, String field) {
         if (value == null || value.isBlank()) {
             throw new IllegalArgumentException(field + " is required.");
@@ -204,10 +218,12 @@ public class Airport {
         return value.trim();
     }
 
+    // Limpa campo opcional
     private static String optional(String value) {
         return value == null || value.isBlank() ? null : value.trim();
     }
 
+    // Valida fuso horário
     private static String validTimezone(String timezone) {
         String tz = required(timezone, "Timezone");
         try {

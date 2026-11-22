@@ -10,6 +10,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+// Projeção REPLICATED_AIRPORT
 @Service
 public class AirportProjection {
     private static final Logger log = LoggerFactory.getLogger(AirportProjection.class);
@@ -17,16 +18,19 @@ public class AirportProjection {
     private final ReplicatedAirportRepository repository;
     private final IdempotentEventHandler idempotent;
 
+    // Construtor
     public AirportProjection(ReplicatedAirportRepository repository, ProcessedEventStore processedEvents) {
         this.repository = repository;
         this.idempotent = new IdempotentEventHandler(processedEvents);
     }
 
+    // Aplica evento (idempotente)
     @Transactional
     public boolean apply(IntegrationEvent<AirportEventPayload> event) {
         return idempotent.handle(event, this::applyOnce);
     }
 
+    // Escolhe pelo tipo
     private void applyOnce(IntegrationEvent<AirportEventPayload> event) {
         AirportEventPayload payload = event.payload();
         if (payload == null || payload.iataCode() == null) {
@@ -39,6 +43,7 @@ public class AirportProjection {
         }
     }
 
+    // Insere ou atualiza linha
     private void upsert(IntegrationEvent<AirportEventPayload> event, AirportEventPayload payload) {
         ReplicatedAirport airport = repository.findById(payload.iataCode())
                 .orElseGet(() -> new ReplicatedAirport(payload.iataCode()));

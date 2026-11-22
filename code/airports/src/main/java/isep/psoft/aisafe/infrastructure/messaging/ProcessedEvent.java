@@ -9,6 +9,7 @@ import lombok.NoArgsConstructor;
 
 import java.time.Instant;
 
+// Tabela PROCESSED_EVENT
 @Entity
 @Table(name = "PROCESSED_EVENT")
 @Getter

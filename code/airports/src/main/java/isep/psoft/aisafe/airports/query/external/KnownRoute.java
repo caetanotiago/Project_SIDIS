@@ -9,6 +9,7 @@ import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
+// Rota conhecida (KNOWN_ROUTE)
 @Entity
 @Table(name = "KNOWN_ROUTE")
 @Getter
@@ -31,10 +32,12 @@ public class KnownRoute {
         this.routeId = routeId;
     }
 
+    // Evento antigo?
     boolean isNewerThan(Long version) {
         return sourceVersion != null && version != null && version < sourceVersion;
     }
 
+    // Copia estado do evento
     void apply(FlightRouteEventPayload p) {
         if (p.originIata() != null) this.originIata = p.originIata().toUpperCase();
         if (p.destinationIata() != null) this.destinationIata = p.destinationIata().toUpperCase();

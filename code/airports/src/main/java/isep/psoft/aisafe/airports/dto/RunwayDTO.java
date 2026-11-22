@@ -6,6 +6,7 @@ import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 
+// Pista na API
 @JsonIgnoreProperties(ignoreUnknown = true)
 public record RunwayDTO(
         @NotBlank(message = "Runway name is required")

@@ -10,6 +10,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+// Comando: registar aeroporto
 @Service
 @RequiredArgsConstructor
 public class RegisterAirportService {
@@ -18,6 +19,7 @@ public class RegisterAirportService {
     private final AirportFactory airportFactory;
     private final AirportEventEmitter events;
 
+    // US106: registar e publicar
     @Transactional
     public Airport register(CreateAirportDTO dto) {
         String iata = IataCode.normalize(dto.iataCode());

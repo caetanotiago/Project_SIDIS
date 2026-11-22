@@ -13,6 +13,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
+// Consulta: US210
 @Service
 @RequiredArgsConstructor
 public class AirportStatisticsService {
@@ -22,6 +23,7 @@ public class AirportStatisticsService {
     private final RouteCountProjection routes;
     private final SearchAirportsService airports;
 
+    // Ranking por número de rotas
     @Transactional(readOnly = true)
     public List<BusiestAirportDTO> busiestAirports(Integer limit) {
         int top = limit == null ? DEFAULT_LIMIT : limit;

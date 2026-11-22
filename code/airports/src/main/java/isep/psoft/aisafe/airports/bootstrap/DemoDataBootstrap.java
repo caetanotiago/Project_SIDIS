@@ -21,6 +21,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
+// Dados de demonstração
 @Component
 @ConditionalOnProperty(prefix = "aisafe.bootstrap", name = "enabled", havingValue = "true")
 @RequiredArgsConstructor
@@ -60,6 +61,7 @@ public class DemoDataBootstrap implements ApplicationRunner {
     @Value("${aisafe.bootstrap.airports:}")
     private List<String> airports;
 
+    // Carrega aeroportos demo
     @Override
     @Transactional
     public void run(ApplicationArguments args) {
@@ -83,6 +85,7 @@ public class DemoDataBootstrap implements ApplicationRunner {
         }
     }
 
+    // Cria DTO de demo
     private static CreateAirportDTO airport(String iata, String name, String city, String country, String timezone,
                                             double lat, double lon, List<RunwayDTO> runways,
                                             int terminals, int gates, Set<String> services,

@@ -6,6 +6,7 @@ import org.springframework.data.repository.query.Param;
 
 import java.util.List;
 
+// Acesso ao read model
 public interface ReplicatedAirportRepository extends JpaRepository<ReplicatedAirport, String> {
     @Query("""
             select a from ReplicatedAirport a

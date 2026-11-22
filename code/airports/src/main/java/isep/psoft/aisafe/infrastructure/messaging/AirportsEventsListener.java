@@ -14,6 +14,7 @@ import org.springframework.stereotype.Component;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 
+// Lê fila <id>.airports
 @Component
 @ConditionalOnProperty(prefix = "aisafe.messaging", name = "enabled", havingValue = "true")
 @RequiredArgsConstructor
@@ -23,6 +24,7 @@ public class AirportsEventsListener {
     private final AirportProjection projection;
     private final ReadModelSynchronizer synchronizer;
 
+    // Encaminha pelo tipo
     @RabbitListener(id = "airports-events", queues = "#{airportEventsSubscription.queueName}")
     public void on(IntegrationEvent<JsonNode> event) {
         if (AirportEvents.SYNC_REQUESTED.equals(event.eventType())) {
@@ -33,6 +35,7 @@ public class AirportsEventsListener {
         projection.apply(withPayload(event, AirportEventPayload.class));
     }
 
+    // JSON → payload
     static <T> IntegrationEvent<T> withPayload(IntegrationEvent<JsonNode> event, Class<T> type) {
         T payload = event.payload() == null ? null : JSON.convertValue(event.payload(), type);
         return new IntegrationEvent<>(event.eventId(), event.eventType(), event.timestamp(), event.sourceService(),

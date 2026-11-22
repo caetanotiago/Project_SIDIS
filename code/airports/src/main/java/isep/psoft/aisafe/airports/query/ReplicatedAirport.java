@@ -20,6 +20,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 
+// Read model do aeroporto
 @Entity
 @Table(name = "REPLICATED_AIRPORT")
 @Getter
@@ -75,10 +76,12 @@ public class ReplicatedAirport {
         this.iataCode = iataCode;
     }
 
+    // Evento antigo?
     boolean isNewerThan(Long version) {
         return sourceVersion != null && version != null && version < sourceVersion;
     }
 
+    // Copia estado do evento
     void apply(AirportEventPayload p, String ownerInstance, String eventId, Instant eventAt) {
         this.name = p.name();
         this.city = p.city();

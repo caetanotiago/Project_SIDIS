@@ -1,5 +1,6 @@
 package isep.psoft.aisafe.airports.events.external;
 
+// Eventos do Flight Routes
 public final class FlightRoutesEvents {
     public static final String SOURCE_SERVICE = "flightroutes";
 

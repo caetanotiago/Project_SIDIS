@@ -2,11 +2,13 @@ package isep.psoft.aisafe.airports.domain;
 
 import java.util.Locale;
 
+// Estados do aeroporto
 public enum AirportStatus {
     OPERATIONAL,
     CLOSED,
     UNDER_MAINTENANCE;
 
+    // Texto → estado
     public static AirportStatus from(String value) {
         if (value == null || value.isBlank()) {
             throw new IllegalArgumentException("Airport status is required.");

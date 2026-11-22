@@ -11,8 +11,10 @@ import org.springframework.stereotype.Component;
 import java.util.List;
 import java.util.Set;
 
+// Conversão para DTO
 @Component
 public class AirportAssembler {
+    // Write model → DTO
     public AirportDTO toDTO(Airport a) {
         return new AirportDTO(
                 a.getIataCode(),
@@ -35,6 +37,7 @@ public class AirportAssembler {
                 a.getContactPhone());
     }
 
+    // Read model → DTO
     public AirportDTO toDTO(ReplicatedAirport a) {
         return new AirportDTO(
                 a.getIataCode(),
@@ -57,10 +60,12 @@ public class AirportAssembler {
                 a.getContactPhone());
     }
 
+    // Pista → DTO
     private static RunwayDTO toDTO(Runway r) {
         return new RunwayDTO(r.getName(), r.getLengthMeters(), r.getOrientation(), r.getSurface());
     }
 
+    // Pista replicada → DTO
     private static RunwayDTO toDTO(ReplicatedRunway r) {
         return new RunwayDTO(r.getName(), r.getLengthMeters(), r.getOrientation(), r.getSurface());
     }

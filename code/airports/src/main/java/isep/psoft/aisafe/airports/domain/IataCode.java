@@ -3,12 +3,14 @@ package isep.psoft.aisafe.airports.domain;
 import java.util.Locale;
 import java.util.regex.Pattern;
 
+// Regras do código IATA
 public final class IataCode {
     private static final Pattern FORMAT = Pattern.compile("^[A-Z]{3}$");
 
     private IataCode() {
     }
 
+    // Valida e põe maiúsculas
     public static String normalize(String value) {
         if (value == null || value.isBlank()) {
             throw new IllegalArgumentException("IATA code is required.");

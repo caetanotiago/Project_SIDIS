@@ -29,6 +29,7 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+// Testes com duas réplicas
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 class AirportReplicaCollaborationTest {
     private static final String SERVICE_KEY = "it-service-key";
@@ -43,6 +44,7 @@ class AirportReplicaCollaborationTest {
     private static String backoffice;
     private static String atcc;
 
+    // Arranca réplicas A e B
     @BeforeAll
     static void startReplicas() throws IOException {
         int portA = freePort();
@@ -58,6 +60,7 @@ class AirportReplicaCollaborationTest {
         atcc = tokens.generateToken("atcc-it", List.of("ROLE_ATCC"));
     }
 
+    // Para as réplicas
     @AfterAll
     static void stopAll() {
         if (replicaA != null) replicaA.close();
@@ -266,6 +269,7 @@ class AirportReplicaCollaborationTest {
         assertEquals(503, send("PATCH", urlA + "/api/airports/LIS/status", "{\"status\":\"CLOSED\"}", backoffice).statusCode());
     }
 
+    // Simula evento de rota
     private static IntegrationEvent<FlightRouteEventPayload> routeCreated(String id, String origin, String destination) {
         IntegrationEvent<FlightRouteEventPayload> event = IntegrationEvent.create("RouteCreated", Instant.now(),
                 "flightroutes", "flightroutes-it", id, new FlightRouteEventPayload(id, origin, destination, "ACTIVE", 0L));
@@ -275,6 +279,7 @@ class AirportReplicaCollaborationTest {
         return event;
     }
 
+    // Arranca uma réplica
     private static ConfigurableApplicationContext startReplica(String name, int port, String peerUrl) {
         return BUS.start(name,
                 "--server.port=" + port,
@@ -288,6 +293,7 @@ class AirportReplicaCollaborationTest {
                 "--logging.file.name=target/it-logs/airports-" + name + ".log");
     }
 
+    // JSON de aeroporto
     private static String airport(String iata, String city, String country, double lat, double lon) {
         return "{\"iataCode\":\"" + iata + "\",\"name\":\"" + city + " Airport\",\"city\":\"" + city + "\","
                 + "\"country\":\"" + country + "\",\"region\":\"Europe\",\"timezone\":\"Europe/Lisbon\","
@@ -295,6 +301,7 @@ class AirportReplicaCollaborationTest {
                 + "\"runways\":[{\"name\":\"17/35\",\"lengthMeters\":3000,\"orientation\":170}]}";
     }
 
+    // Envia pedido HTTP
     private static HttpResponse<String> send(String method, String url, String body, String token) throws Exception {
         return send(method, url, body, token, Map.of());
     }
@@ -310,16 +317,19 @@ class AirportReplicaCollaborationTest {
         return HTTP.send(b.build(), HttpResponse.BodyHandlers.ofString());
     }
 
+    // Resposta → JSON
     private static JsonNode json(HttpResponse<String> response) {
         return JSON.readTree(response.body());
     }
 
+    // Extrai os IATA
     private static List<String> iatas(JsonNode array) {
         List<String> codes = new ArrayList<>();
         array.forEach(n -> codes.add(n.get("iataCode").asString()));
         return codes;
     }
 
+    // Porta livre
     private static int freePort() throws IOException {
         try (ServerSocket s = new ServerSocket(0)) {
             return s.getLocalPort();

@@ -7,6 +7,7 @@ import lombok.EqualsAndHashCode;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
+// Pista do aeroporto
 @Embeddable
 @Getter
 @EqualsAndHashCode
@@ -23,6 +24,7 @@ public class Runway {
 
     private String surface;
 
+    // Valida pista
     public Runway(String name, Integer lengthMeters, Integer orientation, String surface) {
         if (name == null || name.isBlank()) {
             throw new IllegalArgumentException("Runway name is required.");

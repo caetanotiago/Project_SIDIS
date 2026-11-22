@@ -12,6 +12,7 @@ import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
 
+// Sincronização no arranque
 @Component
 public class ReadModelSynchronizer {
     private static final Logger log = LoggerFactory.getLogger(ReadModelSynchronizer.class);
@@ -20,6 +21,7 @@ public class ReadModelSynchronizer {
     private final ObjectProvider<EventPublisher> eventPublisher;
     private final String instanceId;
 
+    // Construtor
     public ReadModelSynchronizer(AirportStateRepublisher republisher, ObjectProvider<EventPublisher> eventPublisher,
                                  @Value("${aisafe.instance-id}") String instanceId) {
         this.republisher = republisher;
@@ -27,6 +29,7 @@ public class ReadModelSynchronizer {
         this.instanceId = instanceId;
     }
 
+    // Republicar e pedir sincronização
     @EventListener(ApplicationReadyEvent.class)
     public void onStartup() {
         republisher.republishOwnedAirports("startup of " + instanceId);
@@ -41,6 +44,7 @@ public class ReadModelSynchronizer {
         });
     }
 
+    // Responde a outra réplica
     public void onSyncRequested(String requestedBy) {
         if (instanceId.equals(requestedBy)) {
             return;

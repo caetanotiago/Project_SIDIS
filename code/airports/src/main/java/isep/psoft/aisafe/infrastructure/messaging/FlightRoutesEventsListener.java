@@ -8,12 +8,14 @@ import org.springframework.amqp.rabbit.annotation.RabbitListener;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
+// Lê fila <id>.flightroutes
 @Component
 @ConditionalOnProperty(prefix = "aisafe.messaging", name = "enabled", havingValue = "true")
 @RequiredArgsConstructor
 public class FlightRoutesEventsListener {
     private final RouteCountProjection projection;
 
+    // Entrega à projeção
     @RabbitListener(id = "airports-flightroutes-events", queues = "#{flightRoutesEventsSubscription.queueName}")
     public void on(IntegrationEvent<FlightRouteEventPayload> event) {
         projection.apply(event);

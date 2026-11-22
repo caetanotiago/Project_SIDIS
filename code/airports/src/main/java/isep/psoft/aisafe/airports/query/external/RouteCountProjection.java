@@ -13,6 +13,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.Map;
 import java.util.TreeMap;
 
+// Projeção das rotas
 @Service
 public class RouteCountProjection {
     private static final Logger log = LoggerFactory.getLogger(RouteCountProjection.class);
@@ -20,16 +21,19 @@ public class RouteCountProjection {
     private final KnownRouteRepository repository;
     private final IdempotentEventHandler idempotent;
 
+    // Construtor
     public RouteCountProjection(KnownRouteRepository repository, ProcessedEventStore processedEvents) {
         this.repository = repository;
         this.idempotent = new IdempotentEventHandler(processedEvents);
     }
 
+    // Aplica evento (idempotente)
     @Transactional
     public boolean apply(IntegrationEvent<FlightRouteEventPayload> event) {
         return idempotent.handle(event, this::applyOnce);
     }
 
+    // Rotas por aeroporto
     @Transactional(readOnly = true)
     public Map<String, Long> routeCountsByAirport() {
         Map<String, Long> counts = new TreeMap<>();
@@ -40,6 +44,7 @@ public class RouteCountProjection {
         return counts;
     }
 
+    // Escolhe pelo tipo
     private void applyOnce(IntegrationEvent<FlightRouteEventPayload> event) {
         FlightRouteEventPayload payload = event.payload();
         if (payload == null || payload.routeId() == null) {
@@ -51,6 +56,7 @@ public class RouteCountProjection {
         }
     }
 
+    // Insere ou atualiza rota
     private void upsert(IntegrationEvent<FlightRouteEventPayload> event, FlightRouteEventPayload payload) {
         KnownRoute route = repository.findById(payload.routeId()).orElseGet(() -> new KnownRoute(payload.routeId()));
         if (route.isNewerThan(payload.version())) {

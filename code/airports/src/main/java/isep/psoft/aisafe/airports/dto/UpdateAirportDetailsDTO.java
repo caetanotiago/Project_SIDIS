@@ -6,6 +6,7 @@ import jakarta.validation.constraints.Min;
 import java.util.List;
 import java.util.Set;
 
+// Pedido de atualização (US208)
 public record UpdateAirportDetailsDTO(
         String operationalHours,
 

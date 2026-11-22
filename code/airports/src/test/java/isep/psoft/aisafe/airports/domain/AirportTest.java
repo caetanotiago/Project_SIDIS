@@ -7,7 +7,9 @@ import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+// Testes do domínio
 class AirportTest {
+    // Aeroporto de exemplo
     private static Airport porto() {
         return new Airport("opo", "Francisco Sá Carneiro", "Porto", "Portugal", "Europe",
                 "Europe/Lisbon", new Coordinates(41.2481, -8.6814),

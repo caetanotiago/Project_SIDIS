@@ -13,6 +13,7 @@ import jakarta.validation.constraints.Pattern;
 import java.util.List;
 import java.util.Set;
 
+// Pedido de registo
 public record CreateAirportDTO(
         @NotBlank(message = "IATA code is required")
         @Pattern(regexp = "^[A-Za-z]{3}$", message = "IATA code must be exactly 3 letters")

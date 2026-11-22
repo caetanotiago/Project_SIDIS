@@ -33,6 +33,7 @@ import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 import java.net.URI;
 import java.util.List;
 
+// Endpoints REST /api/airports
 @RestController
 @RequestMapping("/api/airports")
 @RequiredArgsConstructor
@@ -45,6 +46,7 @@ public class AirportController {
     private final GroupAirportsService groupService;
     private final AirportAssembler assembler;
 
+    // POST: registar aeroporto
     @PostMapping
     @Operation(summary = "US106/US207 — Register an airport with runways and optional facilities")
     public ResponseEntity<AirportDTO> register(@Valid @RequestBody CreateAirportDTO dto) {
@@ -54,12 +56,14 @@ public class AirportController {
         return ResponseEntity.created(location).body(assembler.toDTO(airport));
     }
 
+    // GET: aeroporto por IATA
     @GetMapping("/{iataCode}")
     @Operation(summary = "US107 — Airport details by IATA code (answered from this replica's read model)")
     public ResponseEntity<AirportDTO> getByIata(@PathVariable String iataCode) {
         return ResponseEntity.ok(searchService.getByIata(iataCode));
     }
 
+    // GET: pesquisar aeroportos
     @GetMapping
     @Operation(summary = "US108 — Search airports by city, country or name (read model with the airports of all replicas)")
     public ResponseEntity<List<AirportDTO>> search(
@@ -69,6 +73,7 @@ public class AirportController {
         return ResponseEntity.ok(searchService.search(city, country, name));
     }
 
+    // GET: aeroportos com mais rotas
     @GetMapping("/statistics/busiest")
     @Operation(summary = "US210 — Busiest airports by number of routes (route counts from Flight Routes)")
     public ResponseEntity<List<BusiestAirportDTO>> busiestAirports(
@@ -76,6 +81,7 @@ public class AirportController {
         return ResponseEntity.ok(statisticsService.busiestAirports(limit));
     }
 
+    // GET: agrupar por país/região
     @GetMapping("/grouped")
     @Operation(summary = "US211 — Airports grouped by region or country (by=country|region, default country)")
     public ResponseEntity<List<AirportGroupDTO>> groupAirports(
@@ -83,6 +89,7 @@ public class AirportController {
         return ResponseEntity.ok(groupService.groupBy(by));
     }
 
+    // POST: certificar modelo
     @PostMapping("/{iataCode}/certifications")
     @Operation(summary = "US106a — Certify an aircraft model to fly to/from the airport (forwarded to the owner replica)")
     public ResponseEntity<AirportDTO> addCertification(
@@ -91,6 +98,7 @@ public class AirportController {
         return ResponseEntity.status(HttpStatus.CREATED).body(updateService.addCertification(iataCode, dto));
     }
 
+    // PATCH: mudar estado
     @PatchMapping("/{iataCode}/status")
     @Operation(summary = "US109 — Update the operational status (OPERATIONAL, CLOSED, UNDER_MAINTENANCE)")
     public ResponseEntity<AirportDTO> changeStatus(
@@ -99,6 +107,7 @@ public class AirportController {
         return ResponseEntity.ok(updateService.changeStatus(iataCode, dto));
     }
 
+    // PATCH: atualizar detalhes
     @PatchMapping("/{iataCode}")
     @Operation(summary = "US208 — Update airport details: operational hours, contacts and facilities")
     public ResponseEntity<AirportDTO> updateDetails(

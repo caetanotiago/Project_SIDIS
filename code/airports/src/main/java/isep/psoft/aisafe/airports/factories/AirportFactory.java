@@ -8,8 +8,10 @@ import org.springframework.stereotype.Component;
 
 import java.util.List;
 
+// Fábrica de aeroportos
 @Component
 public class AirportFactory {
+    // DTO → Airport
     public Airport create(CreateAirportDTO dto) {
         List<Runway> runways = dto.runways().stream()
                 .map(r -> new Runway(r.name(), r.lengthMeters(), r.orientation(), r.surface()))

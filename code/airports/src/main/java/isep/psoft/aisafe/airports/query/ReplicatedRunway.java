@@ -5,6 +5,7 @@ import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
+// Pista no read model
 @Embeddable
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)

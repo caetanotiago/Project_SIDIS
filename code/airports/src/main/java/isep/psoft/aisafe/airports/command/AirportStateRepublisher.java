@@ -10,6 +10,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 
+// Republica aeroportos próprios
 @Service
 @RequiredArgsConstructor
 public class AirportStateRepublisher {
@@ -18,6 +19,7 @@ public class AirportStateRepublisher {
     private final AirportRepository airportRepository;
     private final AirportEventEmitter events;
 
+    // AirportUpdated de cada aeroporto
     @Transactional
     public int republishOwnedAirports(String reason) {
         List<Airport> owned = airportRepository.findAllByOrderByIataCodeAsc();
